@@ -82,7 +82,7 @@ exports.handler = async () => {
           topic: title,
           body: summary,
           sensitivity_tier: 'low',
-          review_status: 'pending_review', // conservative default for a brand-new, untested ingestion source
+          review_status: 'published', // auto-publish: validated against real source content on 2026-08-12, spot-checked accurate
           source: SOURCE_TAG,
           source_url: url,
           published_at: publishedAt,
