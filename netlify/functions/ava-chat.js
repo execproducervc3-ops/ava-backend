@@ -52,11 +52,11 @@ const TOOLS = [
   },
   {
     name: 'query_news',
-    description: "Search AVA's own database of published local SVG news articles for a topic. Use this before web search for questions about recent local news, government announcements, or current happenings in SVG — this is curated, human-reviewed content specific to SVG, more reliable than a general web search for local news.",
+    description: "Search AVA's own database of published local SVG news articles. Use this before web search for questions about recent local news, government announcements, or current happenings in SVG — this is curated, human-reviewed content specific to SVG, more reliable than a general web search for local news. For a specific subject, pass that as the topic. For a general 'what's the latest news' style question, pass a general term like 'latest' — this returns the most recent published articles.",
     input_schema: {
       type: 'object',
       properties: {
-        topic: { type: 'string', description: 'What to search for, e.g. "youth council" or "Vincy Mas" or "agriculture budget"' },
+        topic: { type: 'string', description: 'What to search for, e.g. "youth council" or "Vincy Mas" — or "latest" for a general news request' },
       },
       required: ['topic']
     }
@@ -138,20 +138,40 @@ async function queryRetailPriceDB(productName){
 }
 
 async function queryNewsDB(topic){
-  if(!topic || !topic.trim()) return { results: [], note: 'No topic given.' };
+  const t = (topic || '').trim().toLowerCase();
+  const isBrowseRequest = !t || ['news', 'latest', 'latest news', 'all', 'everything', 'general', 'recent', 'local news', 'current events', 'what\'s new'].includes(t);
+
   try{
-    // This is the actual enforcement point for the human-review gate designed
-    // from the very first architecture session: no matter what the query is,
-    // articles still sitting in draft/pending_review can never be returned here.
-    const { data, error } = await supabase
-      .from('knowledge_articles')
-      .select('topic, body, source_url, published_at')
-      .eq('review_status', 'published')
-      .or(`topic.ilike.%${topic.trim()}%,body.ilike.%${topic.trim()}%`)
-      .order('published_at', { ascending: false })
-      .limit(5);
-    if(error) throw error;
-    if(!data || !data.length) return { results: [], note: 'No published articles found on that topic yet.' };
+    let data, error;
+
+    if(!isBrowseRequest){
+      // This is the actual enforcement point for the human-review gate designed
+      // from the very first architecture session: no matter what the query is,
+      // articles still sitting in draft/pending_review can never be returned here.
+      ({ data, error } = await supabase
+        .from('knowledge_articles')
+        .select('topic, body, source_url, published_at')
+        .eq('review_status', 'published')
+        .or(`topic.ilike.%${topic.trim()}%,body.ilike.%${topic.trim()}%`)
+        .order('published_at', { ascending: false })
+        .limit(5));
+      if(error) throw error;
+    }
+
+    // Fall back to "most recent published" for generic/browse-style asks, and
+    // also for a specific search that came up empty — a graceful degrade
+    // rather than a dead end.
+    if(isBrowseRequest || !data || !data.length){
+      ({ data, error } = await supabase
+        .from('knowledge_articles')
+        .select('topic, body, source_url, published_at')
+        .eq('review_status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(5));
+      if(error) throw error;
+    }
+
+    if(!data || !data.length) return { results: [], note: 'No published articles available yet.' };
     return { results: data };
   } catch(err){
     console.error('queryNewsDB error:', err);
