@@ -88,6 +88,20 @@ function buildDeepLink(service_type, params){
   return null;
 }
 
+// Logs a real coverage gap — a specific ask that AVA's structured data couldn't
+// satisfy. This is deliberately fire-and-forget: a logging failure must never
+// break the actual user-facing answer.
+async function logUnansweredQuery(queryText, categoryGuess){
+  try{
+    await supabase.from('unanswered_queries').insert({
+      query_text: queryText,
+      category_guess: categoryGuess,
+    });
+  } catch(err){
+    console.error('logUnansweredQuery failed (non-fatal):', err.message);
+  }
+}
+
 async function queryRetailPriceDB(productName){
   if(!productName || !productName.trim()) return { results: [], note: 'No product name given.' };
   try{
@@ -97,6 +111,7 @@ async function queryRetailPriceDB(productName){
       .ilike('name', `%${productName.trim()}%`);
     if(prodErr) throw prodErr;
     if(!products || !products.length){
+      await logUnansweredQuery(productName.trim(), 'retail_price');
       return { results: [], note: "No matching product found in AVA's database yet — this may not have been submitted by any retailer." };
     }
     const productIds = products.map(p => p.id);
@@ -108,6 +123,7 @@ async function queryRetailPriceDB(productName){
       .order('price', { ascending: true });
     if(offerErr) throw offerErr;
     if(!offers || !offers.length){
+      await logUnansweredQuery(productName.trim(), 'retail_price');
       return { results: [], note: 'That product exists in the database but no retailer currently has an offer for it.' };
     }
 
@@ -143,6 +159,7 @@ async function queryNewsDB(topic){
 
   try{
     let data, error;
+    let specificSearchFailed = false;
 
     if(!isBrowseRequest){
       // This is the actual enforcement point for the human-review gate designed
@@ -156,11 +173,14 @@ async function queryNewsDB(topic){
         .order('published_at', { ascending: false })
         .limit(5));
       if(error) throw error;
+      if(!data || !data.length) specificSearchFailed = true;
     }
 
     // Fall back to "most recent published" for generic/browse-style asks, and
     // also for a specific search that came up empty — a graceful degrade
-    // rather than a dead end.
+    // rather than a dead end. specificSearchFailed still gets logged below
+    // even though the user gets a useful fallback answer instead of nothing —
+    // the gap is real even when the UX papers over it gracefully.
     if(isBrowseRequest || !data || !data.length){
       ({ data, error } = await supabase
         .from('knowledge_articles')
@@ -170,6 +190,8 @@ async function queryNewsDB(topic){
         .limit(5));
       if(error) throw error;
     }
+
+    if(specificSearchFailed) await logUnansweredQuery(topic.trim(), 'news');
 
     if(!data || !data.length) return { results: [], note: 'No published articles available yet.' };
     return { results: data };
