@@ -49,6 +49,17 @@ const TOOLS = [
       },
       required: ['product_name']
     }
+  },
+  {
+    name: 'query_news',
+    description: "Search AVA's own database of published local SVG news articles for a topic. Use this before web search for questions about recent local news, government announcements, or current happenings in SVG — this is curated, human-reviewed content specific to SVG, more reliable than a general web search for local news.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'What to search for, e.g. "youth council" or "Vincy Mas" or "agriculture budget"' },
+      },
+      required: ['topic']
+    }
   }
 ];
 
@@ -126,6 +137,28 @@ async function queryRetailPriceDB(productName){
   }
 }
 
+async function queryNewsDB(topic){
+  if(!topic || !topic.trim()) return { results: [], note: 'No topic given.' };
+  try{
+    // This is the actual enforcement point for the human-review gate designed
+    // from the very first architecture session: no matter what the query is,
+    // articles still sitting in draft/pending_review can never be returned here.
+    const { data, error } = await supabase
+      .from('knowledge_articles')
+      .select('topic, body, source_url, published_at')
+      .eq('review_status', 'published')
+      .or(`topic.ilike.%${topic.trim()}%,body.ilike.%${topic.trim()}%`)
+      .order('published_at', { ascending: false })
+      .limit(5);
+    if(error) throw error;
+    if(!data || !data.length) return { results: [], note: 'No published articles found on that topic yet.' };
+    return { results: data };
+  } catch(err){
+    console.error('queryNewsDB error:', err);
+    return { results: [], note: 'Could not reach the news database right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -167,12 +200,13 @@ exports.handler = async (event) => {
     let finalText = '';
     let linkCard = null;
     let retailResults = null;
+    let newsResults = null;
     let loops = 0;
 
     while(loops < 4){
       loops++;
       const data = await callClaude(messages);
-      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price'));
+      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news'));
       const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       if(textBlocks) finalText += (finalText ? '\n\n' : '') + textBlocks;
 
@@ -182,6 +216,19 @@ exports.handler = async (event) => {
         messages = messages.concat([
           { role: 'assistant', content: data.content },
           { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: link ? `Link generated: ${link.url}` : 'Could not generate a link for that service type.' }] },
+        ]);
+        continue;
+      }
+
+      if(toolUse && toolUse.name === 'query_news'){
+        const newsData = await queryNewsDB(toolUse.input.topic);
+        if(newsData.results && newsData.results.length) newsResults = newsData.results;
+        const summary = newsData.results && newsData.results.length
+          ? newsData.results.map(a => `"${a.topic}" (${a.published_at ? new Date(a.published_at).toDateString() : 'undated'}): ${a.body} [source: ${a.source_url}]`).join('\n\n')
+          : (newsData.note || 'No published articles found on that topic.');
+        messages = messages.concat([
+          { role: 'assistant', content: data.content },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
         ]);
         continue;
       }
@@ -211,7 +258,7 @@ exports.handler = async (event) => {
     }
 
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
