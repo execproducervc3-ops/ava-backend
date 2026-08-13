@@ -171,6 +171,21 @@ If several items are visible (e.g. a shelf of tags), return all of them. If a pr
   try { return JSON.parse(clean); } catch (e) { return null; }
 }
 
+async function uploadPhotoToStorage(base64, mediaType, fromId) {
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    const ext = mediaType === 'image/png' ? 'png' : (mediaType === 'image/webp' ? 'webp' : 'jpg');
+    const path = `${fromId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('submission-photos').upload(path, buffer, { contentType: mediaType, upsert: false });
+    if (error) { console.error('Photo upload failed:', error.message); return null; }
+    const { data } = supabase.storage.from('submission-photos').getPublicUrl(path);
+    return data ? data.publicUrl : null;
+  } catch (e) {
+    console.error('Photo upload threw:', e.message);
+    return null;
+  }
+}
+
 async function handlePhotoSubmission(message, fromId, chatId) {
   const largest = message.photo[message.photo.length - 1];
   const { base64, mediaType } = await getTelegramFileBase64(largest.file_id);
@@ -182,11 +197,17 @@ async function handlePhotoSubmission(message, fromId, chatId) {
     return;
   }
 
+  // Upload after extraction succeeds — no point storing a photo for a submission
+  // that's about to be rejected anyway. A failed upload doesn't block the
+  // submission itself; it just means no photo_url on this one.
+  const photoUrl = await uploadPhotoToStorage(base64, mediaType, fromId);
+
   const { data: draft } = await supabase.from('submission_draft').insert({
     retailer_telegram_id: fromId,
     items: extraction.items,
     missing_fields: extraction.missing_fields || [],
     status: 'pending',
+    photo_url: photoUrl,
   }).select().single();
 
   const preview = extraction.items.map(i => `• ${i.name} — $${i.price}${i.unit ? ' / ' + i.unit : ''}`).join('\n');
@@ -243,6 +264,7 @@ async function confirmLatestDraft(fromId, chatId) {
       unit: item.unit,
       source_type: 'caption',
       source_submission_id: draft.id,
+      photo_url: draft.photo_url,
     });
   }
 
