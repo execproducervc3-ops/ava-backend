@@ -6,16 +6,29 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const TG_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 exports.handler = async (event) => {
+  console.log('telegram-webhook invoked:', event.httpMethod, 'bodyLength:', event.body ? event.body.length : 0, 'isBase64:', event.isBase64Encoded);
+
   if (event.httpMethod !== 'POST') return ok();
 
+  const rawBody = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf8') : event.body;
+
   let update;
-  try { update = JSON.parse(event.body); } catch (e) { return ok(); }
+  try {
+    update = JSON.parse(rawBody);
+  } catch (e) {
+    console.error('Failed to parse Telegram update JSON. Raw body was:', rawBody);
+    return ok();
+  }
 
   const message = update.message;
-  if (!message || !message.chat) return ok();
+  if (!message || !message.chat) {
+    console.log('Update had no message.chat — full update was:', JSON.stringify(update));
+    return ok();
+  }
 
   const chatId = message.chat.id;
   const fromId = message.from.id;
+  console.log('Processing message from', fromId, 'in chat', chatId, '— text:', message.text, '— has photo:', !!message.photo);
 
   try {
     let { data: profile } = await supabase
@@ -30,6 +43,26 @@ exports.handler = async (event) => {
         await sendMessage(chatId, `Welcome back${profile.business_name ? ', ' + profile.business_name : ''}! Send a photo of a price tag, shelf, or flyer any time to add a listing.`);
       }
       return ok();
+    }
+
+    // --- confirmation of a pending submission (checked first — a "yes" should
+    // always confirm a real pending draft, regardless of what onboarding
+    // question is technically still unanswered) ---
+    if (message.text && /^(yes|y|confirm)$/i.test(message.text.trim())) {
+      const { data: pendingDraft } = await supabase
+        .from('submission_draft')
+        .select('id')
+        .eq('retailer_telegram_id', fromId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (pendingDraft) {
+        await confirmLatestDraft(fromId, chatId);
+        return ok();
+      }
+      // no pending draft — fall through so "yes" can still be interpreted
+      // as an onboarding answer (e.g. answering the fixed/mobile question)
     }
 
     // --- collecting business name during onboarding ---
@@ -59,12 +92,6 @@ exports.handler = async (event) => {
         default_lng: message.location.longitude,
       }).eq('telegram_user_id', fromId);
       await sendMessage(chatId, 'Location saved. Send a photo whenever you have something to list.');
-      return ok();
-    }
-
-    // --- confirmation of a pending submission ---
-    if (message.text && /^(yes|y|confirm)$/i.test(message.text.trim())) {
-      await confirmLatestDraft(fromId, chatId);
       return ok();
     }
 
