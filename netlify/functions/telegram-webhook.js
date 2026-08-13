@@ -186,10 +186,18 @@ async function uploadPhotoToStorage(base64, mediaType, fromId) {
   }
 }
 
+function extractHashtags(text){
+  if (!text) return [];
+  const matches = text.match(/#(\w+)/g) || [];
+  // dedupe, strip the #, lowercase for consistent matching later
+  return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
+}
+
 async function handlePhotoSubmission(message, fromId, chatId) {
   const largest = message.photo[message.photo.length - 1];
   const { base64, mediaType } = await getTelegramFileBase64(largest.file_id);
   const caption = message.caption || '';
+  const tags = extractHashtags(caption);
 
   const extraction = await extractWithClaude(base64, mediaType, caption);
   if (!extraction || !extraction.items || !extraction.items.length) {
@@ -208,12 +216,14 @@ async function handlePhotoSubmission(message, fromId, chatId) {
     missing_fields: extraction.missing_fields || [],
     status: 'pending',
     photo_url: photoUrl,
+    tags,
   }).select().single();
 
   const preview = extraction.items.map(i => `• ${i.name} — $${i.price}${i.unit ? ' / ' + i.unit : ''}`).join('\n');
   const missingNote = (extraction.missing_fields && extraction.missing_fields.length)
     ? `\n\nCouldn't read: ${extraction.missing_fields.join(', ')}` : '';
-  await sendMessage(chatId, `Got it:\n${preview}${missingNote}\n\nReply YES to confirm and publish, or just send another photo/message to correct it.`);
+  const tagsNote = tags.length ? `\n\nTags: ${tags.map(t => '#' + t).join(' ')}` : '';
+  await sendMessage(chatId, `Got it:\n${preview}${missingNote}${tagsNote}\n\nReply YES to confirm and publish, or just send another photo/message to correct it.`);
 }
 
 async function confirmLatestDraft(fromId, chatId) {
@@ -265,6 +275,7 @@ async function confirmLatestDraft(fromId, chatId) {
       source_type: 'caption',
       source_submission_id: draft.id,
       photo_url: draft.photo_url,
+      tags: draft.tags || [],
     });
   }
 
