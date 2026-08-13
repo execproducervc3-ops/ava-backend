@@ -55,7 +55,7 @@ exports.handler = async (event) => {
     const listingIds = [...new Set(offers.map(o => o.listing_id))];
     const { data: listings, error: listErr } = await supabase
       .from('directory_listings')
-      .select('id, name, island, phone')
+      .select('id, name, island, parish, address, phone')
       .in('id', listingIds);
     if (listErr) throw listErr;
     const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
@@ -63,6 +63,9 @@ exports.handler = async (event) => {
     const results = offers.map(o => ({
       retailer: (listingMap[o.listing_id] && listingMap[o.listing_id].name) || 'Unknown retailer',
       island: (listingMap[o.listing_id] && listingMap[o.listing_id].island) || null,
+      parish: (listingMap[o.listing_id] && listingMap[o.listing_id].parish) || null,
+      address: (listingMap[o.listing_id] && listingMap[o.listing_id].address) || null,
+      phone: (listingMap[o.listing_id] && listingMap[o.listing_id].phone) || null,
       item_name: o.item_name,
       price: o.price,
       unit: o.unit,

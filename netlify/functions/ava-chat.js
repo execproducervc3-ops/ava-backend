@@ -103,7 +103,7 @@ async function queryRetailPriceDB(productName){
     const listingIds = [...new Set(offers.map(o => o.listing_id))];
     const { data: listings, error: listErr } = await supabase
       .from('directory_listings')
-      .select('id, name, island, phone')
+      .select('id, name, island, parish, address, phone')
       .in('id', listingIds);
     if(listErr) throw listErr;
     const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
@@ -111,6 +111,9 @@ async function queryRetailPriceDB(productName){
     const results = offers.map(o => ({
       retailer: (listingMap[o.listing_id] && listingMap[o.listing_id].name) || 'Unknown retailer',
       island: (listingMap[o.listing_id] && listingMap[o.listing_id].island) || null,
+      parish: (listingMap[o.listing_id] && listingMap[o.listing_id].parish) || null,
+      address: (listingMap[o.listing_id] && listingMap[o.listing_id].address) || null,
+      phone: (listingMap[o.listing_id] && listingMap[o.listing_id].phone) || null,
       item_name: o.item_name,
       price: o.price,
       unit: o.unit,
@@ -187,7 +190,10 @@ exports.handler = async (event) => {
         const priceData = await queryRetailPriceDB(toolUse.input.product_name);
         if(priceData.results && priceData.results.length) retailResults = priceData.results;
         const summary = priceData.results && priceData.results.length
-          ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}`).join('; ')
+          ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => {
+              const loc = [r.parish, r.island].filter(Boolean).join(', ');
+              return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
+            }).join('; ')
           : (priceData.note || 'No results found in the database for that product.');
         messages = messages.concat([
           { role: 'assistant', content: data.content },
