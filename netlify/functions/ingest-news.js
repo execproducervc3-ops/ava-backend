@@ -4,8 +4,10 @@ const { XMLParser } = require('fast-xml-parser');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-const FEED_URL = 'https://onenewsstvincent.com/feed/';
-const SOURCE_TAG = 'rss:onenewsstvincent';
+const FEEDS = [
+  { url: 'https://onenewsstvincent.com/feed/', sourceTag: 'rss:onenewsstvincent' },
+  { url: 'https://www.iwnsvg.com/feed/', sourceTag: 'rss:iwnsvg' },
+];
 
 function unwrapCdata(field){
   if(field === null || field === undefined) return null;
@@ -42,65 +44,86 @@ async function paraphraseSummary(title, rawDescription){
   }
 }
 
-exports.handler = async () => {
-  const result = { fetched: 0, inserted: 0, skipped_duplicate: 0, errors: [] };
-  try{
-    const feedRes = await fetch(FEED_URL);
-    if(!feedRes.ok) throw new Error(`Feed fetch failed: ${feedRes.status}`);
-    const xml = await feedRes.text();
+async function processFeed(feedUrl, sourceTag){
+  const feedResult = { source: sourceTag, fetched: 0, inserted: 0, skipped_duplicate: 0, errors: [] };
 
-    const parser = new XMLParser({ ignoreAttributes: false, cdataPropName: '__cdata' });
-    const parsed = parser.parse(xml);
-    const rawItems = parsed && parsed.rss && parsed.rss.channel ? parsed.rss.channel.item : null;
-    const items = Array.isArray(rawItems) ? rawItems : (rawItems ? [rawItems] : []);
-    result.fetched = items.length;
-
-    for(const item of items){
-      const title = unwrapCdata(item.title);
-      const url = unwrapCdata(item.link);
-      const pubDateRaw = unwrapCdata(item.pubDate);
-      const description = unwrapCdata(item.description);
-
-      if(!title || !url){ continue; }
-
-      try{
-        // idempotent pre-check: skip anything already ingested
-        // (source_url also has a unique index — this just avoids a wasted Claude call)
-        const { data: existing } = await supabase
-          .from('knowledge_articles')
-          .select('id')
-          .eq('source_url', url)
-          .maybeSingle();
-        if(existing){ result.skipped_duplicate++; continue; }
-
-        const summary = await paraphraseSummary(title, description);
-        if(!summary){ result.errors.push(`No summary produced for: ${title}`); continue; }
-
-        const publishedAt = pubDateRaw ? new Date(pubDateRaw).toISOString() : null;
-
-        const { error: insErr } = await supabase.from('knowledge_articles').insert({
-          topic: title,
-          body: summary,
-          sensitivity_tier: 'low',
-          review_status: 'published', // auto-publish: validated against real source content on 2026-08-12, spot-checked accurate
-          source: SOURCE_TAG,
-          source_url: url,
-          published_at: publishedAt,
-        });
-        if(insErr){
-          if(insErr.code === '23505'){ result.skipped_duplicate++; } // race-safe: unique index caught a duplicate
-          else { result.errors.push(`Insert failed for "${title}": ${insErr.message}`); }
-          continue;
-        }
-        result.inserted++;
-      } catch(itemErr){
-        result.errors.push(`Error processing "${title}": ${itemErr.message}`);
-      }
-    }
-
-    return { statusCode: 200, body: JSON.stringify(result) };
-  } catch(err){
-    console.error('ingest-news error:', err);
-    return { statusCode: 500, body: JSON.stringify({ error: err.message, ...result }) };
+  const feedRes = await fetch(feedUrl);
+  if(!feedRes.ok){
+    feedResult.errors.push(`Feed fetch failed: ${feedRes.status}`);
+    return feedResult;
   }
+  const xml = await feedRes.text();
+
+  const parser = new XMLParser({ ignoreAttributes: false, cdataPropName: '__cdata' });
+  const parsed = parser.parse(xml);
+  const rawItems = parsed && parsed.rss && parsed.rss.channel ? parsed.rss.channel.item : null;
+  const items = Array.isArray(rawItems) ? rawItems : (rawItems ? [rawItems] : []);
+  feedResult.fetched = items.length;
+
+  for(const item of items){
+    const title = unwrapCdata(item.title);
+    const url = unwrapCdata(item.link);
+    const pubDateRaw = unwrapCdata(item.pubDate);
+    const description = unwrapCdata(item.description);
+
+    if(!title || !url){ continue; }
+
+    try{
+      // idempotent pre-check: skip anything already ingested
+      // (source_url also has a unique index — this just avoids a wasted Claude call)
+      const { data: existing } = await supabase
+        .from('knowledge_articles')
+        .select('id')
+        .eq('source_url', url)
+        .maybeSingle();
+      if(existing){ feedResult.skipped_duplicate++; continue; }
+
+      const summary = await paraphraseSummary(title, description);
+      if(!summary){ feedResult.errors.push(`No summary produced for: ${title}`); continue; }
+
+      const publishedAt = pubDateRaw ? new Date(pubDateRaw).toISOString() : null;
+
+      const { error: insErr } = await supabase.from('knowledge_articles').insert({
+        topic: title,
+        body: summary,
+        sensitivity_tier: 'low',
+        review_status: 'published', // auto-publish: validated against real source content on 2026-08-12, spot-checked accurate
+        source: sourceTag,
+        source_url: url,
+        published_at: publishedAt,
+      });
+      if(insErr){
+        if(insErr.code === '23505'){ feedResult.skipped_duplicate++; } // race-safe: unique index caught a duplicate
+        else { feedResult.errors.push(`Insert failed for "${title}": ${insErr.message}`); }
+        continue;
+      }
+      feedResult.inserted++;
+    } catch(itemErr){
+      feedResult.errors.push(`Error processing "${title}": ${itemErr.message}`);
+    }
+  }
+
+  return feedResult;
+}
+
+exports.handler = async () => {
+  const bySource = [];
+  const totals = { fetched: 0, inserted: 0, skipped_duplicate: 0, errors: 0 };
+
+  for(const feed of FEEDS){
+    try{
+      const feedResult = await processFeed(feed.url, feed.sourceTag);
+      bySource.push(feedResult);
+      totals.fetched += feedResult.fetched;
+      totals.inserted += feedResult.inserted;
+      totals.skipped_duplicate += feedResult.skipped_duplicate;
+      totals.errors += feedResult.errors.length;
+    } catch(feedErr){
+      console.error(`ingest-news error for ${feed.sourceTag}:`, feedErr);
+      bySource.push({ source: feed.sourceTag, fetched: 0, inserted: 0, skipped_duplicate: 0, errors: [feedErr.message] });
+      totals.errors += 1;
+    }
+  }
+
+  return { statusCode: 200, body: JSON.stringify({ totals, bySource }) };
 };
