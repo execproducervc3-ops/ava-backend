@@ -104,6 +104,17 @@ const TOOLS = [
       },
       required: ['destination', 'day_of_week']
     }
+  },
+  {
+    name: 'generate_lucky_numbers',
+    description: "Generate a set of random lucky numbers for one of SVG's National Lottery games (Super 6, Lotto, 3D, Play 4), matching that game's real format. This is purely for fun/entertainment — random numbers, not a prediction or a real draw result. Never present these as real winning numbers.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        game: { type: 'string', enum: ['super6', 'lotto', '3d', 'play4'], description: 'Which lottery game to generate numbers for' },
+      },
+      required: ['game']
+    }
   }
 ];
 
@@ -386,6 +397,68 @@ async function queryFerrySchedule(destination, dayOfWeek){
   }
 }
 
+function randInt(min, max){
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickUniqueNumbers(count, min, max){
+  const pool = [];
+  while(pool.length < count){
+    const n = randInt(min, max);
+    if(!pool.includes(n)) pool.push(n);
+  }
+  return pool.sort((a, b) => a - b);
+}
+
+function randomLetterAtoO(){
+  const letters = 'ABCDEFGHIJKLMNO';
+  return letters[randInt(0, letters.length - 1)];
+}
+
+function padDigits(n, len){
+  return String(n).padStart(len, '0');
+}
+
+function generateLuckyNumbers(game){
+  const key = (game || '').trim().toLowerCase();
+
+  if(key === 'super6'){
+    return {
+      game: 'Super 6',
+      numbers: pickUniqueNumbers(6, 1, 28),
+      bonusLetter: randomLetterAtoO(),
+    };
+  }
+
+  if(key === 'lotto'){
+    const numbers = pickUniqueNumbers(5, 1, 36);
+    return {
+      game: 'Lotto',
+      numbers,
+      bonusBall: randInt(1, 36),
+      bonusLetter: randomLetterAtoO(),
+    };
+  }
+
+  if(key === '3d'){
+    // A real 3D draw produces three separate 3-digit results, not one —
+    // confirmed from an actual NLA draw post (Big-D / Mid-D / Little-D).
+    return {
+      game: '3D',
+      bigD: padDigits(randInt(0, 999), 3),
+      midD: padDigits(randInt(0, 999), 3),
+      littleD: padDigits(randInt(0, 999), 3),
+    };
+  }
+
+  if(key === 'play4'){
+    const digits = [randInt(0, 9), randInt(0, 9), randInt(0, 9), randInt(0, 9)];
+    return { game: 'Play 4', digits };
+  }
+
+  return { note: `Unknown game "${game}". Available: super6, lotto, 3d, play4.` };
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -429,8 +502,9 @@ exports.handler = async (event) => {
     let retailResults = null;
     let newsResults = null;
     let ferryResults = null;
+    let luckyNumbers = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers'];
 
     while(loops < 4){
       loops++;
@@ -494,6 +568,22 @@ exports.handler = async (event) => {
               : (ferryData.note || 'No ferry data available for that route.');
           }
 
+          else if(toolUse.name === 'generate_lucky_numbers'){
+            const lucky = generateLuckyNumbers(toolUse.input.game);
+            if(lucky.note){
+              content = lucky.note;
+            } else if(lucky.game === '3D'){
+              luckyNumbers = lucky;
+              content = `3D: Big-D ${lucky.bigD}, Mid-D ${lucky.midD}, Little-D ${lucky.littleD}. Make clear these are random for-fun numbers, not a real draw result.`;
+            } else if(lucky.game === 'Play 4'){
+              luckyNumbers = lucky;
+              content = `Play 4: ${lucky.digits.join(' ')}. Make clear these are random for-fun numbers, not a real draw result.`;
+            } else {
+              luckyNumbers = lucky;
+              content = `${lucky.game}: ${lucky.numbers.join(', ')}${lucky.bonusBall ? `, Bonus Ball ${lucky.bonusBall}` : ''}, letter ${lucky.bonusLetter}. Make clear these are random for-fun numbers, not a real draw result.`;
+            }
+          }
+
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         }
 
@@ -513,7 +603,7 @@ exports.handler = async (event) => {
     }
 
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults, luckyNumbers }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
