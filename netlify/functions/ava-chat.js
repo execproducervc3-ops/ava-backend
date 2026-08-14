@@ -284,7 +284,9 @@ async function queryImfData(indicatorKey){
   }
   try{
     const url = `https://www.imf.org/external/datamapper/api/v2/${info.code}/${IMF_COUNTRY_CODE}`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AVA-SVG/1.0; +https://exquisite-empanada-841a01.netlify.app)' },
+    });
     if(!res.ok) throw new Error(`IMF API failed: ${res.status}`);
     const data = await res.json();
     // The country filter in the URL is unreliable in practice — the API can
@@ -356,73 +358,68 @@ exports.handler = async (event) => {
     let retailResults = null;
     let newsResults = null;
     let loops = 0;
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data'];
 
     while(loops < 4){
       loops++;
       const data = await callClaude(messages);
-      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news' || b.name === 'query_economic_data' || b.name === 'query_imf_data'));
+      const toolUseBlocks = (data.content || []).filter(b => b.type === 'tool_use' && CUSTOM_TOOL_NAMES.includes(b.name));
       const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       if(textBlocks) finalText += (finalText ? '\n\n' : '') + textBlocks;
 
-      if(toolUse && toolUse.name === 'get_deep_link'){
-        const link = buildDeepLink(toolUse.input.service_type, toolUse.input);
-        if(link) linkCard = link;
-        messages = messages.concat([
-          { role: 'assistant', content: data.content },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: link ? `Link generated: ${link.url}` : 'Could not generate a link for that service type.' }] },
-        ]);
-        continue;
-      }
+      if(toolUseBlocks.length){
+        // Every tool_use block in this turn MUST get a matching tool_result in the
+        // next message — Anthropic's API rejects the request otherwise. Process
+        // all of them, not just the first, even if Claude asked for several at once.
+        const toolResults = [];
+        for(const toolUse of toolUseBlocks){
+          let content = 'Unknown tool.';
 
-      if(toolUse && toolUse.name === 'query_news'){
-        const newsData = await queryNewsDB(toolUse.input.topic);
-        if(newsData.results && newsData.results.length) newsResults = newsData.results;
-        const summary = newsData.results && newsData.results.length
-          ? newsData.results.map(a => `"${a.topic}" (${a.published_at ? new Date(a.published_at).toDateString() : 'undated'}): ${a.body} [source: ${a.source_url}]`).join('\n\n')
-          : (newsData.note || 'No published articles found on that topic.');
-        messages = messages.concat([
-          { role: 'assistant', content: data.content },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
-        ]);
-        continue;
-      }
+          if(toolUse.name === 'get_deep_link'){
+            const link = buildDeepLink(toolUse.input.service_type, toolUse.input);
+            if(link) linkCard = link;
+            content = link ? `Link generated: ${link.url}` : 'Could not generate a link for that service type.';
+          }
 
-      if(toolUse && toolUse.name === 'query_retail_price'){
-        const priceData = await queryRetailPriceDB(toolUse.input.product_name);
-        if(priceData.results && priceData.results.length) retailResults = priceData.results;
-        const summary = priceData.results && priceData.results.length
-          ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => {
-              const loc = [r.parish, r.island].filter(Boolean).join(', ');
-              return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
-            }).join('; ')
-          : (priceData.note || 'No results found in the database for that product.');
-        messages = messages.concat([
-          { role: 'assistant', content: data.content },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
-        ]);
-        continue;
-      }
+          else if(toolUse.name === 'query_news'){
+            const newsData = await queryNewsDB(toolUse.input.topic);
+            if(newsData.results && newsData.results.length) newsResults = newsData.results;
+            content = newsData.results && newsData.results.length
+              ? newsData.results.map(a => `"${a.topic}" (${a.published_at ? new Date(a.published_at).toDateString() : 'undated'}): ${a.body} [source: ${a.source_url}]`).join('\n\n')
+              : (newsData.note || 'No published articles found on that topic.');
+          }
 
-      if(toolUse && toolUse.name === 'query_economic_data'){
-        const econData = await queryEconomicData(toolUse.input.indicator);
-        const summary = econData.values && econData.values.length
-          ? `${econData.indicator} (source: World Bank): ` + econData.values.map(v => `${v.year}: ${v.value}`).join(', ')
-          : (econData.note || 'No data available for that indicator.');
-        messages = messages.concat([
-          { role: 'assistant', content: data.content },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
-        ]);
-        continue;
-      }
+          else if(toolUse.name === 'query_retail_price'){
+            const priceData = await queryRetailPriceDB(toolUse.input.product_name);
+            if(priceData.results && priceData.results.length) retailResults = priceData.results;
+            content = priceData.results && priceData.results.length
+              ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => {
+                  const loc = [r.parish, r.island].filter(Boolean).join(', ');
+                  return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
+                }).join('; ')
+              : (priceData.note || 'No results found in the database for that product.');
+          }
 
-      if(toolUse && toolUse.name === 'query_imf_data'){
-        const imfData = await queryImfData(toolUse.input.indicator);
-        const summary = imfData.values && imfData.values.length
-          ? `${imfData.indicator} (source: IMF World Economic Outlook): ` + imfData.values.map(v => `${v.year}: ${v.value}`).join(', ') + '. Note: recent and future years in IMF WEO data are often forecasts, not confirmed actuals — say so if relevant.'
-          : (imfData.note || 'No data available for that indicator.');
+          else if(toolUse.name === 'query_economic_data'){
+            const econData = await queryEconomicData(toolUse.input.indicator);
+            content = econData.values && econData.values.length
+              ? `${econData.indicator} (source: World Bank): ` + econData.values.map(v => `${v.year}: ${v.value}`).join(', ')
+              : (econData.note || 'No data available for that indicator.');
+          }
+
+          else if(toolUse.name === 'query_imf_data'){
+            const imfData = await queryImfData(toolUse.input.indicator);
+            content = imfData.values && imfData.values.length
+              ? `${imfData.indicator} (source: IMF World Economic Outlook): ` + imfData.values.map(v => `${v.year}: ${v.value}`).join(', ') + '. Note: recent and future years in IMF WEO data are often forecasts, not confirmed actuals — say so if relevant.'
+              : (imfData.note || 'No data available for that indicator.');
+          }
+
+          toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
+        }
+
         messages = messages.concat([
           { role: 'assistant', content: data.content },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
+          { role: 'user', content: toolResults },
         ]);
         continue;
       }
