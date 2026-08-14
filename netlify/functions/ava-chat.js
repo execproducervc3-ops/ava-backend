@@ -22,6 +22,7 @@ Rules:
 - Use web search for anything current or specific: prices, hours, events, news. Don't guess at facts that could be out of date.
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
 - For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
+- For customs/import duty questions: SVG's VAT is 15% standard, 10% reduced (e.g. hotel sector), 0% zero-rated (this includes most computer/electronics equipment) — this was reduced from 16% as part of 2026 tax reforms, so use 15%, not any older figure you may recall. There is also a separate Customs Service Charge (CSC) of a few percent applied to most imports, on top of duty and VAT. Never calculate or state an exact duty amount yourself — rates vary by specific HS tariff code and this changes over time. Instead, give this general context, then call get_deep_link with service_type "customs_general" for ordinary goods or "customs_vehicle" for vehicles specifically (vehicles also have a separate environmental tax based on engine size for vehicles over 4 years old) to hand them to SVG Customs' own official calculator for the exact figure.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
 - When someone wants to book or search flights, hotels, car rentals, or event tickets, call the get_deep_link tool to hand them to the real platform. Never claim you can book, pay, or hold a reservation yourself.
 - For civic/legal topics (like the UK ETA, immigration, or medical questions), give accurate general guidance but make clear where to go for anything requiring an official/formal step.
@@ -33,11 +34,11 @@ const TOOLS = [
   { type: 'web_search_20250305', name: 'web_search' },
   {
     name: 'get_deep_link',
-    description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, or finding event tickets. Use this instead of claiming you can book something yourself.',
+    description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, or calculating customs import duty. Use this instead of claiming you can book, calculate, or determine an official duty amount yourself.',
     input_schema: {
       type: 'object',
       properties: {
-        service_type: { type: 'string', enum: ['flights','hotels','cars','events'] },
+        service_type: { type: 'string', enum: ['flights','hotels','cars','events','customs_general','customs_vehicle'] },
         origin: { type: 'string', description: 'For flights: departure city/airport' },
         destination: { type: 'string', description: 'For flights: arrival city/airport, defaults to SVG' },
         date: { type: 'string', description: 'For flights: travel date if known' },
@@ -139,6 +140,12 @@ function buildDeepLink(service_type, params){
     const loc = encodeURIComponent(params.location || 'Saint Vincent and the Grenadines');
     const q = encodeURIComponent(params.query || '');
     return { url: `https://www.eventbrite.com/d/${loc}/${q}/`, name: 'Browse on Eventbrite', label: 'Events' };
+  }
+  if(service_type === 'customs_general'){
+    return { url: 'https://customs.gov.vc/general-calculator.php', name: 'Official SVG Customs Duty Calculator', label: 'Customs duty' };
+  }
+  if(service_type === 'customs_vehicle'){
+    return { url: 'https://customs.gov.vc/vehicle-calculator', name: 'Official SVG Vehicle Import Duty Calculator', label: 'Vehicle import duty' };
   }
   return null;
 }
