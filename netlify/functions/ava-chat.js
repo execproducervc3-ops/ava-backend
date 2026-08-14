@@ -60,6 +60,17 @@ const TOOLS = [
       },
       required: ['topic']
     }
+  },
+  {
+    name: 'query_economic_data',
+    description: "Look up real, current economic indicators for Saint Vincent and the Grenadines from the World Bank's public database — GDP, inflation, unemployment, population, remittances, tourism receipts. Use this for any question about SVG's economy or economic statistics rather than relying on training data, which may be outdated.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        indicator: { type: 'string', enum: ['gdp', 'gdp growth', 'inflation', 'unemployment', 'population', 'remittances', 'tourism'], description: 'Which economic indicator to look up' },
+      },
+      required: ['indicator']
+    }
   }
 ];
 
@@ -201,6 +212,49 @@ async function queryNewsDB(topic){
   }
 }
 
+const WB_COUNTRY_CODE = 'VCT'; // World Bank's ISO code for Saint Vincent and the Grenadines
+const WB_INDICATOR_MAP = {
+  'gdp': { code: 'NY.GDP.MKTP.CD', label: 'GDP (current US$)' },
+  'gdp growth': { code: 'NY.GDP.MKTP.KD.ZG', label: 'GDP growth (annual %)' },
+  'inflation': { code: 'FP.CPI.TOTL.ZG', label: 'Inflation, consumer prices (annual %)' },
+  'unemployment': { code: 'SL.UEM.TOTL.ZS', label: 'Unemployment (% of total labor force)' },
+  'population': { code: 'SP.POP.TOTL', label: 'Population, total' },
+  'remittances': { code: 'BX.TRF.PWKR.DT.GD.ZS', label: 'Personal remittances received (% of GDP)' },
+  'tourism': { code: 'ST.INT.RCPT.CD', label: 'International tourism receipts (current US$)' },
+};
+
+async function queryEconomicData(indicatorKey){
+  const key = (indicatorKey || '').trim().toLowerCase();
+  const info = WB_INDICATOR_MAP[key];
+  if(!info){
+    await logUnansweredQuery(`economic indicator: ${indicatorKey || '(empty)'}`, 'economic_data');
+    return { note: `Unknown indicator "${indicatorKey}". Available: ${Object.keys(WB_INDICATOR_MAP).join(', ')}` };
+  }
+  try{
+    const url = `https://api.worldbank.org/v2/country/${WB_COUNTRY_CODE}/indicator/${info.code}?format=json&mrv=5`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`World Bank API failed: ${res.status}`);
+    const data = await res.json();
+    // The World Bank API returns a 2-element array: [metadata, dataPoints].
+    // dataPoints can be null if nothing exists for this country/indicator pair —
+    // that's a real, expected case, not an error.
+    const points = (Array.isArray(data) && data[1]) ? data[1] : [];
+    const values = points
+      .filter(p => p.value !== null && p.value !== undefined)
+      .map(p => ({ year: p.date, value: p.value }))
+      .sort((a, b) => b.year - a.year);
+
+    if(!values.length){
+      await logUnansweredQuery(`economic indicator: ${key} (no data returned)`, 'economic_data');
+      return { indicator: info.label, values: [], note: 'No recent World Bank data available for this indicator.' };
+    }
+    return { indicator: info.label, values };
+  } catch(err){
+    console.error('queryEconomicData error:', err);
+    return { note: 'Could not reach the World Bank data source right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -248,7 +302,7 @@ exports.handler = async (event) => {
     while(loops < 4){
       loops++;
       const data = await callClaude(messages);
-      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news'));
+      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news' || b.name === 'query_economic_data'));
       const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       if(textBlocks) finalText += (finalText ? '\n\n' : '') + textBlocks;
 
@@ -284,6 +338,18 @@ exports.handler = async (event) => {
               return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
             }).join('; ')
           : (priceData.note || 'No results found in the database for that product.');
+        messages = messages.concat([
+          { role: 'assistant', content: data.content },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
+        ]);
+        continue;
+      }
+
+      if(toolUse && toolUse.name === 'query_economic_data'){
+        const econData = await queryEconomicData(toolUse.input.indicator);
+        const summary = econData.values && econData.values.length
+          ? `${econData.indicator} (source: World Bank): ` + econData.values.map(v => `${v.year}: ${v.value}`).join(', ')
+          : (econData.note || 'No data available for that indicator.');
         messages = messages.concat([
           { role: 'assistant', content: data.content },
           { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
