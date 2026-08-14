@@ -71,6 +71,17 @@ const TOOLS = [
       },
       required: ['indicator']
     }
+  },
+  {
+    name: 'query_imf_data',
+    description: "Look up IMF World Economic Outlook data for Saint Vincent and the Grenadines — GDP growth forecasts, inflation, government debt, current account balance, fiscal balance. Complements query_economic_data (World Bank) with IMF's own forward-looking forecasts and fiscal/government indicators World Bank doesn't cover. Note in your answer that recent/future years in this data are often IMF forecasts, not confirmed actuals.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        indicator: { type: 'string', enum: ['gdp growth', 'inflation', 'government debt', 'current account', 'fiscal balance'], description: 'Which IMF indicator to look up' },
+      },
+      required: ['indicator']
+    }
   }
 ];
 
@@ -255,6 +266,53 @@ async function queryEconomicData(indicatorKey){
   }
 }
 
+const IMF_COUNTRY_CODE = 'VCT'; // IMF's code for Saint Vincent and the Grenadines
+const IMF_INDICATOR_MAP = {
+  'gdp growth': { code: 'NGDP_RPCH', label: 'Real GDP growth (IMF World Economic Outlook, %)' },
+  'inflation': { code: 'PCPIPCH', label: 'Inflation, average consumer prices (IMF WEO, %)' },
+  'government debt': { code: 'GGXWDG_NGDP', label: 'General government gross debt (% of GDP)' },
+  'current account': { code: 'BCA_NGDPD', label: 'Current account balance (% of GDP)' },
+  'fiscal balance': { code: 'GGXCNL_NGDP', label: 'General government net lending/borrowing (% of GDP)' },
+};
+
+async function queryImfData(indicatorKey){
+  const key = (indicatorKey || '').trim().toLowerCase();
+  const info = IMF_INDICATOR_MAP[key];
+  if(!info){
+    await logUnansweredQuery(`IMF indicator: ${indicatorKey || '(empty)'}`, 'economic_data');
+    return { note: `Unknown IMF indicator "${indicatorKey}". Available: ${Object.keys(IMF_INDICATOR_MAP).join(', ')}` };
+  }
+  try{
+    const url = `https://www.imf.org/external/datamapper/api/v2/${info.code}/${IMF_COUNTRY_CODE}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`IMF API failed: ${res.status}`);
+    const data = await res.json();
+    // The country filter in the URL is unreliable in practice — the API can
+    // return every country regardless. Always extract VCT specifically from
+    // the full response rather than trusting the request to have filtered it.
+    const countryValues = (data && data.values && data.values[info.code]) ? data.values[info.code][IMF_COUNTRY_CODE] : null;
+    if(!countryValues){
+      await logUnansweredQuery(`IMF indicator: ${key} (no data returned)`, 'economic_data');
+      return { indicator: info.label, values: [], note: 'No IMF data available for this indicator.' };
+    }
+    const currentYear = new Date().getFullYear();
+    const values = Object.entries(countryValues)
+      .filter(([, val]) => val !== null && val !== undefined)
+      .map(([year, val]) => ({ year: parseInt(year, 10), value: val }))
+      .filter(v => v.year <= currentYear + 1) // exclude far-future speculative projections beyond next year
+      .sort((a, b) => b.year - a.year)
+      .slice(0, 6);
+    if(!values.length){
+      await logUnansweredQuery(`IMF indicator: ${key} (no data returned)`, 'economic_data');
+      return { indicator: info.label, values: [], note: 'No IMF data available for this indicator.' };
+    }
+    return { indicator: info.label, values };
+  } catch(err){
+    console.error('queryImfData error:', err);
+    return { note: 'Could not reach the IMF data source right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -302,7 +360,7 @@ exports.handler = async (event) => {
     while(loops < 4){
       loops++;
       const data = await callClaude(messages);
-      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news' || b.name === 'query_economic_data'));
+      const toolUse = (data.content || []).find(b => b.type === 'tool_use' && (b.name === 'get_deep_link' || b.name === 'query_retail_price' || b.name === 'query_news' || b.name === 'query_economic_data' || b.name === 'query_imf_data'));
       const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       if(textBlocks) finalText += (finalText ? '\n\n' : '') + textBlocks;
 
@@ -350,6 +408,18 @@ exports.handler = async (event) => {
         const summary = econData.values && econData.values.length
           ? `${econData.indicator} (source: World Bank): ` + econData.values.map(v => `${v.year}: ${v.value}`).join(', ')
           : (econData.note || 'No data available for that indicator.');
+        messages = messages.concat([
+          { role: 'assistant', content: data.content },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
+        ]);
+        continue;
+      }
+
+      if(toolUse && toolUse.name === 'query_imf_data'){
+        const imfData = await queryImfData(toolUse.input.indicator);
+        const summary = imfData.values && imfData.values.length
+          ? `${imfData.indicator} (source: IMF World Economic Outlook): ` + imfData.values.map(v => `${v.year}: ${v.value}`).join(', ') + '. Note: recent and future years in IMF WEO data are often forecasts, not confirmed actuals — say so if relevant.'
+          : (imfData.note || 'No data available for that indicator.');
         messages = messages.concat([
           { role: 'assistant', content: data.content },
           { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: summary }] },
