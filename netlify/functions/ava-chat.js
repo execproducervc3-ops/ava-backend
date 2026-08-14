@@ -8,16 +8,26 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const SYSTEM_PROMPT = `You are AVA — "Ask Vincy Anything" — a warm, knowledgeable local concierge for daily life, tourism, and travel in Saint Vincent and the Grenadines (SVG). You are talking to residents, diaspora, and visitors.
+function buildSystemPrompt(){
+  const now = new Date();
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const todayName = dayNames[now.getUTCDay()];
+  const todayISO = now.toISOString().slice(0, 10);
+
+  return `You are AVA — "Ask Vincy Anything" — a warm, knowledgeable local concierge for daily life, tourism, and travel in Saint Vincent and the Grenadines (SVG). You are talking to residents, diaspora, and visitors.
+
+Today's date is ${todayISO} (${todayName}). Use this to resolve relative date references like "tomorrow" or "this Saturday" into the correct day of the week before calling any tool that needs one.
 
 Rules:
-- Use web search for anything current or specific: schedules, prices, hours, events, news. Don't guess at facts that could be out of date.
+- Use web search for anything current or specific: prices, hours, events, news. Don't guess at facts that could be out of date.
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
+- For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
 - When someone wants to book or search flights, hotels, car rentals, or event tickets, call the get_deep_link tool to hand them to the real platform. Never claim you can book, pay, or hold a reservation yourself.
 - For civic/legal topics (like the UK ETA, immigration, or medical questions), give accurate general guidance but make clear where to go for anything requiring an official/formal step.
 - If you don't have enough information after searching, say so plainly rather than guessing.
 - Keep answers to a few short paragraphs unless the question genuinely needs more.`;
+}
 
 const TOOLS = [
   { type: 'web_search_20250305', name: 'web_search' },
@@ -81,6 +91,18 @@ const TOOLS = [
         indicator: { type: 'string', enum: ['gdp growth', 'inflation', 'government debt', 'current account', 'fiscal balance'], description: 'Which IMF indicator to look up' },
       },
       required: ['indicator']
+    }
+  },
+  {
+    name: 'query_ferry_schedule',
+    description: "Look up real ferry sailing times between Kingstown, St. Vincent and a Grenadine island. Coverage is limited to routes AVA has confirmed — if nothing comes back, say so honestly rather than guessing at a time, since giving a wrong ferry time could genuinely strand someone.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        destination: { type: 'string', description: 'Destination island, e.g. "Bequia", "Canouan", "Union Island"' },
+        day_of_week: { type: 'integer', description: 'Day to check: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday. Compute this from the current date given in the system prompt and the relative term the person used.' },
+      },
+      required: ['destination', 'day_of_week']
     }
   }
 ];
@@ -315,6 +337,55 @@ async function queryImfData(indicatorKey){
   }
 }
 
+// Real, verified operator contact info — used only as a fallback when a
+// destination has no confirmed schedule in the database yet, so "we don't
+// know" still leaves the person somewhere useful to go, not a dead end.
+const FERRY_OPERATOR_CONTACTS = 'Bequia Express (bequiaexpress.com), Admiral Ferries ((784) 458-3348, WhatsApp (784) 534-7707), Jaden Sun Fast Ferry (jadensunferry.com, (784) 451-2192)';
+
+async function queryFerrySchedule(destination, dayOfWeek){
+  const dest = (destination || '').trim();
+  if(!dest) return { results: [], note: 'No destination given.' };
+  try{
+    const { data: routes, error: routeErr } = await supabase
+      .from('ferry_routes')
+      .select('id, operator_name, origin_port, destination_port')
+      .eq('active', true)
+      .ilike('destination_port', `%${dest}%`);
+    if(routeErr) throw routeErr;
+    if(!routes || !routes.length){
+      await logUnansweredQuery(`ferry schedule: ${dest}`, 'ferry_schedule');
+      return { results: [], note: `No confirmed ferry schedule for ${dest} in AVA's database yet. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
+    }
+
+    const routeIds = routes.map(r => r.id);
+    const { data: schedules, error: schedErr } = await supabase
+      .from('ferry_schedules')
+      .select('route_id, departure_time, fare_economy, last_verified_at')
+      .in('route_id', routeIds)
+      .eq('day_of_week', dayOfWeek)
+      .order('departure_time', { ascending: true });
+    if(schedErr) throw schedErr;
+    if(!schedules || !schedules.length){
+      await logUnansweredQuery(`ferry schedule: ${dest} on day_of_week ${dayOfWeek}`, 'ferry_schedule');
+      return { results: [], note: `No sailings found for ${dest} on that day in AVA's database. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
+    }
+
+    const routeMap = Object.fromEntries(routes.map(r => [r.id, r]));
+    const results = schedules.map(s => ({
+      operator: routeMap[s.route_id].operator_name,
+      origin: routeMap[s.route_id].origin_port,
+      destination: routeMap[s.route_id].destination_port,
+      departure_time: s.departure_time,
+      fare_economy: s.fare_economy,
+      last_verified_at: s.last_verified_at,
+    }));
+    return { results };
+  } catch(err){
+    console.error('queryFerrySchedule error:', err);
+    return { results: [], note: 'Could not reach the ferry schedule database right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -326,7 +397,7 @@ async function callClaude(messages){
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 1000,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(),
       messages,
       tools: TOOLS,
     }),
@@ -357,8 +428,9 @@ exports.handler = async (event) => {
     let linkCard = null;
     let retailResults = null;
     let newsResults = null;
+    let ferryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule'];
 
     while(loops < 4){
       loops++;
@@ -414,6 +486,14 @@ exports.handler = async (event) => {
               : (imfData.note || 'No data available for that indicator.');
           }
 
+          else if(toolUse.name === 'query_ferry_schedule'){
+            const ferryData = await queryFerrySchedule(toolUse.input.destination, toolUse.input.day_of_week);
+            if(ferryData.results && ferryData.results.length) ferryResults = ferryData.results;
+            content = ferryData.results && ferryData.results.length
+              ? `Sailings found: ` + ferryData.results.map(s => `${s.operator}: ${s.origin} → ${s.destination} at ${s.departure_time}${s.fare_economy ? `, $${s.fare_economy} EC` : ''}`).join('; ') + '. Remind the person schedules can change — worth confirming directly before travel.'
+              : (ferryData.note || 'No ferry data available for that route.');
+          }
+
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         }
 
@@ -433,7 +513,7 @@ exports.handler = async (event) => {
     }
 
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
