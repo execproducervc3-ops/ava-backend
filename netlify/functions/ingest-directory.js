@@ -17,6 +17,28 @@ const SEARCH_QUERIES = [
 
 const FIELD_MASK = 'places.id,places.displayName,places.formattedAddress,places.internationalPhoneNumber,places.nationalPhoneNumber,places.location,places.businessStatus';
 
+// Google's Text Search returns nearby regional results, not just exact matches
+// for the searched island — e.g. searching "Union Island" can return real
+// businesses on Mayreau or Canouan too. Detect the real island from the
+// address text itself rather than trusting which island we searched for.
+// Order matters: check multi-word/more specific names before shorter ones.
+const KNOWN_ISLANDS = [
+  'Union Island', 'Petit St Vincent', 'Petit Saint Vincent', 'Palm Island',
+  'Mayreau', 'Canouan', 'Mustique', 'Bequia',
+  'Kingstown', 'Saint Vincent',
+];
+
+function detectIslandFromAddress(address, fallback){
+  if(!address) return fallback;
+  for(const island of KNOWN_ISLANDS){
+    if(address.toLowerCase().includes(island.toLowerCase())){
+      // Normalize Kingstown mentions to the island name, not the city name
+      return island === 'Kingstown' ? 'Saint Vincent' : island;
+    }
+  }
+  return fallback;
+}
+
 async function searchPlaces(textQuery){
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
@@ -63,7 +85,7 @@ async function processQuery(searchDef){
         category: searchDef.category,
         name,
         address: place.formattedAddress || null,
-        island: searchDef.island,
+        island: detectIslandFromAddress(place.formattedAddress, searchDef.island),
         lat: place.location ? place.location.latitude : null,
         lng: place.location ? place.location.longitude : null,
         phone: place.internationalPhoneNumber || place.nationalPhoneNumber || null,
