@@ -108,6 +108,17 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_reference_knowledge',
+    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, or economy. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — for anything current or detailed, supplement with web search.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy'], description: 'Which reference category to look up' },
+      },
+      required: ['category']
+    }
+  },
+  {
     name: 'query_scholarships',
     description: "Look up regional scholarships, funding, and grant opportunities for Vincentians that AVA tracks — Commonwealth, Chevening, Taiwan, CDB, and SVG National Scholarships. This is a fixed, individually-verified list, not an exhaustive search — if it comes back empty or the person asks about something not on this list, say so honestly and suggest a web search for that specific program.",
     input_schema: {
@@ -596,6 +607,25 @@ async function queryScholarships(){
   }
 }
 
+async function queryReferenceKnowledge(category){
+  try{
+    const { data, error } = await supabase
+      .from('reference_knowledge')
+      .select('title, summary, source_url, last_verified_at')
+      .eq('category', category)
+      .eq('active', true)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data){
+      return { note: `No reference content for "${category}" yet.` };
+    }
+    return { result: data };
+  } catch(err){
+    console.error('queryReferenceKnowledge error:', err);
+    return { note: 'Could not reach the reference knowledge database right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -642,7 +672,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge'];
 
     while(loops < 4){
       loops++;
@@ -749,6 +779,13 @@ exports.handler = async (event) => {
                   return `"${s.name}" (${s.provider || 'provider unknown'}): ${s.description || ''} Eligibility: ${s.eligibility || 'not specified'}. Deadline: ${s.deadline || 'not specified'}. Apply: ${s.apply_url || 'see source'}. [Last verified ${verified} — mention this date and suggest confirming directly before applying, since deadlines can change]`;
                 }).join('\n\n')
               : (scholarshipData.note || 'No scholarship data available.');
+          }
+
+          else if(toolUse.name === 'query_reference_knowledge'){
+            const refData = await queryReferenceKnowledge(toolUse.input.category);
+            content = refData.result
+              ? `${refData.result.title}: ${refData.result.summary} [Source: ${refData.result.source_url || 'unknown'}, last verified ${refData.result.last_verified_at ? new Date(refData.result.last_verified_at).toDateString() : 'unknown'}]`
+              : (refData.note || 'No reference content available.');
           }
 
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
