@@ -108,6 +108,14 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_scholarships',
+    description: "Look up regional scholarships, funding, and grant opportunities for Vincentians that AVA tracks — Commonwealth, Chevening, Taiwan, CDB, and SVG National Scholarships. This is a fixed, individually-verified list, not an exhaustive search — if it comes back empty or the person asks about something not on this list, say so honestly and suggest a web search for that specific program.",
+    input_schema: {
+      type: 'object',
+      properties: {},
+    }
+  },
+  {
     name: 'query_health_data',
     description: "Look up real public health indicators for Saint Vincent and the Grenadines from the World Health Organization's Global Health Observatory. Use this for questions about life expectancy or other health statistics rather than relying on training data, which may be outdated.",
     input_schema: {
@@ -570,6 +578,24 @@ async function queryHealthData(indicatorKey){
   }
 }
 
+async function queryScholarships(){
+  try{
+    const { data, error } = await supabase
+      .from('scholarships')
+      .select('name, provider, description, eligibility, deadline, apply_url, source_url, last_verified_at')
+      .eq('active', true)
+      .order('name', { ascending: true });
+    if(error) throw error;
+    if(!data || !data.length){
+      return { results: [], note: 'No scholarship data available yet.' };
+    }
+    return { results: data };
+  } catch(err){
+    console.error('queryScholarships error:', err);
+    return { results: [], note: 'Could not reach the scholarships database right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -616,7 +642,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships'];
 
     while(loops < 4){
       loops++;
@@ -713,6 +739,16 @@ exports.handler = async (event) => {
             content = healthData.values && healthData.values.length
               ? `${healthData.indicator} (source: WHO Global Health Observatory): ` + healthData.values.map(v => `${v.year}: ${v.value}`).join(', ')
               : (healthData.note || 'No data available for that indicator.');
+          }
+
+          else if(toolUse.name === 'query_scholarships'){
+            const scholarshipData = await queryScholarships();
+            content = scholarshipData.results && scholarshipData.results.length
+              ? scholarshipData.results.map(s => {
+                  const verified = s.last_verified_at ? new Date(s.last_verified_at).toDateString() : 'unknown date';
+                  return `"${s.name}" (${s.provider || 'provider unknown'}): ${s.description || ''} Eligibility: ${s.eligibility || 'not specified'}. Deadline: ${s.deadline || 'not specified'}. Apply: ${s.apply_url || 'see source'}. [Last verified ${verified} — mention this date and suggest confirming directly before applying, since deadlines can change]`;
+                }).join('\n\n')
+              : (scholarshipData.note || 'No scholarship data available.');
           }
 
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
