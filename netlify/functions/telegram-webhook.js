@@ -104,7 +104,16 @@ exports.handler = async (event) => {
       return ok();
     }
 
-    await sendMessage(chatId, 'Send /start to begin, or a photo of a price tag, shelf, or flyer to add a listing.');
+    // --- bulk stock list upload: for a retailer's full catalog, not a single photo ---
+    if (message.document && /\.xlsx?$/i.test(message.document.file_name || '')) {
+      if (!profile) {
+        await supabase.from('retailer_profile').insert({ telegram_user_id: fromId });
+      }
+      await handleXlsSubmission(message, fromId, chatId);
+      return ok();
+    }
+
+    await sendMessage(chatId, 'Send /start to begin, a photo of a price tag/shelf/flyer to add a listing, or an .xlsx file with your full stock list (columns: item, price, unit).');
     return ok();
   } catch (err) {
     console.error('telegram-webhook error:', err);
@@ -226,6 +235,85 @@ async function handlePhotoSubmission(message, fromId, chatId) {
   await sendMessage(chatId, `Got it:\n${preview}${missingNote}${tagsNote}\n\nReply YES to confirm and publish, or just send another photo/message to correct it.`);
 }
 
+async function handleXlsSubmission(message, fromId, chatId) {
+  const { base64 } = await getTelegramFileBase64(message.document.file_id);
+  const caption = message.caption || '';
+  const tags = extractHashtags(caption);
+
+  let workbook;
+  try {
+    const XLSX = require('xlsx');
+    const buf = Buffer.from(base64, 'base64');
+    workbook = XLSX.read(buf, { type: 'buffer' });
+  } catch (e) {
+    console.error('XLSX parse error:', e);
+    await sendMessage(chatId, "I couldn't read that file — make sure it's a real .xlsx spreadsheet.");
+    return;
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const XLSX = require('xlsx');
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+  if (!rows.length) {
+    await sendMessage(chatId, "That file didn't have any rows I could read. Expected columns: item, price, and optionally unit.");
+    return;
+  }
+
+  // Tolerant of common header variations — retailers won't all use the exact same template.
+  const NAME_KEYS = ['item', 'item_name', 'name', 'product'];
+  const PRICE_KEYS = ['price', 'cost', 'amount'];
+  const UNIT_KEYS = ['unit', 'units', 'size'];
+
+  function findKey(row, candidates) {
+    const rowKeys = Object.keys(row);
+    for (const cand of candidates) {
+      const match = rowKeys.find(k => k.trim().toLowerCase() === cand);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  const validItems = [];
+  let skippedCount = 0;
+  const skippedReasons = new Set();
+
+  for (const row of rows) {
+    const nameKey = findKey(row, NAME_KEYS);
+    const priceKey = findKey(row, PRICE_KEYS);
+    const unitKey = findKey(row, UNIT_KEYS);
+
+    const name = nameKey ? String(row[nameKey]).trim() : '';
+    const rawPrice = priceKey ? row[priceKey] : null;
+    const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+
+    if (!name) { skippedCount++; skippedReasons.add('missing item name'); continue; }
+    if (!isFinite(price) || price <= 0) { skippedCount++; skippedReasons.add('missing or invalid price'); continue; }
+
+    validItems.push({ name, price, unit: unitKey ? String(row[unitKey]).trim() : null });
+  }
+
+  if (!validItems.length) {
+    await sendMessage(chatId, `I couldn't find any usable rows (${skippedCount} skipped: ${[...skippedReasons].join(', ')}). Expected columns: item, price, and optionally unit.`);
+    return;
+  }
+
+  await supabase.from('submission_draft').insert({
+    retailer_telegram_id: fromId,
+    items: validItems,
+    missing_fields: [],
+    status: 'pending',
+    photo_url: null,
+    tags,
+    source_type: 'xls_bulk',
+  });
+
+  const sample = validItems.slice(0, 5).map(i => `• ${i.name} — $${i.price}${i.unit ? ' / ' + i.unit : ''}`).join('\n');
+  const moreNote = validItems.length > 5 ? `\n...and ${validItems.length - 5} more` : '';
+  const skippedNote = skippedCount ? `\n\n${skippedCount} row(s) skipped (${[...skippedReasons].join(', ')})` : '';
+  await sendMessage(chatId, `Found ${validItems.length} item${validItems.length === 1 ? '' : 's'}:\n${sample}${moreNote}${skippedNote}\n\nReply YES to publish all ${validItems.length}, or send a corrected file.`);
+}
+
 async function confirmLatestDraft(fromId, chatId) {
   const { data: draft } = await supabase.from('submission_draft')
     .select('*')
@@ -256,28 +344,44 @@ async function confirmLatestDraft(fromId, chatId) {
     await supabase.from('retailer_profile').update({ directory_listing_id: listingId }).eq('telegram_user_id', fromId);
   }
 
-  for (const item of draft.items) {
-    let canonicalId = null;
-    const { data: existing } = await supabase.from('canonical_products').select('id').ilike('name', item.name).maybeSingle();
-    if (existing) {
-      canonicalId = existing.id;
-    } else {
-      const { data: created } = await supabase.from('canonical_products')
-        .insert({ name: item.name, standard_unit: item.unit || 'each' }).select().single();
-      canonicalId = created.id;
+  // Bulk operations instead of N sequential round-trips per item — a photo
+  // submission has a handful of items, but a stock-list XLS upload can have
+  // hundreds, and the old per-item loop risked a function timeout at exactly
+  // the scale this feature is meant for.
+  const items = draft.items;
+
+  const { data: allCanonical } = await supabase.from('canonical_products').select('id, name');
+  const canonicalMap = new Map((allCanonical || []).map(p => [p.name.toLowerCase(), p.id]));
+
+  // Dedupe new products both against what already exists AND within this
+  // batch itself (two rows in the same stock list can share a name).
+  const newProducts = new Map();
+  for (const item of items) {
+    const key = item.name.toLowerCase();
+    if (!canonicalMap.has(key) && !newProducts.has(key)) {
+      newProducts.set(key, item);
     }
-    await supabase.from('retail_offers').insert({
-      listing_id: listingId,
-      canonical_product_id: canonicalId,
-      item_name: item.name,
-      price: item.price,
-      unit: item.unit,
-      source_type: 'caption',
-      source_submission_id: draft.id,
-      photo_url: draft.photo_url,
-      tags: draft.tags || [],
-    });
   }
+
+  if (newProducts.size) {
+    const { data: created } = await supabase.from('canonical_products')
+      .insert([...newProducts.values()].map(item => ({ name: item.name, standard_unit: item.unit || 'each' })))
+      .select();
+    for (const c of (created || [])) canonicalMap.set(c.name.toLowerCase(), c.id);
+  }
+
+  const offersToInsert = items.map(item => ({
+    listing_id: listingId,
+    canonical_product_id: canonicalMap.get(item.name.toLowerCase()) || null,
+    item_name: item.name,
+    price: item.price,
+    unit: item.unit,
+    source_type: draft.source_type || 'caption',
+    source_submission_id: draft.id,
+    photo_url: draft.photo_url,
+    tags: draft.tags || [],
+  }));
+  await supabase.from('retail_offers').insert(offersToInsert);
 
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
   await sendMessage(chatId, `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`);
