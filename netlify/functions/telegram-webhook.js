@@ -251,9 +251,13 @@ async function handleXlsSubmission(message, fromId, chatId) {
     return;
   }
 
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const XLSX = require('xlsx');
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  let rows = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    sheetRows.forEach(r => { r.__sheet = sheetName; });
+    rows = rows.concat(sheetRows);
+  }
 
   if (!rows.length) {
     await sendMessage(chatId, "That file didn't have any rows I could read. Expected columns: item, price, and optionally unit.");
@@ -277,8 +281,13 @@ async function handleXlsSubmission(message, fromId, chatId) {
   const validItems = [];
   let skippedCount = 0;
   const skippedReasons = new Set();
+  const sheetCounts = new Map(); // sheetName -> { valid, skipped }
 
   for (const row of rows) {
+    const sheetName = row.__sheet || 'Sheet1';
+    if (!sheetCounts.has(sheetName)) sheetCounts.set(sheetName, { valid: 0, skipped: 0 });
+    const counts = sheetCounts.get(sheetName);
+
     const nameKey = findKey(row, NAME_KEYS);
     const priceKey = findKey(row, PRICE_KEYS);
     const unitKey = findKey(row, UNIT_KEYS);
@@ -289,14 +298,15 @@ async function handleXlsSubmission(message, fromId, chatId) {
     const isRange = /\d\s*-\s*\d/.test(priceStr) || /\d+\s*to\s*\d+/i.test(priceStr);
     const price = isRange ? NaN : (typeof rawPrice === 'number' ? rawPrice : parseFloat(priceStr.replace(/[^0-9.]/g, '')));
 
-    if (!name) { skippedCount++; skippedReasons.add('missing item name'); continue; }
+    if (!name) { skippedCount++; counts.skipped++; skippedReasons.add('missing item name'); continue; }
     if (!isFinite(price) || price <= 0) {
-      skippedCount++;
+      skippedCount++; counts.skipped++;
       skippedReasons.add(isRange ? 'price range not supported — use a single price' : 'missing or invalid price');
       continue;
     }
 
     validItems.push({ name, price, unit: unitKey ? String(row[unitKey]).trim() : null });
+    counts.valid++;
   }
 
   if (!validItems.length) {
@@ -317,7 +327,11 @@ async function handleXlsSubmission(message, fromId, chatId) {
   const sample = validItems.slice(0, 5).map(i => `• ${i.name} — $${i.price}${i.unit ? ' / ' + i.unit : ''}`).join('\n');
   const moreNote = validItems.length > 5 ? `\n...and ${validItems.length - 5} more` : '';
   const skippedNote = skippedCount ? `\n\n${skippedCount} row(s) skipped (${[...skippedReasons].join(', ')})` : '';
-  await sendMessage(chatId, `Found ${validItems.length} item${validItems.length === 1 ? '' : 's'}:\n${sample}${moreNote}${skippedNote}\n\nReply YES to publish all ${validItems.length}, or send a corrected file.`);
+  const sheetsWithData = [...sheetCounts.entries()].filter(([, c]) => c.valid > 0);
+  const sheetBreakdown = sheetsWithData.length > 1
+    ? '\n\nBy sheet:\n' + sheetsWithData.map(([name, c]) => `• ${name}: ${c.valid} item${c.valid === 1 ? '' : 's'}`).join('\n')
+    : '';
+  await sendMessage(chatId, `Found ${validItems.length} item${validItems.length === 1 ? '' : 's'}${sheetsWithData.length > 1 ? ` across ${sheetsWithData.length} sheets` : ''}:\n${sample}${moreNote}${sheetBreakdown}${skippedNote}\n\nReply YES to publish all ${validItems.length}, or send a corrected file.`);
 }
 
 async function confirmLatestDraft(fromId, chatId) {
