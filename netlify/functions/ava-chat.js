@@ -36,7 +36,8 @@ Rules:
 }
 
 const TOOLS = [
-  { type: 'web_search_20250305', name: 'web_search' },
+  { type: 'web_search_20260209', name: 'web_search' },
+  { type: 'code_execution_20260120', name: 'code_execution' },
   {
     name: 'get_deep_link',
     description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, calculating customs import duty, or checking voter registration. Use this instead of claiming you can book, calculate, or look something up yourself.',
