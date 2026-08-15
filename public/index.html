@@ -103,9 +103,11 @@
   .msg{display:flex;gap:10px;max-width:100%;}
   .msg.user{justify-content:flex-end;}
   .msg .avatar{width:30px;height:30px;border-radius:50%;background:var(--teal-soft);flex:0 0 auto;object-fit:contain;padding:3px;}
-  .bubble{padding:11px 15px;border-radius:16px;font-size:14px;line-height:1.55;max-width:78%;}
+  .bubble{padding:11px 15px;border-radius:16px;font-size:14px;line-height:1.55;max-width:78%;overflow-wrap:break-word;word-break:break-word;}
   .msg.ava .bubble{background:var(--card);border:1px solid var(--line);border-top-left-radius:4px;box-shadow:var(--shadow);}
   .msg.user .bubble{background:var(--teal);color:#fff;border-top-right-radius:4px;}
+  .inlinelink{color:var(--teal);font-weight:600;text-decoration:underline;}
+  .msg.user .inlinelink{color:#fff;}
   .bubble p{margin:0 0 8px;}
   .bubble p:last-child{margin-bottom:0;}
 
@@ -324,10 +326,28 @@ let history = []; // {role, content: string}
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 function renderMarkdownish(text){
-  // light formatting: paragraphs + bold, no external lib needed
-  const esc = escapeHtml(text);
+  // Extract markdown links [label](url) into placeholder tokens BEFORE escaping,
+  // so URL characters (like & in query strings) aren't corrupted, and so the
+  // brackets/parens don't get caught up in general escaping either.
+  const links = [];
+  const withPlaceholders = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, url) => {
+    const token = `\u0000LINK${links.length}\u0000`;
+    links.push({ label, url });
+    return token;
+  });
+
+  const esc = escapeHtml(withPlaceholders);
   const withBold = esc.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  return withBold.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+  let html = withBold.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+
+  // Substitute real, safely-escaped anchor tags back in for each placeholder
+  links.forEach((link, i) => {
+    const token = `\u0000LINK${i}\u0000`;
+    const anchor = `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" class="inlinelink">${escapeHtml(link.label)}</a>`;
+    html = html.split(token).join(anchor);
+  });
+
+  return html;
 }
 
 function appendMessage(role, text, linkCard, retailResults, newsResults, ferryResults, luckyNumbers, directoryResults){
