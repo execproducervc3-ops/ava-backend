@@ -153,7 +153,7 @@ const TOOLS = [
   },
   {
     name: 'query_fuel_context',
-    description: "Look up the real recent trend in US Gulf Coast diesel prices — the exact benchmark VINLEC has publicly stated it tracks weekly for its fuel surcharge calculation — plus the real regulatory facts about how the surcharge works. Use this for questions about fuel prices, VINLEC's fuel surcharge, or electricity cost outlook. This tool reports what has actually happened, not a forecast — never state or imply a prediction of future prices or surcharges from this data.",
+    description: "Look up the most recently announced VINLEC fuel surcharge rate from AVA's news database, plus the real regulatory facts about how the surcharge works. Use this for questions about VINLEC's fuel surcharge or electricity cost outlook. This tool reports what has actually happened, not a forecast — never state or imply a prediction of future surcharges from this data.",
     input_schema: { type: 'object', properties: {} }
   },
   {
@@ -638,48 +638,24 @@ async function queryHealthData(indicatorKey){
 
 async function queryFuelContext(){
   try{
-    const { data, error } = await supabase
-      .from('fuel_price_data')
-      .select('observation_date, diesel_price_usd_gal')
-      .order('observation_date', { ascending: false })
-      .limit(16);
-    if(error) throw error;
-    if(!data || !data.length){
-      return { note: 'No diesel price trend data available yet.' };
-    }
-
-    const latest = data[0];
-    const fourWeeksAgo = data[4] || null; // ~1 month back, since this is a weekly series
-    const changeStr = (from) => {
-      if(!from) return null;
-      const pct = ((latest.diesel_price_usd_gal - from.diesel_price_usd_gal) / from.diesel_price_usd_gal * 100);
-      return `${pct >= 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% since ${from.observation_date}`;
-    };
-
-    // Pull the most recent real news coverage of VINLEC's actual announced
-    // surcharge rate — reuses the existing news pipeline rather than a new
-    // one. This is what actually shows up on someone's bill, which the raw
-    // diesel trend alone never states.
-    let recentSurchargeNews = null;
-    const { data: newsRows } = await supabase
+    // Reuses the existing, already-proven news pipeline — no separate diesel
+    // price tracking, no new API, no new scheduled job to keep alive.
+    const { data: newsRows, error } = await supabase
       .from('knowledge_articles')
       .select('topic, body, source_url, published_at')
       .eq('review_status', 'published')
       .or('topic.ilike.%surcharge%,body.ilike.%surcharge%')
       .order('published_at', { ascending: false })
       .limit(1);
-    if(newsRows && newsRows.length) recentSurchargeNews = newsRows[0];
+    if(error) throw error;
 
-    return {
-      latest_price_usd_gal: latest.diesel_price_usd_gal,
-      latest_date: latest.observation_date,
-      month_over_month: changeStr(fourWeeksAgo),
-      recent_history: data.slice(0, 8).map(d => ({ date: d.observation_date, price: d.diesel_price_usd_gal })),
-      recent_surcharge_news: recentSurchargeNews,
-    };
+    if(!newsRows || !newsRows.length){
+      return { note: "No recent VINLEC surcharge news found in AVA's news database yet — be upfront that there's no recently confirmed rate available, rather than guessing." };
+    }
+    return { recent_surcharge_news: newsRows[0] };
   } catch(err){
     console.error('queryFuelContext error:', err);
-    return { note: 'Could not reach the fuel price data source right now.' };
+    return { note: 'Could not reach the news database right now.' };
   }
 }
 
@@ -933,17 +909,13 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_fuel_context'){
             const fuelData = await queryFuelContext();
-            const newsSection = fuelData.recent_surcharge_news
-              ? `\n\nMost recent actual VINLEC surcharge news from AVA's news database: "${fuelData.recent_surcharge_news.topic}" (${new Date(fuelData.recent_surcharge_news.published_at).toDateString()}) — ${fuelData.recent_surcharge_news.body} [source: ${fuelData.recent_surcharge_news.source_url}]. This is the most recent real, announced rate — use it, don't just describe the diesel trend in the abstract.`
-              : '\n\nNo recent VINLEC surcharge announcement found in AVA\'s news database — be upfront that you have the underlying diesel trend but not a recently confirmed current rate.';
-            content = fuelData.latest_price_usd_gal !== undefined
-              ? `US Gulf Coast diesel price (source: EIA/FRED, series WDFUELUSGULF — this is the exact weekly benchmark VINLEC's own CEO has stated they track for the fuel surcharge calculation): $${fuelData.latest_price_usd_gal}/gallon as of ${fuelData.latest_date}${fuelData.month_over_month ? `, ${fuelData.month_over_month} over the past ~month` : ''}. Recent weekly history: ${fuelData.recent_history.map(h => `${h.date}: $${h.price}`).join(', ')}.
-${newsSection}
+            content = fuelData.recent_surcharge_news
+              ? `Most recent actual VINLEC surcharge announcement from AVA's news database: "${fuelData.recent_surcharge_news.topic}" (${new Date(fuelData.recent_surcharge_news.published_at).toDateString()}) — ${fuelData.recent_surcharge_news.body} [source: ${fuelData.recent_surcharge_news.source_url}].
 
 Real regulatory context: VINLEC's fuel surcharge is not arbitrary — it is governed by the Electricity Supply Act, with two separate internal VINLEC sections vetting the calculation. The government has set relief thresholds: if the surcharge exceeds EC$0.71/kWh, VINLEC must provide a 50% matching discount; above EC$0.77/kWh, a full 100% match applies.
 
-IMPORTANT — how to use this: report the trend and the most recent announced rate as facts about the past only. Do NOT predict, forecast, or imply what the surcharge or fuel prices will do next. Even VINLEC's own CEO has publicly said he "cannot offer a guarantee due to the volatility of global markets" and can only be "hopeful." If asked for an outlook, explain the real trend, the real most-recent rate, and the real mechanism, and be explicit that you can't responsibly predict direction — that would require guessing at a genuinely volatile global market that professionals themselves won't forecast confidently.`
-              : (fuelData.note || 'No fuel price data available.');
+IMPORTANT — how to use this: report the most recently announced rate as a fact about the past only. Do NOT predict, forecast, or imply what the surcharge will do next. Even VINLEC's own CEO has publicly said he "cannot offer a guarantee due to the volatility of global markets" and can only be "hopeful." If asked for an outlook, share the real most-recent rate and the real mechanism, and be explicit that you can't responsibly predict direction — that would require guessing at a genuinely volatile global market that professionals themselves won't forecast confidently.`
+              : (fuelData.note || 'No fuel surcharge data available.');
           }
 
           else if(toolUse.name === 'query_scholarships'){
