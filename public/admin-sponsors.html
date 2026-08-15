@@ -103,8 +103,13 @@
 </div>
 
 <div id="adminPanel" class="wrap" style="display:none;">
-  <h1>AVA Admin</h1>
-  <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+      <h1>AVA Admin</h1>
+      <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
+    </div>
+    <button id="logoutBtn" class="btn-secondary" style="flex:0 0 auto;">Log out</button>
+  </div>
 
   <div class="panel">
     <h2>Add a sponsor</h2>
@@ -261,6 +266,16 @@ document.getElementById('changePwBtn').addEventListener('click', async () => {
   document.getElementById('newPwInput').value = '';
   successEl.style.display = 'block';
 });
+
+function logout(){
+  secret = '';
+  sessionStorage.removeItem('ava_admin_secret');
+  document.getElementById('adminPanel').style.display = 'none';
+  document.getElementById('authGate').style.display = 'block';
+  document.getElementById('secretInput').value = '';
+  showScreen('loginScreen');
+}
+document.getElementById('logoutBtn').addEventListener('click', logout);
 
 initAuth();
 
