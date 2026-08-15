@@ -250,6 +250,7 @@ async function queryRetailPriceDB(productName){
       .from('retail_offers')
       .select('item_name, price, unit, standard_unit_type, price_per_standard_unit, photo_url, listing_id, created_at')
       .in('canonical_product_id', productIds)
+      .in('review_status', ['auto_published', 'approved'])
       .order('price_per_standard_unit', { ascending: true, nullsFirst: false })
       .order('price', { ascending: true });
     if(offerErr) throw offerErr;

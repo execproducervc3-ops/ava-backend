@@ -359,6 +359,47 @@ async function handleXlsSubmission(message, fromId, chatId) {
   await sendMessage(chatId, `Found ${validItems.length} item${validItems.length === 1 ? '' : 's'}${sheetsWithData.length > 1 ? ` across ${sheetsWithData.length} sheets` : ''}:\n${sample}${moreNote}${sheetBreakdown}${skippedNote}\n\nReply YES to publish all ${validItems.length}, or send a corrected file.`);
 }
 
+// Flags a submission for manual review only when there's a real signal —
+// Claude's own extraction uncertainty ignored at confirmation, or a price
+// that's a wild outlier vs. other retailers or vs. this retailer's own
+// history for the same product. Most submissions never trip any of this.
+function detectFlagReason(item, listingId, existingOffersForProduct, hasMissingFields){
+  if(hasMissingFields) return "Claude flagged uncertainty reading part of this submission, and the retailer confirmed anyway";
+
+  const normalized = computeNormalization(item.price, item.unit);
+  const thisIsNormalized = normalized.price_per_standard_unit !== null;
+  const thisValue = thisIsNormalized ? normalized.price_per_standard_unit : item.price;
+
+  const otherRetailerOffers = (existingOffersForProduct || []).filter(o => o.listing_id !== listingId);
+  const sameRetailerOffers = (existingOffersForProduct || []).filter(o => o.listing_id === listingId);
+
+  if(otherRetailerOffers.length){
+    const comparableValues = otherRetailerOffers
+      .map(o => (thisIsNormalized && o.price_per_standard_unit) ? o.price_per_standard_unit : o.price)
+      .filter(v => v !== null && v !== undefined && v > 0);
+    if(comparableValues.length){
+      const avg = comparableValues.reduce((a, b) => a + b, 0) / comparableValues.length;
+      if(thisValue > avg * 3 || thisValue < avg / 3){
+        return `Price is ${thisValue > avg ? 'far higher' : 'far lower'} than other retailers' listings for this product (this: ~$${thisValue.toFixed(2)}${thisIsNormalized ? '/std unit' : ''}, others average ~$${avg.toFixed(2)})`;
+      }
+    }
+  }
+
+  if(sameRetailerOffers.length){
+    const priorValues = sameRetailerOffers
+      .map(o => (thisIsNormalized && o.price_per_standard_unit) ? o.price_per_standard_unit : o.price)
+      .filter(v => v !== null && v !== undefined && v > 0);
+    if(priorValues.length){
+      const priorAvg = priorValues.reduce((a, b) => a + b, 0) / priorValues.length;
+      if(thisValue > priorAvg * 3 || thisValue < priorAvg / 3){
+        return `Big jump from this retailer's own prior listing for this product (this: ~$${thisValue.toFixed(2)}, their prior average: ~$${priorAvg.toFixed(2)})`;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function confirmLatestDraft(fromId, chatId) {
   const { data: draft } = await supabase.from('submission_draft')
     .select('*')
@@ -415,23 +456,57 @@ async function confirmLatestDraft(fromId, chatId) {
     for (const c of (created || [])) canonicalMap.set(c.name.toLowerCase(), c.id);
   }
 
-  const offersToInsert = items.map(item => {
+  const productIds = [...new Set(items.map(item => canonicalMap.get(item.name.toLowerCase())).filter(Boolean))];
+  const { data: existingOffers } = await supabase
+    .from('retail_offers')
+    .select('canonical_product_id, listing_id, price, price_per_standard_unit')
+    .in('canonical_product_id', productIds.length ? productIds : ['00000000-0000-0000-0000-000000000000'])
+    .in('review_status', ['auto_published', 'approved']); // only compare against trusted existing data
+
+  const offersByProduct = new Map();
+  for(const o of (existingOffers || [])){
+    if(!offersByProduct.has(o.canonical_product_id)) offersByProduct.set(o.canonical_product_id, []);
+    offersByProduct.get(o.canonical_product_id).push(o);
+  }
+
+  const hasMissingFields = !!(draft.missing_fields && draft.missing_fields.length);
+  const flaggedItems = [];
+
+  const offersToInsert = items.map((item, idx) => {
     const normalized = computeNormalization(item.price, item.unit);
+    const productId = canonicalMap.get(item.name.toLowerCase()) || null;
+    const existingForProduct = productId ? (offersByProduct.get(productId) || []) : [];
+    const flagReason = detectFlagReason(item, listingId, existingForProduct, hasMissingFields);
+    if(flagReason) flaggedItems.push({ idx, reason: flagReason });
+
     return {
       listing_id: listingId,
-      canonical_product_id: canonicalMap.get(item.name.toLowerCase()) || null,
+      canonical_product_id: productId,
       item_name: item.name,
       price: item.price,
       unit: item.unit,
       standard_unit_type: normalized.standard_unit_type,
       price_per_standard_unit: normalized.price_per_standard_unit,
+      review_status: flagReason ? 'pending_review' : 'auto_published',
       source_type: draft.source_type || 'caption',
       source_submission_id: draft.id,
       photo_url: draft.photo_url,
       tags: draft.tags || [],
     };
   });
-  await supabase.from('retail_offers').insert(offersToInsert);
+  const { data: insertedOffers } = await supabase.from('retail_offers').insert(offersToInsert).select();
+
+  if(flaggedItems.length && insertedOffers){
+    const reviewRows = flaggedItems
+      .filter(f => insertedOffers[f.idx])
+      .map(f => ({
+        item_type: 'submission',
+        reference_id: insertedOffers[f.idx].id,
+        reason: f.reason,
+        status: 'pending',
+      }));
+    if(reviewRows.length) await supabase.from('review_queue').insert(reviewRows);
+  }
 
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
   await sendMessage(chatId, `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`);

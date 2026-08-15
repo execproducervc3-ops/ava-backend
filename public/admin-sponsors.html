@@ -54,6 +54,14 @@
   .btn-danger{background:#fff; color:var(--danger); border:1px solid var(--danger);}
   .btn-danger:hover{background:#FBEAE8;}
   .empty-note{font-size:13px; color:var(--soft); text-align:center; padding:16px 0;}
+  .reviewitem{border:1px solid #E0C36A; background:#FFFBEF; border-radius:8px; padding:12px 14px; margin-bottom:10px;}
+  .reviewreason{font-size:12px; color:#8A6D1A; margin-bottom:10px; line-height:1.4;}
+  .reviewretailer{font-weight:700; font-size:13.5px; margin-bottom:8px;}
+  .reviewfields{display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; margin-bottom:10px;}
+  .reviewfields input{margin-bottom:0;}
+  .reviewactions{display:flex; gap:8px;}
+  .btn-publish{background:var(--live); color:#fff; border:none;}
+  .btn-publish:hover{background:#166B44;}
   label{font-size:11.5px; font-weight:600; color:var(--soft); display:block; margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
 </style>
 </head>
@@ -109,6 +117,11 @@
       <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
     </div>
     <button id="logoutBtn" class="btn-secondary" style="flex:0 0 auto;">Log out</button>
+  </div>
+
+  <div class="panel">
+    <h2>Pending review</h2>
+    <div id="reviewList"></div>
   </div>
 
   <div class="panel">
@@ -195,6 +208,7 @@ async function tryLogin(password, showErrors){
   document.getElementById('authGate').style.display = 'none';
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
+  loadReviewQueue();
   return true;
 }
 
@@ -339,7 +353,67 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   document.getElementById('createForm').style.display = 'none';
   selectedListingId = null;
   loadPlacements();
+  loadReviewQueue();
 });
+
+const REVIEW_API = '/.netlify/functions/admin-review';
+
+async function loadReviewQueue(){
+  const res = await fetch(`${REVIEW_API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  const listEl = document.getElementById('reviewList');
+  if(!data.results || !data.results.length){
+    listEl.innerHTML = '<div class="empty-note">Nothing pending review.</div>';
+    return;
+  }
+  listEl.innerHTML = data.results.map(item => `
+    <div class="reviewitem">
+      <div class="reviewretailer">${escapeHtml(item.retailer)}</div>
+      <div class="reviewreason">${escapeHtml(item.reason)}</div>
+      <div class="reviewfields">
+        <input type="text" data-field="item_name" value="${escapeHtml(item.item_name)}" placeholder="Item name">
+        <input type="text" data-field="price" value="${escapeHtml(item.price)}" placeholder="Price">
+        <input type="text" data-field="unit" value="${escapeHtml(item.unit || '')}" placeholder="Unit">
+      </div>
+      <div class="reviewactions">
+        <button class="btn-publish" data-publish-queue="${escapeHtml(item.queue_id)}" data-publish-offer="${escapeHtml(item.offer_id)}">Publish</button>
+        <button class="btn-danger" data-reject-queue="${escapeHtml(item.queue_id)}" data-reject-offer="${escapeHtml(item.offer_id)}">Reject</button>
+      </div>
+    </div>`).join('');
+
+  listEl.querySelectorAll('[data-publish-queue]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.reviewitem');
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(input => { fields[input.dataset.field] = input.value; });
+      publishReview(btn.dataset.publishQueue, btn.dataset.publishOffer, fields);
+    });
+  });
+  listEl.querySelectorAll('[data-reject-queue]').forEach(btn => {
+    btn.addEventListener('click', () => rejectReview(btn.dataset.rejectQueue, btn.dataset.rejectOffer));
+  });
+}
+
+async function publishReview(queueId, offerId, fields){
+  await fetch(`${REVIEW_API}?action=publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({
+      queue_id: queueId, offer_id: offerId,
+      item_name: fields.item_name, price: parseFloat(fields.price) || 0, unit: fields.unit || null,
+    }),
+  });
+  loadReviewQueue();
+}
+
+async function rejectReview(queueId, offerId){
+  await fetch(`${REVIEW_API}?action=reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ queue_id: queueId, offer_id: offerId }),
+  });
+  loadReviewQueue();
+}
 
 async function loadPlacements(){
   const res = await fetch(`${API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
@@ -382,6 +456,7 @@ async function deletePlacement(id, name){
     body: JSON.stringify({ id }),
   });
   loadPlacements();
+  loadReviewQueue();
 }
 
 async function toggle(id, newActive){
@@ -391,6 +466,7 @@ async function toggle(id, newActive){
     body: JSON.stringify({ id, active: newActive }),
   });
   loadPlacements();
+  loadReviewQueue();
 }
 </script>
 </body>
