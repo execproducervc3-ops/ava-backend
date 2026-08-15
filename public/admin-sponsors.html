@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AVA Admin — Sponsored Placements</title>
+<style>
+  :root{
+    --bg:#F5F6F7; --panel:#fff; --line:#E1E4E8; --ink:#1B1F23; --soft:#6A7178;
+    --accent:#2D6E8E; --accent-dark:#24576F; --danger:#C0392B; --live:#1E8E5A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    min-height:100vh; padding:32px 16px;
+  }
+  .wrap{max-width:640px; margin:0 auto;}
+  h1{font-size:19px; font-weight:700; margin:0 0 4px;}
+  .sub{font-size:13px; color:var(--soft); margin-bottom:24px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:20px;}
+  h2{font-size:14px; font-weight:700; margin:0 0 14px; text-transform:uppercase; letter-spacing:.04em; color:var(--soft);}
+  input, textarea{
+    width:100%; border:1px solid var(--line); border-radius:6px; padding:9px 11px;
+    font-size:14px; font-family:inherit; color:var(--ink); margin-bottom:10px;
+  }
+  textarea{resize:vertical; min-height:60px;}
+  input:focus, textarea:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+  button{
+    background:var(--accent); color:#fff; border:none; border-radius:6px; padding:9px 16px;
+    font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  button:hover{background:var(--accent-dark);}
+  button:disabled{background:#B8BEC4; cursor:not-allowed;}
+  .error{color:var(--danger); font-size:13px; margin-top:8px;}
+  #authGate{max-width:340px; margin:80px auto;}
+  .result{
+    padding:9px 11px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px;
+    cursor:pointer; font-size:13.5px;
+  }
+  .result:hover{background:#F0F2F4;}
+  .selected-tag{
+    display:inline-block; background:#E4EDF1; color:var(--accent-dark); font-size:12.5px; font-weight:600;
+    padding:5px 10px; border-radius:20px; margin-bottom:12px;
+  }
+  .placement{border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px;}
+  .placement.is-active{border-color:var(--live); background:#F2FAF6;}
+  .placement-top{display:flex; align-items:center; gap:8px; margin-bottom:4px;}
+  .placement-name{font-weight:700; font-size:14px;}
+  .badge{background:var(--live); color:#fff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; text-transform:uppercase; letter-spacing:.04em;}
+  .placement-blurb{font-size:12.5px; color:var(--soft); margin-bottom:8px;}
+  .placement-actions{display:flex; gap:8px;}
+  .btn-secondary{background:#fff; color:var(--ink); border:1px solid var(--line);}
+  .btn-secondary:hover{background:#F0F2F4;}
+  .btn-danger{background:#fff; color:var(--danger); border:1px solid var(--danger);}
+  .btn-danger:hover{background:#FBEAE8;}
+  .empty-note{font-size:13px; color:var(--soft); text-align:center; padding:16px 0;}
+  label{font-size:11.5px; font-weight:600; color:var(--soft); display:block; margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
+</style>
+</head>
+<body>
+
+<div id="authGate">
+  <div class="panel">
+    <h1>AVA Admin</h1>
+    <div class="sub">Sponsored placements</div>
+    <label>Admin password</label>
+    <input type="password" id="secretInput" placeholder="Enter password">
+    <button id="authBtn" style="width:100%;">Enter</button>
+    <div class="error" id="authError"></div>
+  </div>
+</div>
+
+<div id="adminPanel" class="wrap" style="display:none;">
+  <h1>AVA Admin</h1>
+  <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
+
+  <div class="panel">
+    <h2>Add a sponsor</h2>
+    <label>Search business</label>
+    <input type="text" id="searchInput" placeholder="Start typing a business name…" autocomplete="off">
+    <div id="searchResults"></div>
+
+    <div id="createForm" style="display:none; margin-top:14px;">
+      <div id="selectedBusiness"></div>
+      <label>Blurb</label>
+      <textarea id="blurbInput" placeholder="e.g. Rooftop dining with harbour views"></textarea>
+      <label>Target URL</label>
+      <input type="text" id="urlInput" placeholder="https://…">
+      <label>Photo URL (optional)</label>
+      <input type="text" id="photoInput" placeholder="Leave blank to use their most recent price photo">
+      <button id="createBtn">Add to rotation</button>
+      <div class="error" id="createError"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Current placements</h2>
+    <div id="placementsList"></div>
+  </div>
+</div>
+
+<script>
+const API = '/.netlify/functions/admin-sponsors';
+let secret = sessionStorage.getItem('ava_admin_secret') || '';
+let selectedListingId = null;
+let selectedListingName = '';
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function tryAuth(){
+  const res = await fetch(`${API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
+  if(res.status === 401){
+    document.getElementById('authError').textContent = 'Wrong password.';
+    return;
+  }
+  sessionStorage.setItem('ava_admin_secret', secret);
+  document.getElementById('authGate').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+  loadPlacements();
+}
+
+document.getElementById('authBtn').addEventListener('click', () => {
+  secret = document.getElementById('secretInput').value;
+  tryAuth();
+});
+document.getElementById('secretInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ secret = e.target.value; tryAuth(); }
+});
+if(secret) tryAuth();
+
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  clearTimeout(searchTimeout);
+  const q = e.target.value;
+  searchTimeout = setTimeout(() => doSearch(q), 300);
+});
+
+async function doSearch(q){
+  const resultsEl = document.getElementById('searchResults');
+  if(!q.trim()){ resultsEl.innerHTML = ''; return; }
+  const res = await fetch(`${API}?action=search&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    resultsEl.innerHTML = '<div class="empty-note">No matches.</div>';
+    return;
+  }
+  resultsEl.innerHTML = data.results.map(r =>
+    `<div class="result" data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)} — ${escapeHtml(r.island || 'no island set')}</div>`
+  ).join('');
+  resultsEl.querySelectorAll('.result').forEach(el => {
+    el.addEventListener('click', () => selectBusiness(el.dataset.id, el.dataset.name));
+  });
+}
+
+function selectBusiness(id, name){
+  selectedListingId = id;
+  selectedListingName = name;
+  document.getElementById('selectedBusiness').innerHTML = `<span class="selected-tag">Selected: ${escapeHtml(name)}</span>`;
+  document.getElementById('createForm').style.display = 'block';
+  document.getElementById('searchResults').innerHTML = '';
+  document.getElementById('searchInput').value = name;
+}
+
+document.getElementById('createBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('createError');
+  errEl.textContent = '';
+  if(!selectedListingId){ errEl.textContent = 'Pick a business first.'; return; }
+
+  const res = await fetch(`${API}?action=create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({
+      listing_id: selectedListingId,
+      blurb: document.getElementById('blurbInput').value.trim(),
+      target_url: document.getElementById('urlInput').value.trim(),
+      photo_url: document.getElementById('photoInput').value.trim() || null,
+    }),
+  });
+  if(!res.ok){
+    const data = await res.json().catch(() => ({}));
+    errEl.textContent = data.error || 'Something went wrong.';
+    return;
+  }
+  document.getElementById('blurbInput').value = '';
+  document.getElementById('urlInput').value = '';
+  document.getElementById('photoInput').value = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('createForm').style.display = 'none';
+  selectedListingId = null;
+  loadPlacements();
+});
+
+async function loadPlacements(){
+  const res = await fetch(`${API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  const listEl = document.getElementById('placementsList');
+  if(!data.results || !data.results.length){
+    listEl.innerHTML = '<div class="empty-note">No sponsors yet — add one above.</div>';
+    return;
+  }
+  listEl.innerHTML = data.results.map(p => {
+    const listing = p.directory_listings || {};
+    return `
+    <div class="placement ${p.active ? 'is-active' : ''}">
+      <div class="placement-top">
+        <span class="placement-name">${escapeHtml(listing.name || 'Unknown business')}</span>
+        ${p.active ? '<span class="badge">In rotation</span>' : ''}
+      </div>
+      <div class="placement-blurb">${escapeHtml(p.blurb || '(no blurb)')}</div>
+      <div class="placement-actions">
+        ${p.active
+          ? `<button class="btn-secondary" data-id="${escapeHtml(p.id)}" data-active="false">Take down</button>`
+          : `<button data-id="${escapeHtml(p.id)}" data-active="true">Add to rotation</button>`}
+        <button class="btn-danger" data-delete-id="${escapeHtml(p.id)}" data-delete-name="${escapeHtml(listing.name || 'this sponsor')}">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => toggle(btn.dataset.id, btn.dataset.active === 'true'));
+  });
+  listEl.querySelectorAll('button[data-delete-id]').forEach(btn => {
+    btn.addEventListener('click', () => deletePlacement(btn.dataset.deleteId, btn.dataset.deleteName));
+  });
+}
+
+async function deletePlacement(id, name){
+  if(!confirm(`Delete the sponsorship for "${name}"? This can't be undone.`)) return;
+  await fetch(`${API}?action=delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ id }),
+  });
+  loadPlacements();
+}
+
+async function toggle(id, newActive){
+  await fetch(`${API}?action=toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ id, active: newActive }),
+  });
+  loadPlacements();
+}
+</script>
+</body>
+</html>

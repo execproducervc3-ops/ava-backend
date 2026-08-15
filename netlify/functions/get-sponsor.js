@@ -8,19 +8,19 @@ const CORS = {
 
 exports.handler = async () => {
   try {
-    const { data: placement } = await supabase
+    const { data: activePlacements } = await supabase
       .from('sponsored_placements')
       .select('id, listing_id, photo_url, blurb, target_url')
-      .eq('active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq('active', true);
 
-    // No active sponsor — this is a normal, expected state, not an error.
-    // The homepage should just not render the card at all.
-    if (!placement) {
+    // No active sponsors — this is a normal, expected state, not an error.
+    if (!activePlacements || !activePlacements.length) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ sponsor: null }) };
     }
+
+    // Rotation: pick one at random from the active pool on each page load,
+    // rather than always showing the same one.
+    const placement = activePlacements[Math.floor(Math.random() * activePlacements.length)];
 
     const { data: listing } = await supabase
       .from('directory_listings')
