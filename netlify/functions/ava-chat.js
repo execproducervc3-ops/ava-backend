@@ -79,7 +79,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        indicator: { type: 'string', enum: ['gdp', 'gdp growth', 'inflation', 'unemployment', 'population', 'remittances', 'tourism', 'corruption control', 'government effectiveness', 'political stability', 'regulatory quality', 'rule of law', 'voice and accountability'], description: 'Which economic or governance indicator to look up' },
+        indicator: { type: 'string', enum: ['gdp', 'gdp growth', 'inflation', 'unemployment', 'population', 'remittances', 'tourism', 'labor force participation', 'corruption control', 'government effectiveness', 'political stability', 'regulatory quality', 'rule of law', 'voice and accountability'], description: 'Which economic or governance indicator to look up' },
       },
       required: ['indicator']
     }
@@ -105,6 +105,17 @@ const TOOLS = [
         day_of_week: { type: 'integer', description: 'Day to check: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday. Compute this from the current date given in the system prompt and the relative term the person used.' },
       },
       required: ['destination', 'day_of_week']
+    }
+  },
+  {
+    name: 'query_health_data',
+    description: "Look up real public health indicators for Saint Vincent and the Grenadines from the World Health Organization's Global Health Observatory. Use this for questions about life expectancy or other health statistics rather than relying on training data, which may be outdated.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        indicator: { type: 'string', enum: ['life expectancy'], description: 'Which WHO health indicator to look up' },
+      },
+      required: ['indicator']
     }
   },
   {
@@ -284,6 +295,7 @@ const WB_INDICATOR_MAP = {
   'unemployment': { code: 'SL.UEM.TOTL.ZS', label: 'Unemployment (% of total labor force)' },
   'population': { code: 'SP.POP.TOTL', label: 'Population, total' },
   'remittances': { code: 'BX.TRF.PWKR.DT.GD.ZS', label: 'Personal remittances received (% of GDP)' },
+  'labor force participation': { code: 'SL.TLF.CACT.ZS', label: 'Labor force participation rate (% of population ages 15+, ILO modelled estimate)' },
   'tourism': { code: 'ST.INT.RCPT.CD', label: 'International tourism receipts (current US$)' },
   // Worldwide Governance Indicators (WGI) — a separate World Bank dataset from
   // the main World Development Indicators above, which is why these need the
@@ -516,6 +528,48 @@ async function queryDirectory(category, island){
   }
 }
 
+const WHO_COUNTRY_CODE = 'VCT'; // WHO GHO uses ISO3 codes, same as World Bank/IMF
+const WHO_INDICATOR_MAP = {
+  'life expectancy': { code: 'WHOSIS_000001', label: 'Life expectancy at birth (years)' },
+};
+
+async function queryHealthData(indicatorKey){
+  const key = (indicatorKey || '').trim().toLowerCase();
+  const info = WHO_INDICATOR_MAP[key];
+  if(!info){
+    await logUnansweredQuery(`WHO health indicator: ${indicatorKey || '(empty)'}`, 'health_data');
+    return { note: `Unknown health indicator "${indicatorKey}". Available: ${Object.keys(WHO_INDICATOR_MAP).join(', ')}` };
+  }
+  try{
+    const filterParam = encodeURIComponent(`SpatialDim eq '${WHO_COUNTRY_CODE}'`);
+    const url = `https://ghoapi.azureedge.net/api/${info.code}?$filter=${filterParam}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`WHO GHO API failed: ${res.status}`);
+    const data = await res.json();
+    // OData response shape: { '@odata.context': '...', value: [ {SpatialDim, TimeDim, NumericValue, Dim1, ...} ] }
+    const records = (data && Array.isArray(data.value)) ? data.value : [];
+    const withValues = records.filter(r => r.NumericValue !== null && r.NumericValue !== undefined);
+    // Many indicators are broken down by sex (Dim1: 'MLE'/'FMLE'/'BTSX'). Prefer
+    // the combined "both sexes" figure when available, rather than mixing all three.
+    const bothSexes = withValues.filter(r => !r.Dim1 || r.Dim1 === 'BTSX');
+    const useRecords = bothSexes.length ? bothSexes : withValues;
+
+    const values = useRecords
+      .map(r => ({ year: r.TimeDim, value: r.NumericValue }))
+      .sort((a, b) => b.year - a.year)
+      .slice(0, 5);
+
+    if(!values.length){
+      await logUnansweredQuery(`WHO health indicator: ${key} (no data returned)`, 'health_data');
+      return { indicator: info.label, values: [], note: 'No WHO data available for this indicator.' };
+    }
+    return { indicator: info.label, values };
+  } catch(err){
+    console.error('queryHealthData error:', err);
+    return { note: 'Could not reach the WHO data source right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -562,7 +616,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data'];
 
     while(loops < 4){
       loops++;
@@ -652,6 +706,13 @@ exports.handler = async (event) => {
             content = dirData.results && dirData.results.length
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name}${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
               : (dirData.note || 'No listings found.');
+          }
+
+          else if(toolUse.name === 'query_health_data'){
+            const healthData = await queryHealthData(toolUse.input.indicator);
+            content = healthData.values && healthData.values.length
+              ? `${healthData.indicator} (source: WHO Global Health Observatory): ` + healthData.values.map(v => `${v.year}: ${v.value}`).join(', ')
+              : (healthData.note || 'No data available for that indicator.');
           }
 
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
