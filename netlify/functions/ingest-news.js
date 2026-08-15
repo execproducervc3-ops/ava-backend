@@ -7,6 +7,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const FEEDS = [
   { url: 'https://onenewsstvincent.com/feed/', sourceTag: 'rss:onenewsstvincent' },
   { url: 'https://www.iwnsvg.com/feed/', sourceTag: 'rss:iwnsvg' },
+  { url: 'https://www.stvincenttimes.com/feed/', sourceTag: 'rss:stvincenttimes' },
 ];
 
 function unwrapCdata(field){
