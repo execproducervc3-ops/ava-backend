@@ -7,3 +7,6 @@
  
 [functions."ingest-news"]
   schedule = "@daily"
+
+[functions."ingest-directory"]
+  schedule = "@weekly"
