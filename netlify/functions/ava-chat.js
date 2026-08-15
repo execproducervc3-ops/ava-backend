@@ -768,7 +768,13 @@ async function callClaude(messages){
     const errBody = await res.text().catch(() => '');
     throw new Error(`Anthropic request failed: ${res.status} ${errBody}`.trim());
   }
-  return res.json();
+  const data = await res.json();
+  if(data.usage){
+    console.log(`Anthropic usage — input: ${data.usage.input_tokens}, output: ${data.usage.output_tokens}` +
+      (data.usage.cache_read_input_tokens ? `, cache_read: ${data.usage.cache_read_input_tokens}` : '') +
+      (data.usage.cache_creation_input_tokens ? `, cache_creation: ${data.usage.cache_creation_input_tokens}` : ''));
+  }
+  return data;
 }
 
 exports.handler = async (event) => {
