@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
+const bcrypt = require('bcryptjs');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -11,10 +11,13 @@ const CORS = {
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
-  // Every action requires the real admin secret — this is the only thing
-  // standing between this page and anyone who finds the URL.
-  const providedSecret = event.headers['x-admin-secret'] || event.headers['X-Admin-Secret'];
-  if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
+  // Every action requires the admin's own chosen password, checked against
+  // its stored hash — not a raw env-var comparison anymore.
+  const providedPassword = event.headers['x-admin-secret'] || event.headers['X-Admin-Secret'];
+  const { data: authRow } = await supabase.from('admin_auth').select('password_hash').eq('id', 1).maybeSingle();
+  const storedHash = authRow ? authRow.password_hash : null;
+  const isValid = storedHash && providedPassword && await bcrypt.compare(providedPassword, storedHash);
+  if (!isValid) {
     return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 

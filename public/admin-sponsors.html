@@ -60,13 +60,45 @@
 <body>
 
 <div id="authGate">
-  <div class="panel">
+  <div class="panel" id="setupScreen" style="display:none;">
+    <h1>AVA Admin</h1>
+    <div class="sub">Set up your admin password</div>
+    <label>Setup key</label>
+    <input type="password" id="bootstrapInput" placeholder="Your ADMIN_SECRET from Netlify">
+    <label>New password</label>
+    <input type="password" id="newPasswordInput" placeholder="At least 8 characters">
+    <label>Confirm password</label>
+    <input type="password" id="confirmPasswordInput" placeholder="Re-enter password">
+    <button id="setupBtn" style="width:100%;">Set password</button>
+    <div class="error" id="setupError"></div>
+  </div>
+
+  <div class="panel" id="loginScreen" style="display:none;">
     <h1>AVA Admin</h1>
     <div class="sub">Sponsored placements</div>
     <label>Admin password</label>
     <input type="password" id="secretInput" placeholder="Enter password">
     <button id="authBtn" style="width:100%;">Enter</button>
     <div class="error" id="authError"></div>
+    <div style="margin-top:12px; text-align:center;">
+      <a href="#" id="forgotLink" style="font-size:12.5px; color:var(--soft);">Forgot password?</a>
+    </div>
+  </div>
+
+  <div class="panel" id="resetScreen" style="display:none;">
+    <h1>AVA Admin</h1>
+    <div class="sub">Reset your password</div>
+    <label>Setup key</label>
+    <input type="password" id="resetBootstrapInput" placeholder="Your ADMIN_SECRET from Netlify">
+    <label>New password</label>
+    <input type="password" id="resetNewPasswordInput" placeholder="At least 8 characters">
+    <label>Confirm password</label>
+    <input type="password" id="resetConfirmPasswordInput" placeholder="Re-enter password">
+    <button id="resetBtn" style="width:100%;">Reset password</button>
+    <div class="error" id="resetError"></div>
+    <div style="margin-top:12px; text-align:center;">
+      <a href="#" id="backToLoginLink" style="font-size:12.5px; color:var(--soft);">Back to login</a>
+    </div>
   </div>
 </div>
 
@@ -97,6 +129,17 @@
     <h2>Current placements</h2>
     <div id="placementsList"></div>
   </div>
+
+  <div class="panel">
+    <h2>Change password</h2>
+    <label>Current password</label>
+    <input type="password" id="currentPwInput" placeholder="Current password">
+    <label>New password</label>
+    <input type="password" id="newPwInput" placeholder="At least 8 characters">
+    <button id="changePwBtn" class="btn-secondary">Change password</button>
+    <div class="error" id="changePwError"></div>
+    <div class="empty-note" id="changePwSuccess" style="display:none; color:var(--live);">Password updated.</div>
+  </div>
 </div>
 
 <script>
@@ -109,26 +152,117 @@ function escapeHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-async function tryAuth(){
-  const res = await fetch(`${API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
-  if(res.status === 401){
-    document.getElementById('authError').textContent = 'Wrong password.';
-    return;
+const AUTH_API = '/.netlify/functions/admin-auth';
+
+function showScreen(id){
+  ['setupScreen','loginScreen','resetScreen'].forEach(s => {
+    document.getElementById(s).style.display = (s === id) ? 'block' : 'none';
+  });
+}
+
+async function initAuth(){
+  const res = await fetch(`${AUTH_API}?action=status`);
+  const data = await res.json();
+  if(data.hasPassword){
+    showScreen('loginScreen');
+    // Try any password already saved in this session first, so a refresh doesn't force re-login.
+    if(secret){
+      const ok = await tryLogin(secret, false);
+      if(ok) return;
+    }
+  } else {
+    showScreen('setupScreen');
   }
+}
+
+async function tryLogin(password, showErrors){
+  const res = await fetch(`${AUTH_API}?action=login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json();
+  if(!data.ok){
+    if(showErrors) document.getElementById('authError').textContent = 'Wrong password.';
+    return false;
+  }
+  secret = password;
   sessionStorage.setItem('ava_admin_secret', secret);
   document.getElementById('authGate').style.display = 'none';
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
+  return true;
 }
 
 document.getElementById('authBtn').addEventListener('click', () => {
-  secret = document.getElementById('secretInput').value;
-  tryAuth();
+  tryLogin(document.getElementById('secretInput').value, true);
 });
 document.getElementById('secretInput').addEventListener('keydown', (e) => {
-  if(e.key === 'Enter'){ secret = e.target.value; tryAuth(); }
+  if(e.key === 'Enter') tryLogin(e.target.value, true);
 });
-if(secret) tryAuth();
+
+document.getElementById('setupBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('setupError');
+  errEl.textContent = '';
+  const bootstrap = document.getElementById('bootstrapInput').value;
+  const pw = document.getElementById('newPasswordInput').value;
+  const confirm = document.getElementById('confirmPasswordInput').value;
+  if(pw !== confirm){ errEl.textContent = "Passwords don't match."; return; }
+  if(pw.length < 8){ errEl.textContent = 'Password must be at least 8 characters.'; return; }
+  const res = await fetch(`${AUTH_API}?action=setup`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bootstrap_secret: bootstrap, new_password: pw }),
+  });
+  const data = await res.json();
+  if(!res.ok){ errEl.textContent = data.error || 'Something went wrong.'; return; }
+  await tryLogin(pw, true);
+});
+
+document.getElementById('forgotLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  showScreen('resetScreen');
+});
+document.getElementById('backToLoginLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  showScreen('loginScreen');
+});
+
+document.getElementById('resetBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('resetError');
+  errEl.textContent = '';
+  const bootstrap = document.getElementById('resetBootstrapInput').value;
+  const pw = document.getElementById('resetNewPasswordInput').value;
+  const confirm = document.getElementById('resetConfirmPasswordInput').value;
+  if(pw !== confirm){ errEl.textContent = "Passwords don't match."; return; }
+  if(pw.length < 8){ errEl.textContent = 'Password must be at least 8 characters.'; return; }
+  const res = await fetch(`${AUTH_API}?action=setup`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bootstrap_secret: bootstrap, new_password: pw }),
+  });
+  const data = await res.json();
+  if(!res.ok){ errEl.textContent = data.error || 'Something went wrong.'; return; }
+  await tryLogin(pw, true);
+});
+
+document.getElementById('changePwBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('changePwError');
+  const successEl = document.getElementById('changePwSuccess');
+  errEl.textContent = ''; successEl.style.display = 'none';
+  const current = document.getElementById('currentPwInput').value;
+  const newPw = document.getElementById('newPwInput').value;
+  const res = await fetch(`${AUTH_API}?action=change`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: current, new_password: newPw }),
+  });
+  const data = await res.json();
+  if(!res.ok){ errEl.textContent = data.error || 'Something went wrong.'; return; }
+  secret = newPw;
+  sessionStorage.setItem('ava_admin_secret', secret);
+  document.getElementById('currentPwInput').value = '';
+  document.getElementById('newPwInput').value = '';
+  successEl.style.display = 'block';
+});
+
+initAuth();
 
 let searchTimeout;
 document.getElementById('searchInput').addEventListener('input', (e) => {
