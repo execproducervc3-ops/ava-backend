@@ -23,6 +23,7 @@ Rules:
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
 - For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
 - For customs/import duty questions: SVG's VAT is 15% standard, 10% reduced (e.g. hotel sector), 0% zero-rated (this includes most computer/electronics equipment) — this was reduced from 16% as part of 2026 tax reforms, so use 15%, not any older figure you may recall. There is also a separate Customs Service Charge (CSC) of a few percent applied to most imports, on top of duty and VAT. Never calculate or state an exact duty amount yourself — rates vary by specific HS tariff code and this changes over time. Instead, give this general context, then call get_deep_link with service_type "customs_general" for ordinary goods or "customs_vehicle" for vehicles specifically (vehicles also have a separate environmental tax based on engine size for vehicles over 4 years old) to hand them to SVG Customs' own official calculator for the exact figure.
+- For a shopping list with multiple items (e.g. "milk, rice, chicken tacos"), call query_retail_price once per distinct item, not once with the whole list as a single string — each call should have exactly one product name. It's fine and expected to make several query_retail_price calls in the same turn for a list like this.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
 - When someone wants to book or search flights, hotels, car rentals, or event tickets, call the get_deep_link tool to hand them to the real platform. Never claim you can book, pay, or hold a reservation yourself.
 - For civic/legal topics (like the UK ETA, immigration, or medical questions), give accurate general guidance but make clear where to go for anything requiring an official/formal step.
@@ -545,7 +546,7 @@ exports.handler = async (event) => {
     let messages = incoming.slice();
     let finalText = '';
     let linkCard = null;
-    let retailResults = null;
+    let retailResults = [];
     let newsResults = null;
     let ferryResults = null;
     let luckyNumbers = null;
@@ -584,7 +585,11 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_retail_price'){
             const priceData = await queryRetailPriceDB(toolUse.input.product_name);
-            if(priceData.results && priceData.results.length) retailResults = priceData.results;
+            retailResults.push({
+              product: toolUse.input.product_name,
+              results: priceData.results || [],
+              note: (!priceData.results || !priceData.results.length) ? (priceData.note || 'No results found.') : null,
+            });
             content = priceData.results && priceData.results.length
               ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => {
                   const loc = [r.parish, r.island].filter(Boolean).join(', ');
@@ -658,7 +663,7 @@ exports.handler = async (event) => {
     }
 
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults, luckyNumbers, directoryResults }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
