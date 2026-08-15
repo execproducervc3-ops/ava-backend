@@ -23,6 +23,7 @@ Rules:
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
 - For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
 - For customs/import duty questions: SVG's VAT is 15% standard, 10% reduced (e.g. hotel sector), 0% zero-rated (this includes most computer/electronics equipment) — this was reduced from 16% as part of 2026 tax reforms, so use 15%, not any older figure you may recall. There is also a separate Customs Service Charge (CSC) of a few percent applied to most imports, on top of duty and VAT. Never calculate or state an exact duty amount yourself — rates vary by specific HS tariff code and this changes over time. Instead, give this general context, then call get_deep_link with service_type "customs_general" for ordinary goods or "customs_vehicle" for vehicles specifically (vehicles also have a separate environmental tax based on engine size for vehicles over 4 years old) to hand them to SVG Customs' own official calculator for the exact figure.
+- For voter registration questions: this is real, public information published by SVG's Electoral Office, but as a set of static PDF lists by constituency, not a live searchable tool — set that expectation honestly. Ask which of the 15 constituencies the person is registered in if they haven't said (Central Kingstown, Central Leeward, East Kingstown, East St George, Marriaqua, North Central Windward, North Leeward, North Windward, Northern Grenadines, South Central Windward, South Leeward, South Windward, Southern Grenadines, West Kingstown, West St George), then call get_deep_link with service_type "voter_registration" and location set to their constituency. If they don't know their constituency, call it without a location — this links to the page listing all of them instead.
 - For a shopping list with multiple items (e.g. "milk, rice, chicken tacos"), call query_retail_price once per distinct item, not once with the whole list as a single string — each call should have exactly one product name. It's fine and expected to make several query_retail_price calls in the same turn for a list like this.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
 - When someone wants to book or search flights, hotels, car rentals, or event tickets, call the get_deep_link tool to hand them to the real platform. Never claim you can book, pay, or hold a reservation yourself.
@@ -35,15 +36,15 @@ const TOOLS = [
   { type: 'web_search_20250305', name: 'web_search' },
   {
     name: 'get_deep_link',
-    description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, or calculating customs import duty. Use this instead of claiming you can book, calculate, or determine an official duty amount yourself.',
+    description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, calculating customs import duty, or checking voter registration. Use this instead of claiming you can book, calculate, or look something up yourself.',
     input_schema: {
       type: 'object',
       properties: {
-        service_type: { type: 'string', enum: ['flights','hotels','cars','events','customs_general','customs_vehicle'] },
+        service_type: { type: 'string', enum: ['flights','hotels','cars','events','customs_general','customs_vehicle','voter_registration'] },
         origin: { type: 'string', description: 'For flights: departure city/airport' },
         destination: { type: 'string', description: 'For flights: arrival city/airport, defaults to SVG' },
         date: { type: 'string', description: 'For flights: travel date if known' },
-        location: { type: 'string', description: 'For hotels/cars/events: location, defaults to SVG' },
+        location: { type: 'string', description: 'For hotels/cars/events: location, defaults to SVG. For voter_registration: the person\'s constituency — ask them if not stated, since this determines which list to link to.' },
         checkin: { type: 'string' },
         checkout: { type: 'string' },
         query: { type: 'string', description: 'For events: what kind of event' },
@@ -189,6 +190,30 @@ function buildDeepLink(service_type, params){
   }
   if(service_type === 'customs_vehicle'){
     return { url: 'https://customs.gov.vc/vehicle-calculator', name: 'Official SVG Vehicle Import Duty Calculator', label: 'Vehicle import duty' };
+  }
+  if(service_type === 'voter_registration'){
+    // Real, confirmed filenames from the Electoral Office's own voters-list
+    // page — not guessed. Each constituency's alphabetical voters list is a
+    // separate static PDF, not a live search.
+    const CONSTITUENCY_PDF = {
+      'central kingstown': 'ckalpha', 'central leeward': 'clalpha', 'east kingstown': 'ekalpha',
+      'east st george': 'egalpha', 'east st. george': 'egalpha', 'marriaqua': 'mqalpha',
+      'north central windward': 'ncalpha', 'north leeward': 'nlalpha', 'north windward': 'nwalpha',
+      'northern grenadines': 'ngalpha', 'south central windward': 'scalpha', 'south leeward': 'slalpha',
+      'south windward': 'swalpha', 'southern grenadines': 'sgalpha', 'west kingstown': 'wkalpha',
+      'west st george': 'wgalpha', 'west st. george': 'wgalpha',
+    };
+    const key = (params.location || '').trim().toLowerCase();
+    const prefix = CONSTITUENCY_PDF[key];
+    if(prefix){
+      return {
+        url: `https://electoral.gov.vc/electoral/images/PDF/voters_list/2025/final_voters_list_Nov_2025/${prefix}.pdf`,
+        name: `${params.location} Voters List (PDF)`,
+        label: 'Voter registration',
+      };
+    }
+    // No matching constituency given — link to the page listing all 15 so the person can pick theirs
+    return { url: 'https://electoral.gov.vc/electoral/index.php/voters-list', name: 'SVG Voters List by Constituency', label: 'Voter registration' };
   }
   return null;
 }
