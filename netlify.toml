@@ -10,3 +10,6 @@
 
 [functions."ingest-directory"]
   schedule = "@weekly"
+
+[functions."recheck-scholarships"]
+  schedule = "@monthly"
