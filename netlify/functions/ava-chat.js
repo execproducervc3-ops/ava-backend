@@ -139,6 +139,16 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_weather',
+    description: "Look up real current weather and short-term forecast for Saint Vincent and the Grenadines (Kingstown area). Use this for general weather questions rather than relying on training data.",
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'query_marine_conditions',
+    description: "Look up real marine/sailing conditions for SVG waters — wave height, swell height and period, wind waves. Use this for questions about sailing, boating, or ocean conditions, not general weather. A longer swell period generally means more organized, easier sailing conditions; a short period means choppier seas.",
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
     name: 'generate_lucky_numbers',
     description: "Generate a set of random lucky numbers for one of SVG's National Lottery games (Super 6, Lotto, 3D, Play 4), matching that game's real format. This is purely for fun/entertainment — random numbers, not a prediction or a real draw result. Never present these as real winning numbers.",
     input_schema: {
@@ -618,6 +628,57 @@ async function queryHealthData(indicatorKey){
   }
 }
 
+const SVG_LAT = 13.1587; // Kingstown
+const SVG_LNG = -61.2248;
+
+async function queryWeather(){
+  try{
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${SVG_LAT}&longitude=${SVG_LNG}&current=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=3`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`Open-Meteo API failed: ${res.status}`);
+    const data = await res.json();
+    if(!data.current) return { note: 'No current weather data available.' };
+    return {
+      current: {
+        temperature_c: data.current.temperature_2m,
+        wind_speed_kmh: data.current.wind_speed_10m,
+        wind_direction_deg: data.current.wind_direction_10m,
+        precipitation_mm: data.current.precipitation,
+      },
+      daily: data.daily ? data.daily.time.map((date, i) => ({
+        date,
+        high_c: data.daily.temperature_2m_max[i],
+        low_c: data.daily.temperature_2m_min[i],
+        precipitation_mm: data.daily.precipitation_sum[i],
+      })) : [],
+    };
+  } catch(err){
+    console.error('queryWeather error:', err);
+    return { note: 'Could not reach the weather data source right now.' };
+  }
+}
+
+async function queryMarineConditions(){
+  try{
+    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${SVG_LAT}&longitude=${SVG_LNG}&current=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,wind_wave_height&timezone=auto`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`Open-Meteo Marine API failed: ${res.status}`);
+    const data = await res.json();
+    if(!data.current) return { note: 'No marine conditions data available.' };
+    return {
+      wave_height_m: data.current.wave_height,
+      wave_direction_deg: data.current.wave_direction,
+      wave_period_s: data.current.wave_period,
+      swell_wave_height_m: data.current.swell_wave_height,
+      swell_wave_period_s: data.current.swell_wave_period,
+      wind_wave_height_m: data.current.wind_wave_height,
+    };
+  } catch(err){
+    console.error('queryMarineConditions error:', err);
+    return { note: 'Could not reach the marine conditions data source right now.' };
+  }
+}
+
 async function queryScholarships(){
   try{
     const { data, error } = await supabase
@@ -701,7 +762,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions'];
 
     while(loops < 4){
       loops++;
@@ -799,6 +860,20 @@ exports.handler = async (event) => {
             content = healthData.values && healthData.values.length
               ? `${healthData.indicator} (source: WHO Global Health Observatory): ` + healthData.values.map(v => `${v.year}: ${v.value}`).join(', ')
               : (healthData.note || 'No data available for that indicator.');
+          }
+
+          else if(toolUse.name === 'query_weather'){
+            const weatherData = await queryWeather();
+            content = weatherData.current
+              ? `Current in Kingstown, SVG (source: Open-Meteo): ${weatherData.current.temperature_c}°C, wind ${weatherData.current.wind_speed_kmh} km/h from ${weatherData.current.wind_direction_deg}°, precipitation ${weatherData.current.precipitation_mm}mm. Next few days: ` + weatherData.daily.map(d => `${d.date}: ${d.low_c}-${d.high_c}°C, ${d.precipitation_mm}mm rain`).join('; ')
+              : (weatherData.note || 'No weather data available.');
+          }
+
+          else if(toolUse.name === 'query_marine_conditions'){
+            const marineData = await queryMarineConditions();
+            content = marineData.wave_height_m !== undefined && marineData.wave_height_m !== null
+              ? `Current marine conditions off SVG (source: Open-Meteo Marine, ICON Wave model): wave height ${marineData.wave_height_m}m from ${marineData.wave_direction_deg}°, wave period ${marineData.wave_period_s}s. Swell: ${marineData.swell_wave_height_m}m height, ${marineData.swell_wave_period_s}s period. Wind waves: ${marineData.wind_wave_height_m}m.`
+              : (marineData.note || 'No marine conditions data available.');
           }
 
           else if(toolUse.name === 'query_scholarships'){
