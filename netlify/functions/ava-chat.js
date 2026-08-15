@@ -116,6 +116,18 @@ const TOOLS = [
       },
       required: ['game']
     }
+  },
+  {
+    name: 'query_directory',
+    description: "Search AVA's own directory of real SVG businesses — restaurants, pharmacies, doctors, taxi services — sourced from Google Places and kept current. Use this before web search for 'where can I find X' or 'is there a Y near me' questions. Coverage is limited to what's been ingested so far (mainly Saint Vincent, Bequia, Union Island) — if nothing comes back, say so honestly rather than guessing at a business that might exist.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor'], description: 'What kind of business to look for' },
+        island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
+      },
+      required: ['category']
+    }
   }
 ];
 
@@ -466,6 +478,33 @@ function generateLuckyNumbers(game){
   return { note: `Unknown game "${game}". Available: super6, lotto, 3d, play4.` };
 }
 
+async function queryDirectory(category, island){
+  try{
+    let query = supabase
+      .from('directory_listings')
+      .select('name, address, island, phone, category')
+      .eq('category', category)
+      .eq('status', 'active');
+
+    if(island && island.trim()){
+      query = query.ilike('island', `%${island.trim()}%`);
+    }
+
+    const { data, error } = await query.order('name', { ascending: true }).limit(10);
+    if(error) throw error;
+
+    if(!data || !data.length){
+      await logUnansweredQuery(`directory: ${category}${island ? ' in ' + island : ''}`, 'directory');
+      return { results: [], note: `No ${category.replace('_', ' ')} listings found${island ? ' in ' + island : ''} in AVA's directory yet.` };
+    }
+
+    return { results: data };
+  } catch(err){
+    console.error('queryDirectory error:', err);
+    return { results: [], note: 'Could not reach the directory right now.' };
+  }
+}
+
 async function callClaude(messages){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -510,8 +549,9 @@ exports.handler = async (event) => {
     let newsResults = null;
     let ferryResults = null;
     let luckyNumbers = null;
+    let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory'];
 
     while(loops < 4){
       loops++;
@@ -591,6 +631,14 @@ exports.handler = async (event) => {
             }
           }
 
+          else if(toolUse.name === 'query_directory'){
+            const dirData = await queryDirectory(toolUse.input.category, toolUse.input.island);
+            if(dirData.results && dirData.results.length) directoryResults = dirData.results;
+            content = dirData.results && dirData.results.length
+              ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name}${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
+              : (dirData.note || 'No listings found.');
+          }
+
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         }
 
@@ -610,7 +658,7 @@ exports.handler = async (event) => {
     }
 
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults, luckyNumbers }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults, newsResults, ferryResults, luckyNumbers, directoryResults }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
