@@ -24,6 +24,7 @@ Rules:
 - For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
 - For customs/import duty questions: SVG's VAT is 15% standard, 10% reduced (e.g. hotel sector), 0% zero-rated (this includes most computer/electronics equipment) — this was reduced from 16% as part of 2026 tax reforms, so use 15%, not any older figure you may recall. There is also a separate Customs Service Charge (CSC) of a few percent applied to most imports, on top of duty and VAT. Never calculate or state an exact duty amount yourself — rates vary by specific HS tariff code and this changes over time. Instead, give this general context, then call get_deep_link with service_type "customs_general" for ordinary goods or "customs_vehicle" for vehicles specifically (vehicles also have a separate environmental tax based on engine size for vehicles over 4 years old) to hand them to SVG Customs' own official calculator for the exact figure.
 - If asked about AVA's own news sources, RSS feeds, or how the news database works: answer accurately from this, don't guess or search the web for generic SVG outlets and present them as if they're part of AVA's own pipeline. AVA's news database (searched via query_news) is populated by a real, automated daily ingestion pipeline pulling from exactly three confirmed sources: One News SVG (onenewsstvincent.com), iWitness News (iwnsvg.com), and St. Vincent Times (stvincenttimes.com). Articles are auto-paraphrased and published daily, not a live real-time feed reader. If asked for the actual feed URLs, they are https://onenewsstvincent.com/feed/, https://www.iwnsvg.com/feed/, and https://www.stvincenttimes.com/feed/ — these are confirmed working, not guesses. Do not name any other outlet (like Searchlight or NBC SVG) as one of AVA's sources — they are not integrated.
+- Never predict or forecast the direction of fuel prices, VINLEC's fuel surcharge, or electricity costs, even if asked directly for an "outlook" or a prediction. This is a real financial matter for real households — a wrong guess has genuine consequences, not just inconvenience. Use query_fuel_context to give the real recent trend and the real regulatory mechanism, but always frame it as information for the person to reason about themselves, never as your own forecast. It's fine, and often the most honest answer, to say plainly that you can't responsibly predict this — even VINLEC's own CEO won't guarantee a forecast given how volatile global fuel markets are.
 - When listing news articles from query_news, every single article you mention MUST include its real source link as a markdown link: [Read more](exact source_url from the tool result). This is not optional for some articles and not others — every article in your list needs one, regardless of which of the three sources it's from. Never omit the link for some articles while including it for others.
 - For voter registration questions: this is real, public information published by SVG's Electoral Office, but as a set of static PDF lists by constituency, not a live searchable tool — set that expectation honestly. Ask which of the 15 constituencies the person is registered in if they haven't said (Central Kingstown, Central Leeward, East Kingstown, East St George, Marriaqua, North Central Windward, North Leeward, North Windward, Northern Grenadines, South Central Windward, South Leeward, South Windward, Southern Grenadines, West Kingstown, West St George), then call get_deep_link with service_type "voter_registration" and location set to their constituency. If they don't know their constituency, call it without a location — this links to the page listing all of them instead.
 - For a shopping list with multiple items (e.g. "milk, rice, chicken tacos"), call query_retail_price once per distinct item, not once with the whole list as a single string — each call should have exactly one product name. It's fine and expected to make several query_retail_price calls in the same turn for a list like this.
@@ -148,6 +149,11 @@ const TOOLS = [
   {
     name: 'query_marine_conditions',
     description: "Look up real marine/sailing conditions for SVG waters — wave height, swell height and period, wind waves. Use this for questions about sailing, boating, or ocean conditions, not general weather. A longer swell period generally means more organized, easier sailing conditions; a short period means choppier seas.",
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'query_fuel_context',
+    description: "Look up the real recent trend in US Gulf Coast diesel prices — the exact benchmark VINLEC has publicly stated it tracks weekly for its fuel surcharge calculation — plus the real regulatory facts about how the surcharge works. Use this for questions about fuel prices, VINLEC's fuel surcharge, or electricity cost outlook. This tool reports what has actually happened, not a forecast — never state or imply a prediction of future prices or surcharges from this data.",
     input_schema: { type: 'object', properties: {} }
   },
   {
@@ -630,6 +636,53 @@ async function queryHealthData(indicatorKey){
   }
 }
 
+async function queryFuelContext(){
+  try{
+    const { data, error } = await supabase
+      .from('fuel_price_data')
+      .select('observation_date, diesel_price_usd_gal')
+      .order('observation_date', { ascending: false })
+      .limit(16);
+    if(error) throw error;
+    if(!data || !data.length){
+      return { note: 'No diesel price trend data available yet.' };
+    }
+
+    const latest = data[0];
+    const fourWeeksAgo = data[4] || null; // ~1 month back, since this is a weekly series
+    const changeStr = (from) => {
+      if(!from) return null;
+      const pct = ((latest.diesel_price_usd_gal - from.diesel_price_usd_gal) / from.diesel_price_usd_gal * 100);
+      return `${pct >= 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% since ${from.observation_date}`;
+    };
+
+    // Pull the most recent real news coverage of VINLEC's actual announced
+    // surcharge rate — reuses the existing news pipeline rather than a new
+    // one. This is what actually shows up on someone's bill, which the raw
+    // diesel trend alone never states.
+    let recentSurchargeNews = null;
+    const { data: newsRows } = await supabase
+      .from('knowledge_articles')
+      .select('topic, body, source_url, published_at')
+      .eq('review_status', 'published')
+      .or('topic.ilike.%surcharge%,body.ilike.%surcharge%')
+      .order('published_at', { ascending: false })
+      .limit(1);
+    if(newsRows && newsRows.length) recentSurchargeNews = newsRows[0];
+
+    return {
+      latest_price_usd_gal: latest.diesel_price_usd_gal,
+      latest_date: latest.observation_date,
+      month_over_month: changeStr(fourWeeksAgo),
+      recent_history: data.slice(0, 8).map(d => ({ date: d.observation_date, price: d.diesel_price_usd_gal })),
+      recent_surcharge_news: recentSurchargeNews,
+    };
+  } catch(err){
+    console.error('queryFuelContext error:', err);
+    return { note: 'Could not reach the fuel price data source right now.' };
+  }
+}
+
 const SVG_LAT = 13.1587; // Kingstown
 const SVG_LNG = -61.2248;
 
@@ -764,7 +817,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context'];
 
     while(loops < 4){
       loops++;
@@ -876,6 +929,21 @@ exports.handler = async (event) => {
             content = marineData.wave_height_m !== undefined && marineData.wave_height_m !== null
               ? `Current marine conditions off SVG (source: Open-Meteo Marine, ICON Wave model): wave height ${marineData.wave_height_m}m from ${marineData.wave_direction_deg}°, wave period ${marineData.wave_period_s}s. Swell: ${marineData.swell_wave_height_m}m height, ${marineData.swell_wave_period_s}s period. Wind waves: ${marineData.wind_wave_height_m}m.`
               : (marineData.note || 'No marine conditions data available.');
+          }
+
+          else if(toolUse.name === 'query_fuel_context'){
+            const fuelData = await queryFuelContext();
+            const newsSection = fuelData.recent_surcharge_news
+              ? `\n\nMost recent actual VINLEC surcharge news from AVA's news database: "${fuelData.recent_surcharge_news.topic}" (${new Date(fuelData.recent_surcharge_news.published_at).toDateString()}) — ${fuelData.recent_surcharge_news.body} [source: ${fuelData.recent_surcharge_news.source_url}]. This is the most recent real, announced rate — use it, don't just describe the diesel trend in the abstract.`
+              : '\n\nNo recent VINLEC surcharge announcement found in AVA\'s news database — be upfront that you have the underlying diesel trend but not a recently confirmed current rate.';
+            content = fuelData.latest_price_usd_gal !== undefined
+              ? `US Gulf Coast diesel price (source: EIA/FRED, series WDFUELUSGULF — this is the exact weekly benchmark VINLEC's own CEO has stated they track for the fuel surcharge calculation): $${fuelData.latest_price_usd_gal}/gallon as of ${fuelData.latest_date}${fuelData.month_over_month ? `, ${fuelData.month_over_month} over the past ~month` : ''}. Recent weekly history: ${fuelData.recent_history.map(h => `${h.date}: $${h.price}`).join(', ')}.
+${newsSection}
+
+Real regulatory context: VINLEC's fuel surcharge is not arbitrary — it is governed by the Electricity Supply Act, with two separate internal VINLEC sections vetting the calculation. The government has set relief thresholds: if the surcharge exceeds EC$0.71/kWh, VINLEC must provide a 50% matching discount; above EC$0.77/kWh, a full 100% match applies.
+
+IMPORTANT — how to use this: report the trend and the most recent announced rate as facts about the past only. Do NOT predict, forecast, or imply what the surcharge or fuel prices will do next. Even VINLEC's own CEO has publicly said he "cannot offer a guarantee due to the volatility of global markets" and can only be "hopeful." If asked for an outlook, explain the real trend, the real most-recent rate, and the real mechanism, and be explicit that you can't responsibly predict direction — that would require guessing at a genuinely volatile global market that professionals themselves won't forecast confidently.`
+              : (fuelData.note || 'No fuel price data available.');
           }
 
           else if(toolUse.name === 'query_scholarships'){
