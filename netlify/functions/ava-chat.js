@@ -75,11 +75,11 @@ const TOOLS = [
   },
   {
     name: 'query_economic_data',
-    description: "Look up real, current economic indicators for Saint Vincent and the Grenadines from the World Bank's public database — GDP, inflation, unemployment, population, remittances, tourism receipts. Use this for any question about SVG's economy or economic statistics rather than relying on training data, which may be outdated.",
+    description: "Look up real, current economic and governance indicators for Saint Vincent and the Grenadines from the World Bank's public database — GDP, inflation, unemployment, population, remittances, tourism receipts, plus governance quality measures (corruption control, government effectiveness, political stability, regulatory quality, rule of law, voice and accountability). Use this for any question about SVG's economy or governance rather than relying on training data, which may be outdated.",
     input_schema: {
       type: 'object',
       properties: {
-        indicator: { type: 'string', enum: ['gdp', 'gdp growth', 'inflation', 'unemployment', 'population', 'remittances', 'tourism'], description: 'Which economic indicator to look up' },
+        indicator: { type: 'string', enum: ['gdp', 'gdp growth', 'inflation', 'unemployment', 'population', 'remittances', 'tourism', 'corruption control', 'government effectiveness', 'political stability', 'regulatory quality', 'rule of law', 'voice and accountability'], description: 'Which economic or governance indicator to look up' },
       },
       required: ['indicator']
     }
@@ -285,6 +285,15 @@ const WB_INDICATOR_MAP = {
   'population': { code: 'SP.POP.TOTL', label: 'Population, total' },
   'remittances': { code: 'BX.TRF.PWKR.DT.GD.ZS', label: 'Personal remittances received (% of GDP)' },
   'tourism': { code: 'ST.INT.RCPT.CD', label: 'International tourism receipts (current US$)' },
+  // Worldwide Governance Indicators (WGI) — a separate World Bank dataset from
+  // the main World Development Indicators above, which is why these need the
+  // extra source=3 parameter. Estimate scale runs roughly -2.5 (weak) to +2.5 (strong).
+  'corruption control': { code: 'CC.EST', label: 'Control of Corruption (WGI estimate, -2.5 to 2.5)', source: 3 },
+  'government effectiveness': { code: 'GE.EST', label: 'Government Effectiveness (WGI estimate, -2.5 to 2.5)', source: 3 },
+  'political stability': { code: 'PV.EST', label: 'Political Stability and Absence of Violence (WGI estimate, -2.5 to 2.5)', source: 3 },
+  'regulatory quality': { code: 'RQ.EST', label: 'Regulatory Quality (WGI estimate, -2.5 to 2.5)', source: 3 },
+  'rule of law': { code: 'RL.EST', label: 'Rule of Law (WGI estimate, -2.5 to 2.5)', source: 3 },
+  'voice and accountability': { code: 'VA.EST', label: 'Voice and Accountability (WGI estimate, -2.5 to 2.5)', source: 3 },
 };
 
 async function queryEconomicData(indicatorKey){
@@ -295,7 +304,8 @@ async function queryEconomicData(indicatorKey){
     return { note: `Unknown indicator "${indicatorKey}". Available: ${Object.keys(WB_INDICATOR_MAP).join(', ')}` };
   }
   try{
-    const url = `https://api.worldbank.org/v2/country/${WB_COUNTRY_CODE}/indicator/${info.code}?format=json&mrv=5`;
+    const sourceParam = info.source ? `&source=${info.source}` : '';
+    const url = `https://api.worldbank.org/v2/country/${WB_COUNTRY_CODE}/indicator/${info.code}?format=json&mrv=5${sourceParam}`;
     const res = await fetch(url);
     if(!res.ok) throw new Error(`World Bank API failed: ${res.status}`);
     const data = await res.json();
