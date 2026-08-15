@@ -285,10 +285,16 @@ async function handleXlsSubmission(message, fromId, chatId) {
 
     const name = nameKey ? String(row[nameKey]).trim() : '';
     const rawPrice = priceKey ? row[priceKey] : null;
-    const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+    const priceStr = String(rawPrice);
+    const isRange = /\d\s*-\s*\d/.test(priceStr) || /\d+\s*to\s*\d+/i.test(priceStr);
+    const price = isRange ? NaN : (typeof rawPrice === 'number' ? rawPrice : parseFloat(priceStr.replace(/[^0-9.]/g, '')));
 
     if (!name) { skippedCount++; skippedReasons.add('missing item name'); continue; }
-    if (!isFinite(price) || price <= 0) { skippedCount++; skippedReasons.add('missing or invalid price'); continue; }
+    if (!isFinite(price) || price <= 0) {
+      skippedCount++;
+      skippedReasons.add(isRange ? 'price range not supported — use a single price' : 'missing or invalid price');
+      continue;
+    }
 
     validItems.push({ name, price, unit: unitKey ? String(row[unitKey]).trim() : null });
   }
