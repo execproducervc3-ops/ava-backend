@@ -248,8 +248,9 @@ async function queryRetailPriceDB(productName){
 
     const { data: offers, error: offerErr } = await supabase
       .from('retail_offers')
-      .select('item_name, price, unit, photo_url, listing_id, created_at')
+      .select('item_name, price, unit, standard_unit_type, price_per_standard_unit, photo_url, listing_id, created_at')
       .in('canonical_product_id', productIds)
+      .order('price_per_standard_unit', { ascending: true, nullsFirst: false })
       .order('price', { ascending: true });
     if(offerErr) throw offerErr;
     if(!offers || !offers.length){
@@ -274,6 +275,8 @@ async function queryRetailPriceDB(productName){
       item_name: o.item_name,
       price: o.price,
       unit: o.unit,
+      standard_unit_type: o.standard_unit_type,
+      price_per_standard_unit: o.price_per_standard_unit,
       photo_url: o.photo_url,
     }));
     return { results };
@@ -736,9 +739,10 @@ exports.handler = async (event) => {
               note: (!priceData.results || !priceData.results.length) ? (priceData.note || 'No results found.') : null,
             });
             content = priceData.results && priceData.results.length
-              ? `Found ${priceData.results.length} offer(s), cheapest first: ` + priceData.results.map(r => {
+              ? `Found ${priceData.results.length} offer(s), cheapest first (normalized by price per lb or per gallon where the unit could be parsed, so this correctly compares different package sizes — e.g. a 10kg bag vs a 5lb bag): ` + priceData.results.map(r => {
                   const loc = [r.parish, r.island].filter(Boolean).join(', ');
-                  return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
+                  const normalized = r.price_per_standard_unit ? ` [≈ $${r.price_per_standard_unit}/${r.standard_unit_type === 'weight_lb' ? 'lb' : 'gallon'}]` : '';
+                  return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${normalized}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
                 }).join('; ')
               : (priceData.note || 'No results found in the database for that product.');
           }

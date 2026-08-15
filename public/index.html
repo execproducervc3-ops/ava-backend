@@ -134,6 +134,7 @@
   .cheapest{background:var(--flag-green);color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.03em;}
   .priceisland{color:var(--soft);font-weight:400;}
   .priceitem{font-size:11.5px;color:var(--soft);}
+  .pricenormalized{font-size:11px;color:var(--teal);font-weight:600;margin-top:2px;}
   .priceval{font-weight:700;font-size:13.5px;flex:0 0 auto;text-align:right;}
   .priceunit{font-weight:400;font-size:10px;color:var(--soft);}
   .pricecontact{font-size:10.5px;color:var(--soft);margin-top:3px;}
@@ -473,12 +474,16 @@ function renderRetailResults(groups){
       const contactBits = [];
       if(loc || r.address) contactBits.push(`&#128205; ${escapeHtml([r.address, loc].filter(Boolean).join(', '))}`);
       if(r.phone) contactBits.push(`<a href="tel:${escapeHtml(r.phone.replace(/[^\d+]/g,''))}" class="pricephone">&#128222; ${escapeHtml(r.phone)}</a>`);
+      const normalizedLine = r.price_per_standard_unit
+        ? `<div class="pricenormalized">&asymp; $${Number(r.price_per_standard_unit).toFixed(2)} / ${r.standard_unit_type === 'weight_lb' ? 'lb' : 'gallon'}</div>`
+        : '';
       return `
       <div class="pricerow">
         ${r.photo_url ? `<img class="pricethumb" src="${r.photo_url}" alt="">` : `<div class="pricethumb placeholder">&#128717;</div>`}
         <div class="pricemain">
           <div class="pricename">${i === 0 ? '<span class="cheapest">Cheapest</span> ' : ''}${escapeHtml(r.retailer)}</div>
           <div class="priceitem">${escapeHtml(r.item_name)}</div>
+          ${normalizedLine}
           ${contactBits.length ? `<div class="pricecontact">${contactBits.join(' &nbsp;·&nbsp; ')}</div>` : ''}
         </div>
         <div class="priceval">$${Number(r.price).toFixed(2)}${r.unit ? `<span class="priceunit">/${escapeHtml(r.unit)}</span>` : ''}</div>

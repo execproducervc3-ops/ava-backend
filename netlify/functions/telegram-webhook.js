@@ -195,6 +195,31 @@ async function uploadPhotoToStorage(base64, mediaType, fromId) {
   }
 }
 
+// Cross-unit price normalization — lets AVA correctly compare, say, a 10kg
+// bag against a 5lb bag rather than just sorting by raw price. Genuinely
+// unparseable units ("bag", "each", "plate") correctly return null rather
+// than guessing — a wrong comparison is worse than an honest gap.
+const WEIGHT_TO_LB = { lb:1, lbs:1, pound:1, pounds:1, kg:2.20462, kgs:2.20462, kilogram:2.20462, kilograms:2.20462, g:0.00220462, gram:0.00220462, grams:0.00220462, oz:0.0625, ounce:0.0625, ounces:0.0625 };
+const VOLUME_TO_GALLON = { gallon:1, gallons:1, gal:1, liter:0.264172, liters:0.264172, litre:0.264172, litres:0.264172, l:0.264172, floz:0.0078125 };
+
+function parseQuantityUnit(unitText){
+  if(!unitText) return null;
+  const text = unitText.toLowerCase().trim();
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?|kgs?|kilograms?|g|grams?|oz|ounces?|gallons?|gal|liters?|litres?|l|fl\s*oz)\b/);
+  if(!match) return null;
+  const qty = parseFloat(match[1]);
+  const unitToken = match[2].replace(/\s+/g, '');
+  if(WEIGHT_TO_LB[unitToken] !== undefined) return { type: 'weight_lb', qtyInStandardUnit: qty * WEIGHT_TO_LB[unitToken] };
+  if(VOLUME_TO_GALLON[unitToken] !== undefined) return { type: 'volume_gallon', qtyInStandardUnit: qty * VOLUME_TO_GALLON[unitToken] };
+  return null;
+}
+
+function computeNormalization(price, unitText){
+  const parsed = parseQuantityUnit(unitText);
+  if(!parsed || !parsed.qtyInStandardUnit || parsed.qtyInStandardUnit <= 0) return { standard_unit_type: null, price_per_standard_unit: null };
+  return { standard_unit_type: parsed.type, price_per_standard_unit: +(price / parsed.qtyInStandardUnit).toFixed(4) };
+}
+
 function extractHashtags(text){
   if (!text) return [];
   const matches = text.match(/#(\w+)/g) || [];
@@ -390,17 +415,22 @@ async function confirmLatestDraft(fromId, chatId) {
     for (const c of (created || [])) canonicalMap.set(c.name.toLowerCase(), c.id);
   }
 
-  const offersToInsert = items.map(item => ({
-    listing_id: listingId,
-    canonical_product_id: canonicalMap.get(item.name.toLowerCase()) || null,
-    item_name: item.name,
-    price: item.price,
-    unit: item.unit,
-    source_type: draft.source_type || 'caption',
-    source_submission_id: draft.id,
-    photo_url: draft.photo_url,
-    tags: draft.tags || [],
-  }));
+  const offersToInsert = items.map(item => {
+    const normalized = computeNormalization(item.price, item.unit);
+    return {
+      listing_id: listingId,
+      canonical_product_id: canonicalMap.get(item.name.toLowerCase()) || null,
+      item_name: item.name,
+      price: item.price,
+      unit: item.unit,
+      standard_unit_type: normalized.standard_unit_type,
+      price_per_standard_unit: normalized.price_per_standard_unit,
+      source_type: draft.source_type || 'caption',
+      source_submission_id: draft.id,
+      photo_url: draft.photo_url,
+      tags: draft.tags || [],
+    };
+  });
   await supabase.from('retail_offers').insert(offersToInsert);
 
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
