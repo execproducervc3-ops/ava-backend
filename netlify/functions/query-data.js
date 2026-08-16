@@ -39,11 +39,17 @@ exports.handler = async (event) => {
     }
     const productIds = products.map(p => p.id);
 
-    // Step 2: all current offers for those products, cheapest first
+    // Step 2: all current offers for those products, cheapest-per-standard-unit
+    // first — matching the exact same normalization already proven in
+    // queryRetailPriceDB, so a 10kg bag and a 5lb bag compare fairly rather
+    // than just sorting by raw price. Also restricted to vetted listings only,
+    // excluding anything still pending review or already rejected.
     const { data: offers, error: offerErr } = await supabase
       .from('retail_offers')
-      .select('item_name, price, unit, photo_url, listing_id, created_at')
+      .select('item_name, price, unit, standard_unit_type, price_per_standard_unit, photo_url, listing_id, created_at')
       .in('canonical_product_id', productIds)
+      .in('review_status', ['auto_published', 'approved'])
+      .order('price_per_standard_unit', { ascending: true, nullsFirst: false })
       .order('price', { ascending: true });
     if (offerErr) throw offerErr;
 
@@ -69,6 +75,8 @@ exports.handler = async (event) => {
       item_name: o.item_name,
       price: o.price,
       unit: o.unit,
+      standard_unit_type: o.standard_unit_type,
+      price_per_standard_unit: o.price_per_standard_unit,
       photo_url: o.photo_url,
       submitted_at: o.created_at,
     }));
