@@ -55,6 +55,12 @@
   .btn-danger:hover{background:#FBEAE8;}
   .empty-note{font-size:13px; color:var(--soft); text-align:center; padding:16px 0;}
   .reviewitem{border:1px solid #E0C36A; background:#FFFBEF; border-radius:8px; padding:12px 14px; margin-bottom:10px;}
+  .retailitem{border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:8px;}
+  .retailitem-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;}
+  .retailitem-retailer{font-weight:700; font-size:13.5px;}
+  .retailitem-status{font-size:10.5px; color:var(--soft); text-transform:uppercase; letter-spacing:.03em;}
+  .retailfields{display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; align-items:center;}
+  .retailfields input{margin-bottom:0;}
   .reviewreason{font-size:12px; color:#8A6D1A; margin-bottom:10px; line-height:1.4;}
   .reviewretailer{font-weight:700; font-size:13.5px; margin-bottom:8px;}
   .reviewfields{display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; margin-bottom:10px;}
@@ -117,6 +123,13 @@
       <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
     </div>
     <button id="logoutBtn" class="btn-secondary" style="flex:0 0 auto;">Log out</button>
+  </div>
+
+  <div class="panel">
+    <h2>Edit retail listings</h2>
+    <label>Search by item or retailer name</label>
+    <input type="text" id="retailSearchInput" placeholder="e.g. rice, or Sky Lounge…" autocomplete="off">
+    <div id="retailSearchResults"></div>
   </div>
 
   <div class="panel">
@@ -355,6 +368,62 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   loadPlacements();
   loadReviewQueue();
 });
+
+const RETAIL_API = '/.netlify/functions/admin-retail';
+
+let retailSearchTimeout;
+document.getElementById('retailSearchInput').addEventListener('input', (e) => {
+  clearTimeout(retailSearchTimeout);
+  const q = e.target.value;
+  retailSearchTimeout = setTimeout(() => doRetailSearch(q), 300);
+});
+
+async function doRetailSearch(q){
+  const resultsEl = document.getElementById('retailSearchResults');
+  if(!q.trim()){ resultsEl.innerHTML = ''; return; }
+  const res = await fetch(`${RETAIL_API}?action=search&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    resultsEl.innerHTML = '<div class="empty-note">No matching listings.</div>';
+    return;
+  }
+  resultsEl.innerHTML = data.results.map(o => `
+    <div class="retailitem">
+      <div class="retailitem-top">
+        <span class="retailitem-retailer">${escapeHtml(o.retailer)}</span>
+        <span class="retailitem-status">${escapeHtml(o.review_status)}${o.price_per_standard_unit ? ` · $${o.price_per_standard_unit}/${o.standard_unit_type === 'weight_lb' ? 'lb' : 'gal'}` : ''}</span>
+      </div>
+      <div class="retailfields">
+        <input type="text" data-field="item_name" value="${escapeHtml(o.item_name)}">
+        <input type="text" data-field="price" value="${escapeHtml(o.price)}">
+        <input type="text" data-field="unit" value="${escapeHtml(o.unit || '')}">
+        <button data-save-id="${escapeHtml(o.id)}">Save</button>
+      </div>
+    </div>`).join('');
+  resultsEl.querySelectorAll('[data-save-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.retailitem');
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(input => { fields[input.dataset.field] = input.value; });
+      saveRetailEdit(btn.dataset.saveId, fields, btn);
+    });
+  });
+}
+
+async function saveRetailEdit(id, fields, btn){
+  const originalText = btn.textContent;
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+  await fetch(`${RETAIL_API}?action=update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({
+      id, item_name: fields.item_name, price: parseFloat(fields.price) || 0, unit: fields.unit || null,
+    }),
+  });
+  btn.textContent = 'Saved';
+  setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1200);
+}
 
 const REVIEW_API = '/.netlify/functions/admin-review';
 
