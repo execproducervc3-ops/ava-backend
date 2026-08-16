@@ -759,7 +759,9 @@ async function callClaude(messages){
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 1000,
-      system: buildSystemPrompt(),
+      system: [
+        { type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } },
+      ],
       messages,
       tools: TOOLS,
     }),
