@@ -363,7 +363,8 @@ async function handleXlsSubmission(message, fromId, chatId) {
 // Claude's own extraction uncertainty ignored at confirmation, or a price
 // that's a wild outlier vs. other retailers or vs. this retailer's own
 // history for the same product. Most submissions never trip any of this.
-function detectFlagReason(item, listingId, existingOffersForProduct, hasMissingFields){
+function detectFlagReason(item, listingId, existingOffersForProduct, hasMissingFields, isFirstEverSubmission){
+  if(isFirstEverSubmission) return "First submission from a new retailer — not yet vetted. Review once, then future submissions flow through normally.";
   if(hasMissingFields) return "Claude flagged uncertainty reading part of this submission, and the retailer confirmed anyway";
 
   const normalized = computeNormalization(item.price, item.unit);
@@ -470,13 +471,23 @@ async function confirmLatestDraft(fromId, chatId) {
   }
 
   const hasMissingFields = !!(draft.missing_fields && draft.missing_fields.length);
+
+  // Checked once per confirmation, not per item — this must run before the
+  // current batch inserts, or it would just see its own rows and never
+  // correctly detect a genuinely new retailer's first submission.
+  const { data: priorOffers } = await supabase
+    .from('retail_offers')
+    .select('id')
+    .eq('listing_id', listingId)
+    .limit(1);
+  const isFirstEverSubmission = !priorOffers || !priorOffers.length;
   const flaggedItems = [];
 
   const offersToInsert = items.map((item, idx) => {
     const normalized = computeNormalization(item.price, item.unit);
     const productId = canonicalMap.get(item.name.toLowerCase()) || null;
     const existingForProduct = productId ? (offersByProduct.get(productId) || []) : [];
-    const flagReason = detectFlagReason(item, listingId, existingForProduct, hasMissingFields);
+    const flagReason = detectFlagReason(item, listingId, existingForProduct, hasMissingFields, isFirstEverSubmission);
     if(flagReason) flaggedItems.push({ idx, reason: flagReason });
 
     return {
