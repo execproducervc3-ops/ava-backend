@@ -112,6 +112,49 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
     }
 
+    if (event.httpMethod === 'POST' && action === 'delete') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'id is required' }) };
+      }
+      const { error } = await supabase.from('retail_offers').delete().eq('id', body.id);
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'delete_retailer') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id is required' }) };
+      }
+
+      // Full real dependency chain, none of it cascading automatically:
+      // submission_draft -> retailer_profile -> directory_listings.
+      // "Completely remove them and all their data" means actually deleting
+      // retailer_profile, not just disconnecting it — which means clearing
+      // submission_draft first, since IT references retailer_profile without
+      // cascade too. Get this order wrong and the delete fails outright.
+      const { data: profiles, error: profileFetchErr } = await supabase
+        .from('retailer_profile')
+        .select('telegram_user_id')
+        .eq('directory_listing_id', body.listing_id);
+      if (profileFetchErr) throw profileFetchErr;
+
+      for (const profile of (profiles || [])) {
+        const { error: draftErr } = await supabase.from('submission_draft').delete().eq('retailer_telegram_id', profile.telegram_user_id);
+        if (draftErr) throw draftErr;
+      }
+
+      const { error: profileDeleteErr } = await supabase.from('retailer_profile').delete().eq('directory_listing_id', body.listing_id);
+      if (profileDeleteErr) throw profileDeleteErr;
+
+      // Everything else (retail_offers, sponsored_placements, taxi_service_details,
+      // showings, item_listings) cascades automatically on this delete.
+      const { error } = await supabase.from('directory_listings').delete().eq('id', body.listing_id);
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Unknown action' }) };
   } catch (err) {
     console.error('admin-retail error:', err);

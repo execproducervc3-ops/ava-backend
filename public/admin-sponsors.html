@@ -61,6 +61,7 @@
   .retailitem-status{font-size:10.5px; color:var(--soft); text-transform:uppercase; letter-spacing:.03em;}
   .retailfields{display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; align-items:center;}
   .retailfields input{margin-bottom:0;}
+  .retailfields-actions{display:flex; gap:8px; margin-top:8px;}
   .reviewreason{font-size:12px; color:#8A6D1A; margin-bottom:10px; line-height:1.4;}
   .reviewretailer{font-weight:700; font-size:13.5px; margin-bottom:8px;}
   .reviewfields{display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; margin-bottom:10px;}
@@ -399,6 +400,10 @@ async function doRetailSearch(q){
         <input type="text" data-field="unit" value="${escapeHtml(o.unit || '')}">
         <button data-save-id="${escapeHtml(o.id)}">Save</button>
       </div>
+      <div class="retailfields-actions">
+        <button class="btn-danger" data-delete-item-id="${escapeHtml(o.id)}" data-delete-item-name="${escapeHtml(o.item_name)}">Delete this listing</button>
+        <button class="btn-danger" data-delete-retailer-id="${escapeHtml(o.listing_id)}" data-delete-retailer-name="${escapeHtml(o.retailer)}">Delete entire retailer</button>
+      </div>
     </div>`).join('');
   resultsEl.querySelectorAll('[data-save-id]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -406,6 +411,27 @@ async function doRetailSearch(q){
       const fields = {};
       card.querySelectorAll('[data-field]').forEach(input => { fields[input.dataset.field] = input.value; });
       saveRetailEdit(btn.dataset.saveId, fields, btn);
+    });
+  });
+  resultsEl.querySelectorAll('[data-delete-item-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if(!confirm(`Delete "${btn.dataset.deleteItemName}"? This can't be undone.`)) return;
+      await fetch(`${RETAIL_API}?action=delete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ id: btn.dataset.deleteItemId }),
+      });
+      doRetailSearch(document.getElementById('retailSearchInput').value);
+    });
+  });
+  resultsEl.querySelectorAll('[data-delete-retailer-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.deleteRetailerName;
+      if(!confirm(`Delete "${name}" entirely? This removes the business AND all of their price listings, any sponsorship, and any other listings tied to them — everything, not just this one item. This can't be undone.`)) return;
+      await fetch(`${RETAIL_API}?action=delete_retailer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ listing_id: btn.dataset.deleteRetailerId }),
+      });
+      doRetailSearch(document.getElementById('retailSearchInput').value);
     });
   });
 }
