@@ -494,7 +494,9 @@ async function confirmLatestDraft(fromId, chatId) {
       tags: draft.tags || [],
     };
   });
-  const { data: insertedOffers } = await supabase.from('retail_offers').insert(offersToInsert).select();
+  const { data: insertedOffers } = await supabase.from('retail_offers')
+    .upsert(offersToInsert, { onConflict: 'listing_id,canonical_product_id', ignoreDuplicates: false })
+    .select();
 
   if(flaggedItems.length && insertedOffers){
     const reviewRows = flaggedItems
