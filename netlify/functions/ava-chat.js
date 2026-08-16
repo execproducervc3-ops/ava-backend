@@ -1,5 +1,14 @@
 const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+// One-way hash for anonymous product-interest tracking — the raw device ID
+// is never stored anywhere, only this hash, which cannot be reversed back
+// to the original value.
+function hashDeviceId(deviceId){
+  if(!deviceId) return null;
+  return crypto.createHash('sha256').update('ava-interest-salt:' + deviceId).digest('hex');
+}
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 const CORS = {
@@ -248,6 +257,26 @@ async function logUnansweredQuery(queryText, categoryGuess){
     });
   } catch(err){
     console.error('logUnansweredQuery failed (non-fatal):', err.message);
+  }
+}
+
+async function logProductInterest(searchTerm, deviceId){
+  try{
+    const hash = hashDeviceId(deviceId);
+    if(!hash) return; // no device id on this request — skip rather than log an untraceable entry
+    const { data: matches } = await supabase
+      .from('canonical_products')
+      .select('id')
+      .ilike('name', `%${searchTerm}%`)
+      .limit(1);
+    const canonicalProductId = matches && matches.length ? matches[0].id : null;
+    await supabase.from('product_interest_log').insert({
+      canonical_product_id: canonicalProductId,
+      search_term: searchTerm,
+      device_id_hash: hash,
+    });
+  } catch(err){
+    console.error('logProductInterest failed (non-fatal):', err.message);
   }
 }
 
@@ -788,6 +817,7 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
   const incoming = body.messages;
+  const deviceId = body.deviceId || null;
   if(!Array.isArray(incoming) || !incoming.length){
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'messages array is required' }) };
   }
@@ -835,6 +865,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_retail_price'){
             const priceData = await queryRetailPriceDB(toolUse.input.product_name);
+            await logProductInterest(toolUse.input.product_name, deviceId);
             retailResults.push({
               product: toolUse.input.product_name,
               results: priceData.results || [],

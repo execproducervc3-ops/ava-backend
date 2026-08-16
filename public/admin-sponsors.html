@@ -127,6 +127,12 @@
   </div>
 
   <div class="panel">
+    <h2>Product interest</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Total searches and distinct visitors per product, anonymous — no way to trace back to who searched.</div>
+    <div id="interestList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Edit retail listings</h2>
     <label>Search by item or retailer name</label>
     <input type="text" id="retailSearchInput" placeholder="e.g. rice, or Sky Lounge…" autocomplete="off">
@@ -223,6 +229,7 @@ async function tryLogin(password, showErrors){
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
   loadReviewQueue();
+  loadInterest();
   return true;
 }
 
@@ -368,7 +375,33 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   selectedListingId = null;
   loadPlacements();
   loadReviewQueue();
+  loadInterest();
 });
+
+const INTEREST_API = '/.netlify/functions/admin-interest';
+
+async function loadInterest(){
+  const listEl = document.getElementById('interestList');
+  const res = await fetch(INTEREST_API, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    listEl.innerHTML = '<div class="empty-note">No searches logged yet.</div>';
+    return;
+  }
+  listEl.innerHTML = `<table style="width:100%; border-collapse:collapse;">
+    <tr style="text-align:left; font-size:11px; color:var(--soft); text-transform:uppercase;">
+      <th style="padding:6px 4px;">Product</th>
+      <th style="padding:6px 4px;">Total searches</th>
+      <th style="padding:6px 4px;">Distinct visitors</th>
+    </tr>
+    ${data.results.slice(0, 30).map(r => `
+    <tr style="border-top:1px solid var(--line);">
+      <td style="padding:8px 4px; font-weight:600;">${escapeHtml(r.product)}</td>
+      <td style="padding:8px 4px;">${r.total_searches}</td>
+      <td style="padding:8px 4px;">${r.distinct_visitors}</td>
+    </tr>`).join('')}
+  </table>`;
+}
 
 const RETAIL_API = '/.netlify/functions/admin-retail';
 
@@ -499,6 +532,7 @@ async function publishReview(queueId, offerId, fields){
     }),
   });
   loadReviewQueue();
+  loadInterest();
 }
 
 async function rejectReview(queueId, offerId){
@@ -508,6 +542,7 @@ async function rejectReview(queueId, offerId){
     body: JSON.stringify({ queue_id: queueId, offer_id: offerId }),
   });
   loadReviewQueue();
+  loadInterest();
 }
 
 async function loadPlacements(){
@@ -552,6 +587,7 @@ async function deletePlacement(id, name){
   });
   loadPlacements();
   loadReviewQueue();
+  loadInterest();
 }
 
 async function toggle(id, newActive){
@@ -562,6 +598,7 @@ async function toggle(id, newActive){
   });
   loadPlacements();
   loadReviewQueue();
+  loadInterest();
 }
 </script>
 </body>

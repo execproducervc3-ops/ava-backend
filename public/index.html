@@ -507,6 +507,18 @@ function renderLinkCard(card){
 
 const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 
+// Anonymous device identifier — generated once per browser, never tied to a
+// name or account. Used only to distinguish repeat visits from genuinely
+// distinct visitors in aggregate product-interest reporting.
+function getDeviceId(){
+  let id = localStorage.getItem('ava_device_id');
+  if(!id){
+    id = crypto.randomUUID();
+    localStorage.setItem('ava_device_id', id);
+  }
+  return id;
+}
+
 async function handleSend(text){
   if(!text.trim()) return;
   appendMessage('user', text);
@@ -524,7 +536,7 @@ async function handleSend(text){
     const res = await fetch(AVA_CHAT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.slice() }),
+      body: JSON.stringify({ messages: history.slice(), deviceId: getDeviceId() }),
     });
     if(!res.ok) throw new Error('Request failed: ' + res.status);
     const data = await res.json();
