@@ -395,10 +395,10 @@ async function doRetailSearch(q){
         <span class="retailitem-status">${escapeHtml(o.review_status)}${o.price_per_standard_unit ? ` · $${o.price_per_standard_unit}/${o.standard_unit_type === 'weight_lb' ? 'lb' : 'gal'}` : ''}</span>
       </div>
       <div class="retailfields">
-        <input type="text" data-field="item_name" value="${escapeHtml(o.item_name)}">
-        <input type="text" data-field="price" value="${escapeHtml(o.price)}">
-        <input type="text" data-field="unit" value="${escapeHtml(o.unit || '')}">
-        <button data-save-id="${escapeHtml(o.id)}">Save</button>
+        <div><label>Item</label><input type="text" data-field="item_name" value="${escapeHtml(o.item_name)}"></div>
+        <div><label>Price</label><input type="text" data-field="price" value="${escapeHtml(o.price)}"></div>
+        <div><label>Unit</label><input type="text" data-field="unit" value="${escapeHtml(o.unit || '')}"></div>
+        <button data-save-id="${escapeHtml(o.id)}" style="align-self:end;">Save</button>
       </div>
       <div class="retailfields-actions">
         <button class="btn-danger" data-delete-item-id="${escapeHtml(o.id)}" data-delete-item-name="${escapeHtml(o.item_name)}">Delete this listing</button>
@@ -466,9 +466,9 @@ async function loadReviewQueue(){
       <div class="reviewretailer">${escapeHtml(item.retailer)}</div>
       <div class="reviewreason">${escapeHtml(item.reason)}</div>
       <div class="reviewfields">
-        <input type="text" data-field="item_name" value="${escapeHtml(item.item_name)}" placeholder="Item name">
-        <input type="text" data-field="price" value="${escapeHtml(item.price)}" placeholder="Price">
-        <input type="text" data-field="unit" value="${escapeHtml(item.unit || '')}" placeholder="Unit">
+        <div><label>Item</label><input type="text" data-field="item_name" value="${escapeHtml(item.item_name)}"></div>
+        <div><label>Price</label><input type="text" data-field="price" value="${escapeHtml(item.price)}"></div>
+        <div><label>Unit</label><input type="text" data-field="unit" value="${escapeHtml(item.unit || '')}"></div>
       </div>
       <div class="reviewactions">
         <button class="btn-publish" data-publish-queue="${escapeHtml(item.queue_id)}" data-publish-offer="${escapeHtml(item.offer_id)}">Publish</button>
