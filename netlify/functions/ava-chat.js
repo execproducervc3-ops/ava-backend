@@ -1000,3 +1000,29 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
   }
 };
+
+// Exported alongside the handler so these can be called directly by a
+// future MCP server tool, without going through Claude's conversational
+// loop or duplicating any logic — the same principle already applied to
+// getProductInterestSummary in admin-interest.js.
+//
+// Deliberately NOT exported: callClaude (Anthropic-specific orchestration,
+// the one piece that genuinely isn't reusable across agent frameworks —
+// see the earlier cross-compatibility discussion), buildSystemPrompt
+// (Claude-conversation-specific), hashDeviceId/logUnansweredQuery/
+// logProductInterest (internal side-effects, not queryable capabilities),
+// and the small numeric helpers used only internally by generateLuckyNumbers.
+exports.queryRetailPriceDB = queryRetailPriceDB;
+exports.queryNewsDB = queryNewsDB;
+exports.queryEconomicData = queryEconomicData;
+exports.queryImfData = queryImfData;
+exports.queryFerrySchedule = queryFerrySchedule;
+exports.generateLuckyNumbers = generateLuckyNumbers;
+exports.queryDirectory = queryDirectory;
+exports.queryHealthData = queryHealthData;
+exports.queryFuelContext = queryFuelContext;
+exports.queryWeather = queryWeather;
+exports.queryMarineConditions = queryMarineConditions;
+exports.queryScholarships = queryScholarships;
+exports.queryReferenceKnowledge = queryReferenceKnowledge;
+exports.buildDeepLink = buildDeepLink;
