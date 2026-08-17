@@ -123,11 +123,11 @@ const TOOLS = [
   },
   {
     name: 'query_reference_knowledge',
-    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, or economy. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — for anything current or detailed, supplement with web search.",
+    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, or practical travel information (entry requirements, arrival points). Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — for anything current or detailed, supplement with web search.",
     input_schema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy'], description: 'Which reference category to look up' },
+        category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy', 'practical'], description: 'Which reference category to look up' },
       },
       required: ['category']
     }
