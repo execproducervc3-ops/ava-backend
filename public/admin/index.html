@@ -65,6 +65,14 @@
   .reviewreason{font-size:12px; color:#8A6D1A; margin-bottom:10px; line-height:1.4;}
   .reviewretailer{font-weight:700; font-size:13.5px; margin-bottom:8px;}
   .reviewfields{display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; margin-bottom:10px;}
+  .gaprow{display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding:10px 4px; gap:10px;}
+  .gaprow:first-child{border-top:none;}
+  .gaprow-query{font-weight:600; flex:1;}
+  .gaprow-meta{font-size:12px; color:var(--soft); white-space:nowrap;}
+  .draftcard{border:1px solid #E0C36A; background:#FFFBEF; border-radius:8px; padding:14px; margin-bottom:12px;}
+  .draftfields{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;}
+  .draftfields .full{grid-column:1 / -1;}
+  .draftfields textarea{width:100%; font-family:inherit; font-size:14px; padding:8px; border:1px solid var(--line); border-radius:6px; resize:vertical;}
   .reviewfields input{margin-bottom:0;}
   .reviewactions{display:flex; gap:8px;}
   .btn-publish{background:var(--live); color:#fff; border:none;}
@@ -137,6 +145,12 @@
     <label>Search by item or retailer name</label>
     <input type="text" id="retailSearchInput" placeholder="e.g. rice, or Sky Lounge…" autocomplete="off">
     <div id="retailSearchResults"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Knowledge gaps</h2>
+    <div class="empty-note" style="margin-bottom:10px;">What AVA couldn't answer from its own data, grouped and ranked by how often it's actually been asked.</div>
+    <div id="gapsList"></div>
   </div>
 
   <div class="panel">
@@ -229,6 +243,7 @@ async function tryLogin(password, showErrors){
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
   loadReviewQueue();
+  loadGaps();
   loadInterest();
   return true;
 }
@@ -375,6 +390,7 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   selectedListingId = null;
   loadPlacements();
   loadReviewQueue();
+  loadGaps();
   loadInterest();
 });
 
@@ -484,6 +500,131 @@ async function saveRetailEdit(id, fields, btn){
   setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1200);
 }
 
+const RESEARCH_API = '/.netlify/functions/admin-research';
+
+async function loadGaps(){
+  const listEl = document.getElementById('gapsList');
+  const res = await fetch(`${RESEARCH_API}?action=list_gaps`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    listEl.innerHTML = '<div class="empty-note">No unanswered questions logged yet.</div>';
+    return;
+  }
+  listEl.innerHTML = data.results.map(g => `
+    <div class="gaprow" data-query="${escapeHtml(g.query_text)}">
+      <div>
+        <div class="gaprow-query">${escapeHtml(g.query_text)}</div>
+        <div class="gaprow-meta">Asked ${g.count}&times; &middot; ${escapeHtml(g.category_guess || 'unknown')}</div>
+      </div>
+      <div style="display:flex; gap:8px; flex:0 0 auto;">
+        <button data-research="${escapeHtml(g.query_text)}" data-category="${escapeHtml(g.category_guess || '')}">Research &amp; add</button>
+        <button class="btn-secondary" data-dismiss-gap="${escapeHtml(g.query_text)}">Dismiss</button>
+      </div>
+    </div>`).join('');
+
+  listEl.querySelectorAll('[data-research]').forEach(btn => {
+    btn.addEventListener('click', () => runResearch(btn.dataset.research, btn.dataset.category, btn));
+  });
+  listEl.querySelectorAll('[data-dismiss-gap]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch(`${RESEARCH_API}?action=dismiss`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ query_text: btn.dataset.dismissGap }),
+      });
+      loadGaps();
+    });
+  });
+}
+
+async function runResearch(queryText, categoryGuess, triggerBtn){
+  const originalText = triggerBtn.textContent;
+  triggerBtn.textContent = 'Researching…';
+  triggerBtn.disabled = true;
+  try{
+    const res = await fetch(`${RESEARCH_API}?action=research`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+      body: JSON.stringify({ query_text: queryText, category_guess: categoryGuess }),
+    });
+    const data = await res.json();
+    const row = triggerBtn.closest('.gaprow');
+    if(data.is_poi){
+      row.insertAdjacentHTML('afterend', renderPoiDrafts(data.draft, queryText));
+    } else {
+      row.insertAdjacentHTML('afterend', renderReferenceDraft(data.draft, queryText));
+    }
+    wireDraftButtons();
+    row.remove();
+  } catch(err){
+    triggerBtn.textContent = originalText;
+    triggerBtn.disabled = false;
+    alert('Research failed — try again.');
+  }
+}
+
+function renderPoiDrafts(places, queryText){
+  return places.map((p, i) => `
+    <div class="draftcard" data-poi-draft data-query="${escapeHtml(queryText)}">
+      <div class="draftfields">
+        <div><label>Name</label><input type="text" data-field="name" value="${escapeHtml(p.name)}"></div>
+        <div><label>Category</label><input type="text" data-field="category" value="${escapeHtml(p.category)}"></div>
+        <div class="full"><label>Island</label><input type="text" data-field="island" value="${escapeHtml(p.island)}"></div>
+        <div class="full"><label>Description</label><textarea rows="3" data-field="description">${escapeHtml(p.description)}</textarea></div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button data-publish-poi>Publish</button>
+        <button class="btn-danger" data-reject-draft>Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderReferenceDraft(draft, queryText){
+  return `
+    <div class="draftcard" data-reference-draft data-query="${escapeHtml(queryText)}">
+      <div class="draftfields">
+        <div><label>Category</label><input type="text" data-field="category" value="${escapeHtml(draft.category)}"></div>
+        <div><label>Title</label><input type="text" data-field="title" value="${escapeHtml(draft.title)}"></div>
+        <div class="full"><label>Summary</label><textarea rows="4" data-field="summary">${escapeHtml(draft.summary)}</textarea></div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button data-publish-reference>Publish</button>
+        <button class="btn-danger" data-reject-draft>Reject</button>
+      </div>
+    </div>`;
+}
+
+function wireDraftButtons(){
+  document.querySelectorAll('[data-publish-poi]').forEach(btn => {
+    btn.onclick = async () => {
+      const card = btn.closest('.draftcard');
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(input => { fields[input.dataset.field] = input.value; });
+      await fetch(`${RESEARCH_API}?action=publish_poi`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ places: [fields], query_text: card.dataset.query }),
+      });
+      card.remove();
+      loadGaps();
+    };
+  });
+  document.querySelectorAll('[data-publish-reference]').forEach(btn => {
+    btn.onclick = async () => {
+      const card = btn.closest('.draftcard');
+      const fields = {};
+      card.querySelectorAll('[data-field]').forEach(input => { fields[input.dataset.field] = input.value; });
+      fields.query_text = card.dataset.query;
+      await fetch(`${RESEARCH_API}?action=publish_reference`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify(fields),
+      });
+      card.remove();
+      loadGaps();
+    };
+  });
+  document.querySelectorAll('[data-reject-draft]').forEach(btn => {
+    btn.onclick = () => btn.closest('.draftcard').remove();
+  });
+}
+
 const REVIEW_API = '/.netlify/functions/admin-review';
 
 async function loadReviewQueue(){
@@ -532,6 +673,7 @@ async function publishReview(queueId, offerId, fields){
     }),
   });
   loadReviewQueue();
+  loadGaps();
   loadInterest();
 }
 
@@ -542,6 +684,7 @@ async function rejectReview(queueId, offerId){
     body: JSON.stringify({ queue_id: queueId, offer_id: offerId }),
   });
   loadReviewQueue();
+  loadGaps();
   loadInterest();
 }
 
@@ -587,6 +730,7 @@ async function deletePlacement(id, name){
   });
   loadPlacements();
   loadReviewQueue();
+  loadGaps();
   loadInterest();
 }
 
@@ -598,6 +742,7 @@ async function toggle(id, newActive){
   });
   loadPlacements();
   loadReviewQueue();
+  loadGaps();
   loadInterest();
 }
 </script>
