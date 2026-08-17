@@ -188,6 +188,17 @@ const TOOLS = [
       },
       required: ['category']
     }
+  },
+  {
+    name: 'query_points_of_interest',
+    description: "Look up real beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across Saint Vincent and the Grenadines — genuinely researched, named places, not general reference knowledge. Use this for 'what beaches should I visit' or 'best hikes on Saint Vincent' type questions. Coverage is a solid first pass, not exhaustive — if nothing comes back for a specific island or category, say so honestly.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'], description: 'Optional — narrow to a specific type of attraction. Omit to search all types.' },
+        island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
+      },
+    }
   }
 ];
 
@@ -597,6 +608,35 @@ function generateLuckyNumbers(game){
   return { note: `Unknown game "${game}". Available: super6, lotto, 3d, play4.` };
 }
 
+async function queryPointsOfInterest(category, island){
+  try{
+    let query = supabase
+      .from('points_of_interest')
+      .select('name, category, island, description, source_url')
+      .eq('active', true);
+
+    if(category && category.trim()){
+      query = query.eq('category', category.trim());
+    }
+    if(island && island.trim()){
+      query = query.ilike('island', `%${island.trim()}%`);
+    }
+
+    const { data, error } = await query.order('name', { ascending: true }).limit(15);
+    if(error) throw error;
+
+    if(!data || !data.length){
+      await logUnansweredQuery(`points_of_interest: ${category || 'any'}${island ? ' in ' + island : ''}`, 'points_of_interest');
+      return { results: [], note: `No matching attractions found in AVA's database yet${island ? ' for ' + island : ''}.` };
+    }
+
+    return { results: data };
+  } catch(err){
+    console.error('queryPointsOfInterest error:', err);
+    return { results: [], note: 'Could not reach the attractions database right now.' };
+  }
+}
+
 async function queryDirectory(category, island){
   try{
     let query = supabase
@@ -832,7 +872,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest'];
 
     while(loops < 4){
       loops++;
@@ -924,6 +964,13 @@ exports.handler = async (event) => {
             content = dirData.results && dirData.results.length
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name}${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
               : (dirData.note || 'No listings found.');
+          }
+
+          else if(toolUse.name === 'query_points_of_interest'){
+            const poiData = await queryPointsOfInterest(toolUse.input.category, toolUse.input.island);
+            content = poiData.results && poiData.results.length
+              ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
+              : (poiData.note || 'No attractions found.');
           }
 
           else if(toolUse.name === 'query_health_data'){
@@ -1025,4 +1072,5 @@ exports.queryWeather = queryWeather;
 exports.queryMarineConditions = queryMarineConditions;
 exports.queryScholarships = queryScholarships;
 exports.queryReferenceKnowledge = queryReferenceKnowledge;
+exports.queryPointsOfInterest = queryPointsOfInterest;
 exports.buildDeepLink = buildDeepLink;
