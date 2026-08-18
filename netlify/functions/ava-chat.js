@@ -201,6 +201,18 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_taxi_fare',
+    description: "Look up taxi fares in SVG. If either origin or destination is the airport (AIA/Argyle), returns the REAL official Ministry of Transport and Works flat rate for that named place — state this as a confirmed official rate. If NEITHER endpoint is the airport, returns a derived ESTIMATE based on the official data, not an official rate — you MUST clearly tell the person this is an estimate, not confirmed, since the government table only publishes airport routes directly.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        origin: { type: 'string', description: 'Starting point, e.g. "Arnos Vale" or "the airport"' },
+        destination: { type: 'string', description: 'Destination, e.g. "Kingstown"' },
+      },
+      required: ['origin', 'destination'],
+    }
+  },
+  {
     name: 'plan_trip',
     description: "Build a complete trip plan — flights, accommodation, car rental, and food — from one total budget. Splits the budget across categories, gets real live flight prices from Duffel, and pulls accommodation, car rental, and restaurant suggestions from AVA's own verified local directory (not international chains, since those don't serve SVG locally). Use this when someone gives a total trip budget and wants a full plan, not just one category.",
     input_schema: {
@@ -685,6 +697,70 @@ async function planTrip(origin, destination, departureDate, totalBudget, island)
   };
 }
 
+// Real official Ministry of Transport and Works rates, AIA to named places
+// — but every row is relative to the airport specifically. A derived
+// per-mile rate, fitted from the one verified real distance (AIA-Kingstown,
+// confirmed 10.5 miles) plus the short-distance cluster as a near-airport
+// baseline, lets non-airport routes get a genuine, data-grounded estimate
+// rather than an arbitrary guess — but this must never be presented with
+// the same confidence as the real flat rates it's derived from.
+const TAXI_FARE_SLOPE = 6.12;      // EC$ per implied mile from AIA
+const TAXI_FARE_INTERCEPT = 26.76; // EC$ baseline
+
+function findOfficialFareRow(rows, placeName){
+  const needle = placeName.trim().toLowerCase();
+  return rows.find(r => r.places.some(p => p.toLowerCase().includes(needle) || needle.includes(p.toLowerCase())));
+}
+
+async function queryTaxiFare(origin, destination){
+  try{
+    const { data: rows, error } = await supabase.from('taxi_fares_official').select('places, regular_fare, after_hours_fare');
+    if(error) throw error;
+    if(!rows || !rows.length) return { note: 'No official taxi fare data available.' };
+
+    const isAirport = (s) => /\b(aia|argyle|airport|svd)\b/i.test(s);
+    const originIsAirport = isAirport(origin);
+    const destIsAirport = isAirport(destination);
+
+    if(originIsAirport || destIsAirport){
+      const place = originIsAirport ? destination : origin;
+      const match = findOfficialFareRow(rows, place);
+      if(match){
+        return {
+          type: 'official',
+          place: match.places.join(', '),
+          regular_fare: match.regular_fare,
+          after_hours_fare: match.after_hours_fare,
+        };
+      }
+      return { note: `"${place}" isn't in the official AIA fare table — no real rate available for this specific destination.` };
+    }
+
+    // Neither endpoint is the airport — derive a rough estimate from each
+    // place's implied distance from AIA. This is explicitly NOT an official
+    // rate and must always be presented as an estimate.
+    const originMatch = findOfficialFareRow(rows, origin);
+    const destMatch = findOfficialFareRow(rows, destination);
+    if(!originMatch || !destMatch){
+      return { note: `AVA's official taxi data only covers routes to/from the airport, or between the specific named places already in the Ministry table — one or both of "${origin}" and "${destination}" aren't in it.` };
+    }
+    const originMiles = (originMatch.regular_fare - TAXI_FARE_INTERCEPT) / TAXI_FARE_SLOPE;
+    const destMiles = (destMatch.regular_fare - TAXI_FARE_INTERCEPT) / TAXI_FARE_SLOPE;
+    const estimatedMiles = Math.max(1, Math.abs(destMiles - originMiles));
+    const estimatedFare = TAXI_FARE_INTERCEPT + TAXI_FARE_SLOPE * estimatedMiles;
+
+    return {
+      type: 'estimate',
+      origin: originMatch.places.join(', '),
+      destination: destMatch.places.join(', '),
+      estimated_fare: +estimatedFare.toFixed(2),
+    };
+  } catch(err){
+    console.error('queryTaxiFare error:', err);
+    return { note: 'Could not reach the taxi fare data right now.' };
+  }
+}
+
 async function queryDirectory(category, island){
   try{
     let query = supabase
@@ -920,7 +996,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare'];
 
     while(loops < 4){
       loops++;
@@ -1019,6 +1095,17 @@ exports.handler = async (event) => {
             content = poiData.results && poiData.results.length
               ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
               : (poiData.note || 'No attractions found.');
+          }
+
+          else if(toolUse.name === 'query_taxi_fare'){
+            const fareData = await queryTaxiFare(toolUse.input.origin, toolUse.input.destination);
+            if(fareData.type === 'official'){
+              content = `REAL OFFICIAL RATE (Ministry of Transport and Works, AIA to ${fareData.place}): EC$${fareData.regular_fare} regular, EC$${fareData.after_hours_fare} after hours, for 1-3 passengers. State this confidently as the official government rate.`;
+            } else if(fareData.type === 'estimate'){
+              content = `ESTIMATE ONLY, NOT AN OFFICIAL RATE — the government table only publishes airport routes directly, so this is derived from the official AIA fares for ${fareData.origin} and ${fareData.destination}: roughly EC$${fareData.estimated_fare}. You MUST tell the person this is an estimate, not a confirmed rate, since neither endpoint is the airport.`;
+            } else {
+              content = fareData.note || 'No taxi fare data available for this route.';
+            }
           }
 
           else if(toolUse.name === 'plan_trip'){
@@ -1155,4 +1242,5 @@ exports.queryScholarships = queryScholarships;
 exports.queryReferenceKnowledge = queryReferenceKnowledge;
 exports.queryPointsOfInterest = queryPointsOfInterest;
 exports.planTrip = planTrip;
+exports.queryTaxiFare = queryTaxiFare;
 exports.buildDeepLink = buildDeepLink;
