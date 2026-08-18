@@ -3,9 +3,11 @@ import { toFetchResponse, toReqRes } from "fetch-to-node";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-// AVA's existing tool functions — a CommonJS module, imported here via the
-// standard Node interop pattern for pulling CJS exports into an ESM file.
-import * as ava from "./ava-chat.js";
+// AVA's shared, reusable tool functions — imported from ava-core.js, not
+// ava-chat.js, specifically to avoid pulling in a whole other Netlify
+// function file (with its own HTTP handler and Anthropic-specific code) as
+// a dependency, which caused real, confirmed esbuild bundling failures.
+import * as ava from "./ava-core.js";
 
 // Netlify serverless function handler — this is the newer Functions v2
 // format (Fetch API Request/Response), which the rest of AVA's codebase
