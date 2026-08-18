@@ -4,6 +4,11 @@
 
 [functions]
   node_bundler = "esbuild"
+  # Fixes "Cannot find module '@supabase/supabase-js'" in mcp-server.mjs —
+  # it's required indirectly (via importing ava-chat.js as a dependency),
+  # which esbuild's static bundler doesn't correctly trace and inline.
+  # This tells it to copy the module into the bundle as-is instead.
+  external_node_modules = ["@supabase/supabase-js"]
 
 [functions."ingest-news"]
   schedule = "@daily"
