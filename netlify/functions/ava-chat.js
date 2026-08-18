@@ -202,12 +202,24 @@ const TOOLS = [
   },
   {
     name: 'query_taxi_fare',
-    description: "Look up taxi fares anywhere in SVG. If either origin or destination is the airport (AIA/Argyle) AND matches a place in the official Ministry table, returns the REAL official flat rate — state this as confirmed. Otherwise, geocodes both places and gets a REAL driving distance from Google Maps, then applies a rate derived from the official table's own structure — this is an ESTIMATE, not an official rate, and you MUST tell the person that clearly.",
+    description: "Look up taxi fares anywhere in SVG. Checks the official Ministry table for three real origin types: the airport (AIA/Argyle, flat rate for 1-3 passengers plus per-extra-passenger fee), Kingstown (per-passenger pricing), and the cruise ship berth (tiered by group size, one-way/return). If a route matches, state the REAL official rate confidently. Otherwise, geocodes both places and gets a REAL driving distance from Google Maps, applying a rate derived from the official table — this is an ESTIMATE, not an official rate, and you MUST tell the person that clearly.",
     input_schema: {
       type: 'object',
       properties: {
-        origin: { type: 'string', description: 'Starting point, e.g. "Arnos Vale" or "the airport"' },
-        destination: { type: 'string', description: 'Destination, e.g. "Kingstown"' },
+        origin: { type: 'string', description: 'Starting point, e.g. "Arnos Vale", "the airport", "Kingstown", or "the cruise ship berth"' },
+        destination: { type: 'string', description: 'Destination, e.g. "Kingstown" or "Fort Charlotte"' },
+      },
+      required: ['origin', 'destination'],
+    }
+  },
+  {
+    name: 'query_bus_fare',
+    description: "Look up official public bus fares in SVG, published relative to five real hubs: Kingstown, Georgetown, Barrouallie, Paget Farm, and Port Elizabeth (the last two are Bequia routes). School children in uniform pay 50% of the listed fare. This is a genuinely different transport mode from taxis — cheaper, fixed-route, shared minibuses, not a private taxi.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        origin: { type: 'string', description: 'Starting point — should include one of the five real hub names for a match' },
+        destination: { type: 'string', description: 'Destination place name' },
       },
       required: ['origin', 'destination'],
     }
@@ -778,32 +790,63 @@ function findOfficialFareRow(rows, placeName){
 
 async function queryTaxiFare(origin, destination){
   try{
-    const { data: rows, error } = await supabase.from('taxi_fares_official').select('places, regular_fare, after_hours_fare');
+    const { data: rows, error } = await supabase.from('taxi_fares_official')
+      .select('places, regular_fare, after_hours_fare, origin_type, passenger_tier, trip_type, additional_passenger_fee');
     if(error) throw error;
     if(!rows || !rows.length) return { note: 'No official taxi fare data available.' };
 
     const isAirport = (s) => /\b(aia|argyle|airport|svd)\b/i.test(s);
-    const originIsAirport = isAirport(origin);
-    const destIsAirport = isAirport(destination);
+    const isKingstown = (s) => /\bkingstown\b/i.test(s);
+    const isCruiseShip = (s) => /\b(cruise ship|cruise berth|the berth|ship berth)\b/i.test(s);
 
-    if(originIsAirport || destIsAirport){
-      const place = originIsAirport ? destination : origin;
-      const match = findOfficialFareRow(rows, place);
+    // Priority 1: airport routes — the most complete official data (43
+    // named places), flat rate for 1-3 passengers plus a fixed EC$13
+    // per additional passenger.
+    if(isAirport(origin) || isAirport(destination)){
+      const place = isAirport(origin) ? destination : origin;
+      const match = findOfficialFareRow(rows.filter(r => r.origin_type === 'airport'), place);
       if(match){
         return {
-          type: 'official',
-          place: match.places.join(', '),
-          regular_fare: match.regular_fare,
-          after_hours_fare: match.after_hours_fare,
+          type: 'official', origin_type: 'airport', place: match.places.join(', '),
+          regular_fare: match.regular_fare, after_hours_fare: match.after_hours_fare,
+          additional_passenger_fee: match.additional_passenger_fee,
         };
       }
-      // Not in the official table by name — fall through to real geocoded
-      // distance instead of giving up, so airport routes to unlisted places
-      // still get a genuine estimate rather than nothing at all.
+    }
+
+    // Priority 2: Kingstown-origin routes — priced per passenger, a
+    // genuinely different structure from the airport table.
+    if(isKingstown(origin) || isKingstown(destination)){
+      const place = isKingstown(origin) ? destination : origin;
+      const match = findOfficialFareRow(rows.filter(r => r.origin_type === 'kingstown'), place);
+      if(match){
+        return {
+          type: 'official', origin_type: 'kingstown', place: match.places.join(', '),
+          regular_fare: match.regular_fare, after_hours_fare: match.after_hours_fare,
+          per_passenger: true,
+        };
+      }
+    }
+
+    // Priority 3: cruise ship berth — tiered by group size (1-4, 5-10,
+    // over 10), with separate one-way/return rates. Only the one-way
+    // after-hours figure is published; return after-hours genuinely isn't.
+    if(isCruiseShip(origin) || isCruiseShip(destination)){
+      const place = isCruiseShip(origin) ? destination : origin;
+      const matches = rows.filter(r => r.origin_type === 'cruise_ship_berth'
+        && r.places.some(p => p.toLowerCase().includes(place.toLowerCase()) || place.toLowerCase().includes(p.toLowerCase())));
+      if(matches.length){
+        return { type: 'official_tiered', origin_type: 'cruise_ship_berth', place, tiers: matches };
+      }
     }
 
     // General case: real geocoding + real driving distance, covering
-    // anywhere in SVG, not just the places named in the official table.
+    // anywhere in SVG. The derived rate ($39 + $6.50/mile) fits every real
+    // official value exactly up to about 20 miles — beyond that (remote
+    // leeward and far-windward destinations like Owia, Troumaca, Richmond),
+    // the real published fares deviate from a straight linear relationship,
+    // since those routes involve winding coastal mountain roads that don't
+    // scale the same way. Long-distance estimates are honestly less precise.
     const [originGeo, destGeo] = await Promise.all([geocodePlace(origin), geocodePlace(destination)]);
     const failed = !originGeo.location ? originGeo : (!destGeo.location ? destGeo : null);
     if(failed){
@@ -811,10 +854,6 @@ async function queryTaxiFare(origin, destination){
       if(failed.status === 'ZERO_RESULTS'){
         return { note: `Could not find "${failedPlace}" — check the spelling, or it may be too small/unnamed to geocode.` };
       }
-      // REQUEST_DENIED, OVER_QUERY_LIMIT, INVALID_REQUEST, etc. — this is a
-      // real setup/permission/quota problem, not a data coverage gap, and
-      // must not be described to the person as if the place is too small
-      // or obscure to find.
       return { note: `AVA's map lookup isn't working right now (${failed.status}) — this is a setup issue on AVA's side, not a problem with "${failedPlace}" itself.` };
     }
     const realMiles = await getRealDrivingDistanceMiles(originGeo.location, destGeo.location);
@@ -828,10 +867,37 @@ async function queryTaxiFare(origin, destination){
       origin, destination,
       real_distance_miles: +realMiles.toFixed(1),
       estimated_fare: +estimatedFare.toFixed(2),
+      long_distance_caveat: realMiles > 18, // formula fit stops being exact beyond this range in the real data
     };
   } catch(err){
     console.error('queryTaxiFare error:', err);
     return { note: 'Could not reach the taxi fare data right now.' };
+  }
+}
+
+async function queryBusFare(origin, destination){
+  try{
+    const { data: rows, error } = await supabase.from('bus_fares_official').select('hub, places, regular_fare');
+    if(error) throw error;
+    if(!rows || !rows.length) return { note: 'No official bus fare data available.' };
+
+    const hubMatch = ['Kingstown', 'Georgetown', 'Barrouallie', 'Paget Farm', 'Port Elizabeth']
+      .find(hub => origin.toLowerCase().includes(hub.toLowerCase()) || destination.toLowerCase().includes(hub.toLowerCase()));
+    if(!hubMatch){
+      return { note: `Bus fares are published relative to specific hubs (Kingstown, Georgetown, Barrouallie, Paget Farm, Port Elizabeth) — neither "${origin}" nor "${destination}" matches one of these.` };
+    }
+    const place = origin.toLowerCase().includes(hubMatch.toLowerCase()) ? destination : origin;
+    const match = findOfficialFareRow(rows.filter(r => r.hub === hubMatch), place);
+    if(!match){
+      return { note: `"${place}" isn't in the official bus fare list for the ${hubMatch} hub.` };
+    }
+    return {
+      type: 'official', hub: hubMatch, place: match.places.join(', '),
+      regular_fare: match.regular_fare, student_fare: +(match.regular_fare * 0.5).toFixed(2),
+    };
+  } catch(err){
+    console.error('queryBusFare error:', err);
+    return { note: 'Could not reach the bus fare data right now.' };
   }
 }
 
@@ -1070,7 +1136,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare'];
 
     while(loops < 4){
       loops++;
@@ -1173,12 +1239,29 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_taxi_fare'){
             const fareData = await queryTaxiFare(toolUse.input.origin, toolUse.input.destination);
-            if(fareData.type === 'official'){
-              content = `REAL OFFICIAL RATE (Ministry of Transport and Works, AIA to ${fareData.place}): EC$${fareData.regular_fare} regular, EC$${fareData.after_hours_fare} after hours, for 1-3 passengers. State this confidently as the official government rate.`;
+            if(fareData.type === 'official' && fareData.origin_type === 'airport'){
+              content = `REAL OFFICIAL RATE (Ministry of Transport and Works, AIA to ${fareData.place}): EC$${fareData.regular_fare} regular, EC$${fareData.after_hours_fare} after hours, for 1-3 passengers, plus EC$${fareData.additional_passenger_fee} per additional passenger. State this confidently as the official government rate.`;
+            } else if(fareData.type === 'official' && fareData.origin_type === 'kingstown'){
+              content = `REAL OFFICIAL RATE (Ministry of Transport and Works, Kingstown to ${fareData.place}): EC$${fareData.regular_fare} regular, EC$${fareData.after_hours_fare} after hours — PER PASSENGER, not flat for the group. State this confidently as the official government rate, and be clear it's per person.`;
+            } else if(fareData.type === 'official_tiered'){
+              const tierText = fareData.tiers.map(t => `${t.passenger_tier.replace(/_/g, ' ')} passengers, ${t.trip_type}: EC$${t.regular_fare} regular${t.after_hours_fare ? `, EC$${t.after_hours_fare} after hours` : ' (no after-hours rate published for return trips)'}`).join('; ');
+              content = `REAL OFFICIAL RATES (Ministry of Transport and Works, Cruise Ship Berth to ${fareData.place}): ${tierText}. State these confidently as official government rates.`;
             } else if(fareData.type === 'estimate'){
-              content = `ESTIMATE ONLY, NOT AN OFFICIAL RATE — the government table only publishes airport routes directly. Based on the REAL driving distance (${fareData.real_distance_miles} miles, from Google Maps, not a straight-line guess) between "${fareData.origin}" and "${fareData.destination}", applying the same per-mile rate implied by the official table: roughly EC$${fareData.estimated_fare}. You MUST tell the person this is an estimate, not a confirmed rate.`;
+              const caveat = fareData.long_distance_caveat
+                ? ' This is a genuinely long route — the derived rate is well-verified for shorter and medium trips, but real fares for long, remote routes (mountainous leeward/far-windward roads) don\'t scale perfectly linearly, so treat this figure as rougher than a shorter-trip estimate.'
+                : '';
+              content = `ESTIMATE ONLY, NOT AN OFFICIAL RATE — the official tables only cover specific published routes. Based on the REAL driving distance (${fareData.real_distance_miles} miles, from Google Maps) between "${fareData.origin}" and "${fareData.destination}", applying the same per-mile rate implied by the official table: roughly EC$${fareData.estimated_fare}.${caveat} You MUST tell the person this is an estimate, not a confirmed rate.`;
             } else {
               content = fareData.note || 'No taxi fare data available for this route.';
+            }
+          }
+
+          else if(toolUse.name === 'query_bus_fare'){
+            const busData = await queryBusFare(toolUse.input.origin, toolUse.input.destination);
+            if(busData.type === 'official'){
+              content = `REAL OFFICIAL BUS FARE (Ministry of Transport and Works, ${busData.hub} to ${busData.place}): EC$${busData.regular_fare} regular. School children in uniform pay 50%: EC$${busData.student_fare}. State this confidently as the official government rate.`;
+            } else {
+              content = busData.note || 'No bus fare data available for this route.';
             }
           }
 
@@ -1317,4 +1400,5 @@ exports.queryReferenceKnowledge = queryReferenceKnowledge;
 exports.queryPointsOfInterest = queryPointsOfInterest;
 exports.planTrip = planTrip;
 exports.queryTaxiFare = queryTaxiFare;
+exports.queryBusFare = queryBusFare;
 exports.buildDeepLink = buildDeepLink;
