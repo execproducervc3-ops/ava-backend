@@ -4,7 +4,7 @@
 
 [functions]
   node_bundler = "esbuild"
- 
+
 [functions."ingest-news"]
   schedule = "@daily"
 
@@ -13,3 +13,6 @@
 
 [functions."recheck-scholarships"]
   schedule = "@monthly"
+
+[functions."recheck-reference"]
+  schedule = "0 0 1 */3 *"     # quarterly: Jan 1, Apr 1, Jul 1, Oct 1 — "@quarterly" is not valid Netlify syntax
