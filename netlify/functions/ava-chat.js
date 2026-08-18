@@ -225,6 +225,17 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_settlement_classification',
+    description: "Look up a place's official government development classification — its typology (National Centre, District Centre, or Local Centre) and spatial strategy (Growth or Renewal), from the National Physical Development Plan (2021 draft). This is planning/policy classification, not a tourist attraction or business listing — use it for questions about a town's official role or development status, e.g. 'is Georgetown a growth area'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        place: { type: 'string', description: 'The settlement name, e.g. "Georgetown" or "Barrouallie"' },
+      },
+      required: ['place'],
+    }
+  },
+  {
     name: 'plan_trip',
     description: "Build a complete trip plan — flights, accommodation, car rental, and food — from one total budget. Splits the budget across categories, gets real live flight prices from Duffel, and pulls accommodation, car rental, and restaurant suggestions from AVA's own verified local directory (not international chains, since those don't serve SVG locally). Use this when someone gives a total trip budget and wants a full plan, not just one category.",
     input_schema: {
@@ -875,6 +886,22 @@ async function queryTaxiFare(origin, destination){
   }
 }
 
+async function querySettlementClassification(placeName){
+  try{
+    const { data, error } = await supabase.from('settlement_classifications')
+      .select('name, typology, spatial_strategy')
+      .ilike('name', `%${placeName.trim()}%`)
+      .limit(1)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data) return { note: `"${placeName}" isn't in the official settlement hierarchy classification (National Physical Development Plan, 2021 draft) — likely too small to be individually classified, or it's a Grenadines island outside mainland-focused Table 1.` };
+    return { type: 'official', name: data.name, typology: data.typology, spatial_strategy: data.spatial_strategy };
+  } catch(err){
+    console.error('querySettlementClassification error:', err);
+    return { note: 'Could not reach the settlement classification data right now.' };
+  }
+}
+
 async function queryBusFare(origin, destination){
   try{
     const { data: rows, error } = await supabase.from('bus_fares_official').select('hub, places, regular_fare');
@@ -1136,7 +1163,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
       loops++;
@@ -1262,6 +1289,15 @@ exports.handler = async (event) => {
               content = `REAL OFFICIAL BUS FARE (Ministry of Transport and Works, ${busData.hub} to ${busData.place}): EC$${busData.regular_fare} regular. School children in uniform pay 50%: EC$${busData.student_fare}. State this confidently as the official government rate.`;
             } else {
               content = busData.note || 'No bus fare data available for this route.';
+            }
+          }
+
+          else if(toolUse.name === 'query_settlement_classification'){
+            const settlementData = await querySettlementClassification(toolUse.input.place);
+            if(settlementData.type === 'official'){
+              content = `Official classification (National Physical Development Plan, 2021 draft): ${settlementData.name} is designated a ${settlementData.typology}, with a "${settlementData.spatial_strategy}" spatial strategy. Note this is a 2021 DRAFT planning document, not necessarily final/adopted policy — mention this is planning classification, not a tourist or business fact.`;
+            } else {
+              content = settlementData.note || 'No classification data available for this place.';
             }
           }
 
@@ -1401,4 +1437,5 @@ exports.queryPointsOfInterest = queryPointsOfInterest;
 exports.planTrip = planTrip;
 exports.queryTaxiFare = queryTaxiFare;
 exports.queryBusFare = queryBusFare;
+exports.querySettlementClassification = querySettlementClassification;
 exports.buildDeepLink = buildDeepLink;
