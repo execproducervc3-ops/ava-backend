@@ -217,6 +217,8 @@
 </style>
 </head>
 <body class="home">
+<svg class="palm-deco palm-left" id="palmLeft" viewBox="0 0 260 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+<svg class="palm-deco palm-right" id="palmRight" viewBox="0 0 260 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div id="homeHero">
   <div class="hero-wordmark">
     <span class="w-ask">ASK</span><span class="w-pipe">|</span><span class="w-vincy">VINCY</span><span class="w-pipe">|</span><span class="w-any">ANYTHING</span>
@@ -296,6 +298,13 @@
     padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap;
   }
   .sponsor-cta:hover{background:#24576F;}
+  .palm-deco{position:fixed; top:0; height:100vh; width:280px; pointer-events:none; z-index:0; opacity:0.75; display:none; transition:opacity 1.8s ease-in-out, transform 1.8s ease-in-out;}
+  .palm-deco.palm-fade{opacity:0; transform:scale(0.94);}
+  .palm-left{left:0;}
+  .palm-right{right:0;}
+  body.home .palm-deco{display:block;}
+  @media (max-width:1400px){ .palm-deco{display:none !important;} }
+
   @media (max-width:480px){
     .sponsor-body{flex-wrap:wrap;}
     .sponsor-ctawrap{width:100%; flex-direction:row; justify-content:center;}
@@ -519,6 +528,64 @@ function renderLinkCard(card){
     <div class="name">${escapeHtml(card.name)} <span class="arrow">&#8594;</span></div>
   </a>`;
 }
+
+// Ambient palm frond decoration — regenerates with random variation on a
+// slow interval, fading out and back in rather than cutting abruptly.
+function buildFrondCluster(cx, cy, scale, color, flip){
+  const s = flip ? -1 : 1;
+  // Randomized angle spread and blade count each time this is called, so
+  // every regeneration looks like a genuinely different frond, not a repeat.
+  const bladeCount = 6 + Math.floor(Math.random() * 2); // 6 or 7 blades
+  const spread = 150 + Math.random() * 30; // total degrees the fan covers
+  const startAngle = -spread / 2 + (Math.random() * 10 - 5);
+  let paths = '';
+  for(let i = 0; i < bladeCount; i++){
+    const a = startAngle + (spread / (bladeCount - 1)) * i;
+    const rad = a * Math.PI / 180;
+    const lengthVariance = 0.85 + Math.random() * 0.3;
+    const length = scale * (Math.abs(a) < 20 ? 1.0 : 0.85) * lengthVariance;
+    const tipX = cx + s * Math.sin(rad) * length;
+    const tipY = cy - Math.cos(rad) * length;
+    const perpX = Math.cos(rad) * scale * (0.07 + Math.random() * 0.04);
+    const perpY = Math.sin(rad) * scale * (0.07 + Math.random() * 0.04);
+    const midX = cx + s * Math.sin(rad) * length * 0.5;
+    const midY = cy - Math.cos(rad) * length * 0.5;
+    const c1x = midX + s * perpX, c1y = midY + perpY;
+    const c2x = midX - s * perpX, c2y = midY - perpY;
+    paths += `<path d="M ${cx.toFixed(1)} ${cy.toFixed(1)} Q ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${tipX.toFixed(1)} ${tipY.toFixed(1)} Q ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${cx.toFixed(1)} ${cy.toFixed(1)} Z" fill="${color}"/>`;
+  }
+  paths += `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${(cy + scale * 0.9).toFixed(1)}" stroke="${color}" stroke-width="${(scale * 0.04).toFixed(1)}" stroke-linecap="round"/>`;
+  return paths;
+}
+
+function generatePalmSide(flip){
+  const jitter = () => Math.random() * 20 - 10;
+  const bgClusterX = flip ? 250 + jitter() : 10 + jitter();
+  const fgClusterX = flip ? 280 + jitter() : -20 + jitter();
+  return buildFrondCluster(bgClusterX, 40 + jitter(), 150 + Math.random() * 25, '#CBC3B0', flip)
+       + buildFrondCluster(fgClusterX, 170 + jitter(), 210 + Math.random() * 25, '#9C9078', flip);
+}
+
+function refreshPalmDecoration(){
+  const left = document.getElementById('palmLeft');
+  const right = document.getElementById('palmRight');
+  if(!left || !right) return;
+
+  left.classList.add('palm-fade');
+  right.classList.add('palm-fade');
+
+  setTimeout(() => {
+    left.innerHTML = generatePalmSide(false);
+    right.innerHTML = generatePalmSide(true);
+    left.classList.remove('palm-fade');
+    right.classList.remove('palm-fade');
+  }, 1800); // matches the CSS transition duration, so the swap happens fully faded-out
+}
+
+// Initial render, then a slow, ambient regeneration cycle — not fast enough
+// to be distracting, just a gentle sense of the page being alive.
+refreshPalmDecoration();
+setInterval(refreshPalmDecoration, 14000);
 
 const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 
