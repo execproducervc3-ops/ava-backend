@@ -298,7 +298,7 @@
     padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap;
   }
   .sponsor-cta:hover{background:#24576F;}
-  .palm-deco{position:fixed; top:0; height:100vh; width:280px; pointer-events:none; z-index:0; opacity:0.75; display:none; transition:opacity 0.9s ease-in-out, transform 0.9s ease-in-out;}
+  .palm-deco{position:fixed; top:0; height:100vh; width:280px; pointer-events:none; z-index:0; opacity:0.75; display:none; transition:opacity 1.8s ease-in-out, transform 1.8s ease-in-out;}
   .palm-deco.palm-fade{opacity:0; transform:scale(0.94);}
   .palm-left{left:0;}
   .palm-right{right:0;}
@@ -560,7 +560,7 @@ function buildFrondCluster(cx, cy, scale, color, flip){
 
 function generatePalmSide(flip){
   const jitter = () => Math.random() * 20 - 10;
-  const colors = ['#CBC3B0', '#B5AB93', '#9C9078'];
+  const colors = ['#C5D4A8', '#8FAA5C', '#5E7D3A'];
   // Spread clusters across the full page height, not just the top —
   // percentages of the 0-500 viewBox so they distribute the whole length.
   const positions = [0.06, 0.28, 0.5, 0.72, 0.92];
@@ -589,12 +589,12 @@ function refreshPalmDecoration(){
     right.innerHTML = generatePalmSide(true);
     left.classList.remove('palm-fade');
     right.classList.remove('palm-fade');
-  }, 900); // matches the shortened CSS transition duration below
+  }, 1800); // matches the restored CSS transition duration below
 }
 
-// Initial render, then a faster regeneration cycle per the shorter dwell time requested.
+// Initial render, then the original slower, ambient regeneration cycle.
 refreshPalmDecoration();
-setInterval(refreshPalmDecoration, 5000);
+setInterval(refreshPalmDecoration, 14000);
 
 const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 
