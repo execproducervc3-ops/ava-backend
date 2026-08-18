@@ -419,15 +419,35 @@ async function confirmLatestDraft(fromId, chatId) {
   let listingId = profile ? profile.directory_listing_id : null;
 
   if (!listingId) {
-    const { data: listing } = await supabase.from('directory_listings').insert({
-      category: 'retailer',
-      name: (profile && profile.business_name) || `Retailer ${fromId}`,
-      lat: profile ? profile.default_lat : null,
-      lng: profile ? profile.default_lng : null,
-      source: 'community_submission',
-      claimed_by_telegram_id: fromId,
-    }).select().single();
-    listingId = listing.id;
+    // Check for an existing, unclaimed listing with a matching name first —
+    // e.g. one added manually via the admin panel, or ingested from Google
+    // Places — before creating a duplicate. Only matches unclaimed listings,
+    // so this can never let someone claim a business that isn't theirs.
+    const businessName = (profile && profile.business_name) || `Retailer ${fromId}`;
+    const { data: existingMatch } = await supabase
+      .from('directory_listings')
+      .select('id, category')
+      .ilike('name', businessName)
+      .is('claimed_by_telegram_id', null)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingMatch) {
+      // Claim the existing listing, preserving its real category rather
+      // than overwriting it with the generic 'retailer' default.
+      await supabase.from('directory_listings').update({ claimed_by_telegram_id: fromId }).eq('id', existingMatch.id);
+      listingId = existingMatch.id;
+    } else {
+      const { data: listing } = await supabase.from('directory_listings').insert({
+        category: 'retailer',
+        name: businessName,
+        lat: profile ? profile.default_lat : null,
+        lng: profile ? profile.default_lng : null,
+        source: 'community_submission',
+        claimed_by_telegram_id: fromId,
+      }).select().single();
+      listingId = listing.id;
+    }
     await supabase.from('retailer_profile').update({ directory_listing_id: listingId }).eq('telegram_user_id', fromId);
   }
 
