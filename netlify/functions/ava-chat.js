@@ -731,6 +731,11 @@ async function geocodePlace(placeName){
 }
 
 async function getRealDrivingDistanceMiles(originLatLng, destLatLng){
+  const requestBody = {
+    origin: { location: { latLng: { latitude: originLatLng.lat, longitude: originLatLng.lng } } },
+    destination: { location: { latLng: { latitude: destLatLng.lat, longitude: destLatLng.lng } } },
+    travelMode: 'DRIVE',
+  };
   const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
@@ -738,23 +743,19 @@ async function getRealDrivingDistanceMiles(originLatLng, destLatLng){
       'X-Goog-Api-Key': GOOGLE_KEY,
       'X-Goog-FieldMask': 'routes.distanceMeters',
     },
-    body: JSON.stringify({
-      origin: { location: { latLng: { latitude: originLatLng.lat, longitude: originLatLng.lng } } },
-      destination: { location: { latLng: { latitude: destLatLng.lat, longitude: destLatLng.lng } } },
-      travelMode: 'DRIVE',
-    }),
+    body: JSON.stringify(requestBody),
   });
   if(!res.ok){
-    // Read the real response body before throwing — Google's error responses
-    // carry a specific reason (billing, permissions, malformed request) that
-    // a bare status code hides completely.
     const errBody = await res.text().catch(() => '');
-    console.error(`Routes API non-OK status ${res.status} for real driving distance lookup:`, errBody);
+    console.error(`Routes API non-OK status ${res.status} for real driving distance lookup:`, errBody, '| coordinates used:', JSON.stringify(requestBody));
     throw new Error(`Routes request failed: ${res.status}`);
   }
   const data = await res.json();
   if(!data.routes || !data.routes.length){
-    console.error('Routes API returned OK but with no routes array:', JSON.stringify(data));
+    // Log the exact coordinates alongside the empty response — this is the
+    // detail that distinguishes "bad field mask" from "these coordinates
+    // genuinely aren't a routable pair," which look identical otherwise.
+    console.error('Routes API returned OK but with no routes array:', JSON.stringify(data), '| coordinates used:', JSON.stringify(requestBody));
     return null;
   }
   return data.routes[0].distanceMeters / 1609.34; // meters to miles
