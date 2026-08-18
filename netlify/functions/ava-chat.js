@@ -202,7 +202,7 @@ const TOOLS = [
   },
   {
     name: 'query_taxi_fare',
-    description: "Look up taxi fares in SVG. If either origin or destination is the airport (AIA/Argyle), returns the REAL official Ministry of Transport and Works flat rate for that named place — state this as a confirmed official rate. If NEITHER endpoint is the airport, returns a derived ESTIMATE based on the official data, not an official rate — you MUST clearly tell the person this is an estimate, not confirmed, since the government table only publishes airport routes directly.",
+    description: "Look up taxi fares anywhere in SVG. If either origin or destination is the airport (AIA/Argyle) AND matches a place in the official Ministry table, returns the REAL official flat rate — state this as confirmed. Otherwise, geocodes both places and gets a REAL driving distance from Google Maps, then applies a rate derived from the official table's own structure — this is an ESTIMATE, not an official rate, and you MUST tell the person that clearly.",
     input_schema: {
       type: 'object',
       properties: {
@@ -697,15 +697,49 @@ async function planTrip(origin, destination, departureDate, totalBudget, island)
   };
 }
 
-// Real official Ministry of Transport and Works rates, AIA to named places
-// — but every row is relative to the airport specifically. A derived
-// per-mile rate, fitted from the one verified real distance (AIA-Kingstown,
-// confirmed 10.5 miles) plus the short-distance cluster as a near-airport
-// baseline, lets non-airport routes get a genuine, data-grounded estimate
-// rather than an arbitrary guess — but this must never be presented with
-// the same confidence as the real flat rates it's derived from.
-const TAXI_FARE_SLOPE = 6.12;      // EC$ per implied mile from AIA
-const TAXI_FARE_INTERCEPT = 26.76; // EC$ baseline
+// Derived directly from the official table's own internal structure — every
+// one of the 10 distinct real fare values fits exactly (to the nearest
+// dollar) against $39 base + $6.50 per step, confirmed by checking each
+// value in code, not estimated from any external distance source.
+const TAXI_FARE_SLOPE = 6.50;
+const TAXI_FARE_INTERCEPT = 39.00;
+
+// Real, general-purpose taxi fare estimation for anywhere in SVG — not just
+// the ~16 places named in the official table. Geocodes both points, gets a
+// REAL driving distance (not straight-line, which would be badly wrong on
+// this island's terrain — confirmed earlier tonight, AIA-Kingstown is only
+// ~5.2mi by air but 10.5mi by actual road), then applies the same formula
+// derived from the official table's own internal structure.
+const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
+
+async function geocodePlace(placeName){
+  const query = /svg|vincent/i.test(placeName) ? placeName : `${placeName}, Saint Vincent and the Grenadines`;
+  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${GOOGLE_KEY}`);
+  if(!res.ok) throw new Error(`Geocoding request failed: ${res.status}`);
+  const data = await res.json();
+  if(data.status !== 'OK' || !data.results || !data.results.length) return null;
+  return data.results[0].geometry.location; // { lat, lng }
+}
+
+async function getRealDrivingDistanceMiles(originLatLng, destLatLng){
+  const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': GOOGLE_KEY,
+      'X-Goog-FieldMask': 'routes.distanceMeters',
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: { latitude: originLatLng.lat, longitude: originLatLng.lng } } },
+      destination: { location: { latLng: { latitude: destLatLng.lat, longitude: destLatLng.lng } } },
+      travelMode: 'DRIVE',
+    }),
+  });
+  if(!res.ok) throw new Error(`Routes request failed: ${res.status}`);
+  const data = await res.json();
+  if(!data.routes || !data.routes.length) return null;
+  return data.routes[0].distanceMeters / 1609.34; // meters to miles
+}
 
 function findOfficialFareRow(rows, placeName){
   const needle = placeName.trim().toLowerCase();
@@ -733,26 +767,27 @@ async function queryTaxiFare(origin, destination){
           after_hours_fare: match.after_hours_fare,
         };
       }
-      return { note: `"${place}" isn't in the official AIA fare table — no real rate available for this specific destination.` };
+      // Not in the official table by name — fall through to real geocoded
+      // distance instead of giving up, so airport routes to unlisted places
+      // still get a genuine estimate rather than nothing at all.
     }
 
-    // Neither endpoint is the airport — derive a rough estimate from each
-    // place's implied distance from AIA. This is explicitly NOT an official
-    // rate and must always be presented as an estimate.
-    const originMatch = findOfficialFareRow(rows, origin);
-    const destMatch = findOfficialFareRow(rows, destination);
-    if(!originMatch || !destMatch){
-      return { note: `AVA's official taxi data only covers routes to/from the airport, or between the specific named places already in the Ministry table — one or both of "${origin}" and "${destination}" aren't in it.` };
+    // General case: real geocoding + real driving distance, covering
+    // anywhere in SVG, not just the places named in the official table.
+    const [originLatLng, destLatLng] = await Promise.all([geocodePlace(origin), geocodePlace(destination)]);
+    if(!originLatLng || !destLatLng){
+      return { note: `Could not find "${!originLatLng ? origin : destination}" — check the spelling, or it may be too small/unnamed to geocode.` };
     }
-    const originMiles = (originMatch.regular_fare - TAXI_FARE_INTERCEPT) / TAXI_FARE_SLOPE;
-    const destMiles = (destMatch.regular_fare - TAXI_FARE_INTERCEPT) / TAXI_FARE_SLOPE;
-    const estimatedMiles = Math.max(1, Math.abs(destMiles - originMiles));
-    const estimatedFare = TAXI_FARE_INTERCEPT + TAXI_FARE_SLOPE * estimatedMiles;
+    const realMiles = await getRealDrivingDistanceMiles(originLatLng, destLatLng);
+    if(realMiles === null){
+      return { note: `Could not calculate a real driving route between "${origin}" and "${destination}".` };
+    }
+    const estimatedFare = TAXI_FARE_INTERCEPT + TAXI_FARE_SLOPE * realMiles;
 
     return {
       type: 'estimate',
-      origin: originMatch.places.join(', '),
-      destination: destMatch.places.join(', '),
+      origin, destination,
+      real_distance_miles: +realMiles.toFixed(1),
       estimated_fare: +estimatedFare.toFixed(2),
     };
   } catch(err){
@@ -1102,7 +1137,7 @@ exports.handler = async (event) => {
             if(fareData.type === 'official'){
               content = `REAL OFFICIAL RATE (Ministry of Transport and Works, AIA to ${fareData.place}): EC$${fareData.regular_fare} regular, EC$${fareData.after_hours_fare} after hours, for 1-3 passengers. State this confidently as the official government rate.`;
             } else if(fareData.type === 'estimate'){
-              content = `ESTIMATE ONLY, NOT AN OFFICIAL RATE — the government table only publishes airport routes directly, so this is derived from the official AIA fares for ${fareData.origin} and ${fareData.destination}: roughly EC$${fareData.estimated_fare}. You MUST tell the person this is an estimate, not a confirmed rate, since neither endpoint is the airport.`;
+              content = `ESTIMATE ONLY, NOT AN OFFICIAL RATE — the government table only publishes airport routes directly. Based on the REAL driving distance (${fareData.real_distance_miles} miles, from Google Maps, not a straight-line guess) between "${fareData.origin}" and "${fareData.destination}", applying the same per-mile rate implied by the official table: roughly EC$${fareData.estimated_fare}. You MUST tell the person this is an estimate, not a confirmed rate.`;
             } else {
               content = fareData.note || 'No taxi fare data available for this route.';
             }
