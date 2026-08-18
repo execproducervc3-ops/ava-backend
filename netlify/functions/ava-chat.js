@@ -183,7 +183,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor'], description: 'What kind of business to look for' },
+        category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental'], description: 'What kind of business to look for' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
       },
       required: ['category']
@@ -198,6 +198,21 @@ const TOOLS = [
         category: { type: 'string', enum: ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'], description: 'Optional — narrow to a specific type of attraction. Omit to search all types.' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
       },
+    }
+  },
+  {
+    name: 'plan_trip',
+    description: "Build a complete trip plan — flights, accommodation, car rental, and food — from one total budget. Splits the budget across categories, gets real live flight prices from Duffel, and pulls accommodation, car rental, and restaurant suggestions from AVA's own verified local directory (not international chains, since those don't serve SVG locally). Use this when someone gives a total trip budget and wants a full plan, not just one category.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        origin: { type: 'string', description: 'Origin airport IATA code, e.g. "JFK"' },
+        destination: { type: 'string', description: 'Destination airport IATA code, e.g. "SVD" for Argyle International' },
+        departure_date: { type: 'string', description: 'Departure date, YYYY-MM-DD' },
+        total_budget: { type: 'number', description: 'Total trip budget in USD' },
+        island: { type: 'string', description: 'Which island to find accommodation/car/food listings on, e.g. "Saint Vincent" or "Bequia"' },
+      },
+      required: ['origin', 'destination', 'departure_date', 'total_budget', 'island'],
     }
   }
 ];
@@ -637,6 +652,39 @@ async function queryPointsOfInterest(category, island){
   }
 }
 
+// Orchestrates a full trip plan from one total budget — flights via Duffel
+// (the one category with no local alternative), everything else from AVA's
+// own directory listings, since local accommodation and car rental agencies
+// are the actually-relevant options for SVG, not international chains.
+async function planTrip(origin, destination, departureDate, totalBudget, island){
+  const { queryDuffelFlights } = require('./duffel-flights.js');
+
+  // Real, defensible starting split — not arbitrary, a commonly-used travel
+  // budgeting heuristic: flights and lodging dominate, food and transport
+  // are smaller shares.
+  const budgetSplit = {
+    flights: totalBudget * 0.35,
+    accommodation: totalBudget * 0.30,
+    car_rental: totalBudget * 0.15,
+    food: totalBudget * 0.20,
+  };
+
+  const [flightResults, accommodationResults, carResults, foodResults] = await Promise.all([
+    queryDuffelFlights(origin, destination, departureDate, 1),
+    queryDirectory('accommodation', island),
+    queryDirectory('car_rental', island),
+    queryDirectory('restaurant', island),
+  ]);
+
+  return {
+    budget_split: budgetSplit,
+    flights: flightResults,
+    accommodation: accommodationResults,
+    car_rental: carResults,
+    food: foodResults,
+  };
+}
+
 async function queryDirectory(category, island){
   try{
     let query = supabase
@@ -872,7 +920,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip'];
 
     while(loops < 4){
       loops++;
@@ -971,6 +1019,39 @@ exports.handler = async (event) => {
             content = poiData.results && poiData.results.length
               ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
               : (poiData.note || 'No attractions found.');
+          }
+
+          else if(toolUse.name === 'plan_trip'){
+            const plan = await planTrip(
+              toolUse.input.origin, toolUse.input.destination, toolUse.input.departure_date,
+              toolUse.input.total_budget, toolUse.input.island
+            );
+            const flightsText = Array.isArray(plan.flights) && plan.flights.length
+              ? plan.flights.map(f => `${f.airline}: $${f.price} ${f.currency}, departs ${f.departsAt}`).join('; ')
+              : (plan.flights && plan.flights.error ? `Flight search failed: ${plan.flights.error}` : 'No flights found for this route/date.');
+            const accomText = plan.accommodation.results && plan.accommodation.results.length
+              ? plan.accommodation.results.map(a => a.name).join(', ')
+              : "No accommodation listings in AVA's directory yet for this island — be honest about this gap rather than inventing options.";
+            const carText = plan.car_rental.results && plan.car_rental.results.length
+              ? plan.car_rental.results.map(c => c.name).join(', ')
+              : "No car rental listings in AVA's directory yet for this island — be honest about this gap rather than inventing options.";
+            const foodText = plan.food.results && plan.food.results.length
+              ? plan.food.results.map(f => f.name).join(', ')
+              : "No restaurant listings found for this island.";
+
+            content = `Trip plan for a $${toolUse.input.total_budget} total budget:
+
+Budget split: flights $${plan.budget_split.flights.toFixed(0)}, accommodation $${plan.budget_split.accommodation.toFixed(0)}, car rental $${plan.budget_split.car_rental.toFixed(0)}, food $${plan.budget_split.food.toFixed(0)}.
+
+Flights (live from Duffel): ${flightsText}
+
+Accommodation (from AVA's own local directory, not international chains): ${accomText}
+
+Car rental (from AVA's own local directory, not international chains): ${carText}
+
+Food (from AVA's own local directory): ${foodText}
+
+IMPORTANT: accommodation and car rental come from AVA's own directory and may be sparse or empty right now — never invent listings that weren't returned. Present the budget split as a starting suggestion, not a fixed rule — mention the person can adjust it.`;
           }
 
           else if(toolUse.name === 'query_health_data'){
@@ -1073,4 +1154,5 @@ exports.queryMarineConditions = queryMarineConditions;
 exports.queryScholarships = queryScholarships;
 exports.queryReferenceKnowledge = queryReferenceKnowledge;
 exports.queryPointsOfInterest = queryPointsOfInterest;
+exports.planTrip = planTrip;
 exports.buildDeepLink = buildDeepLink;
