@@ -217,8 +217,8 @@
 </style>
 </head>
 <body class="home">
-<svg class="palm-deco palm-left" id="palmLeft" viewBox="0 0 260 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
-<svg class="palm-deco palm-right" id="palmRight" viewBox="0 0 260 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+<svg class="palm-deco palm-left" id="palmLeft" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+<svg class="palm-deco palm-right" id="palmRight" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div id="homeHero">
   <div class="hero-wordmark">
     <span class="w-ask">ASK</span><span class="w-pipe">|</span><span class="w-vincy">VINCY</span><span class="w-pipe">|</span><span class="w-any">ANYTHING</span>
@@ -298,12 +298,16 @@
     padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap;
   }
   .sponsor-cta:hover{background:#24576F;}
-  .palm-deco{position:fixed; top:0; height:100vh; width:280px; pointer-events:none; z-index:0; opacity:0.75; display:none; transition:opacity 1.8s ease-in-out, transform 1.8s ease-in-out;}
-  .palm-deco.palm-fade{opacity:0; transform:scale(0.94);}
+  .palm-deco{position:fixed; top:0; height:100vh; width:280px; pointer-events:none; z-index:0; opacity:0.75; display:none; transform-origin:top center; transition:transform 1.8s ease-in-out;}
+  .palm-deco.palm-fade{transform:scale(0.94);}
+  .palm-left g[class^="tier-"], .palm-right g[class^="tier-"]{opacity:1; transition:opacity 1.8s ease-in-out;}
+  .palm-fade .tier-dark{opacity:0; transition-delay:0s;}
+  .palm-fade .tier-medium{opacity:0; transition-delay:0.25s;}
+  .palm-fade .tier-light{opacity:0; transition-delay:0.5s;}
   .palm-left{left:0;}
   .palm-right{right:0;}
   body.home .palm-deco{display:block;}
-  @media (max-width:1400px){ .palm-deco{display:none !important;} }
+  @media (max-width:1400px){ .palm-left, .palm-right{display:none !important;} }
 
   @media (max-width:480px){
     .sponsor-body{flex-wrap:wrap;}
@@ -560,9 +564,13 @@ function buildFrondCluster(cx, cy, scale, color, flip){
 
 function generatePalmSide(flip){
   const jitter = () => Math.random() * 20 - 10;
-  const colors = ['#C5D4A8', '#8FAA5C', '#5E7D3A'];
-  // Spread clusters across the full page height, not just the top —
-  // percentages of the 0-500 viewBox so they distribute the whole length.
+  // Named tiers, darkest to lightest, so the CSS can stagger them by name
+  // rather than by fragile index arithmetic.
+  const tiers = [
+    { name: 'tier-dark', color: '#5E7D3A' },
+    { name: 'tier-medium', color: '#8FAA5C' },
+    { name: 'tier-light', color: '#C5D4A8' },
+  ];
   const positions = [0.06, 0.28, 0.5, 0.72, 0.92];
   let out = '';
   positions.forEach((pct, i) => {
@@ -570,8 +578,8 @@ function generatePalmSide(flip){
     const x = baseX + (flip ? 1 : -1) * (10 + Math.random() * 20) + jitter();
     const y = pct * 500 + jitter();
     const scale = 110 + Math.random() * 60;
-    const color = colors[i % colors.length];
-    out += buildFrondCluster(x, y, scale, color, flip);
+    const tier = tiers[i % tiers.length];
+    out += `<g class="${tier.name}">${buildFrondCluster(x, y, scale, tier.color, flip)}</g>`;
   });
   return out;
 }
