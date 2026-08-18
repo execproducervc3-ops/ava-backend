@@ -744,9 +744,19 @@ async function getRealDrivingDistanceMiles(originLatLng, destLatLng){
       travelMode: 'DRIVE',
     }),
   });
-  if(!res.ok) throw new Error(`Routes request failed: ${res.status}`);
+  if(!res.ok){
+    // Read the real response body before throwing — Google's error responses
+    // carry a specific reason (billing, permissions, malformed request) that
+    // a bare status code hides completely.
+    const errBody = await res.text().catch(() => '');
+    console.error(`Routes API non-OK status ${res.status} for real driving distance lookup:`, errBody);
+    throw new Error(`Routes request failed: ${res.status}`);
+  }
   const data = await res.json();
-  if(!data.routes || !data.routes.length) return null;
+  if(!data.routes || !data.routes.length){
+    console.error('Routes API returned OK but with no routes array:', JSON.stringify(data));
+    return null;
+  }
   return data.routes[0].distanceMeters / 1609.34; // meters to miles
 }
 
