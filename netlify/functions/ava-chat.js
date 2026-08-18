@@ -717,8 +717,17 @@ async function geocodePlace(placeName){
   const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${GOOGLE_KEY}`);
   if(!res.ok) throw new Error(`Geocoding request failed: ${res.status}`);
   const data = await res.json();
-  if(data.status !== 'OK' || !data.results || !data.results.length) return null;
-  return data.results[0].geometry.location; // { lat, lng }
+
+  if(data.status === 'OK' && data.results && data.results.length){
+    return { location: data.results[0].geometry.location, status: 'OK' };
+  }
+
+  // Log the real status so a setup problem (API not enabled, key lacking
+  // permission, quota exceeded) is actually visible, rather than silently
+  // collapsing into the same generic "couldn't find this place" message
+  // that wrongly blames data coverage for what's really a config issue.
+  console.error(`Geocoding non-OK status for "${query}":`, data.status, data.error_message || '');
+  return { location: null, status: data.status };
 }
 
 async function getRealDrivingDistanceMiles(originLatLng, destLatLng){
@@ -774,11 +783,20 @@ async function queryTaxiFare(origin, destination){
 
     // General case: real geocoding + real driving distance, covering
     // anywhere in SVG, not just the places named in the official table.
-    const [originLatLng, destLatLng] = await Promise.all([geocodePlace(origin), geocodePlace(destination)]);
-    if(!originLatLng || !destLatLng){
-      return { note: `Could not find "${!originLatLng ? origin : destination}" — check the spelling, or it may be too small/unnamed to geocode.` };
+    const [originGeo, destGeo] = await Promise.all([geocodePlace(origin), geocodePlace(destination)]);
+    const failed = !originGeo.location ? originGeo : (!destGeo.location ? destGeo : null);
+    if(failed){
+      const failedPlace = !originGeo.location ? origin : destination;
+      if(failed.status === 'ZERO_RESULTS'){
+        return { note: `Could not find "${failedPlace}" — check the spelling, or it may be too small/unnamed to geocode.` };
+      }
+      // REQUEST_DENIED, OVER_QUERY_LIMIT, INVALID_REQUEST, etc. — this is a
+      // real setup/permission/quota problem, not a data coverage gap, and
+      // must not be described to the person as if the place is too small
+      // or obscure to find.
+      return { note: `AVA's map lookup isn't working right now (${failed.status}) — this is a setup issue on AVA's side, not a problem with "${failedPlace}" itself.` };
     }
-    const realMiles = await getRealDrivingDistanceMiles(originLatLng, destLatLng);
+    const realMiles = await getRealDrivingDistanceMiles(originGeo.location, destGeo.location);
     if(realMiles === null){
       return { note: `Could not calculate a real driving route between "${origin}" and "${destination}".` };
     }
