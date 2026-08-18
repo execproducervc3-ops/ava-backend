@@ -141,6 +141,34 @@
   </div>
 
   <div class="panel">
+    <h2>Add a business</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Any business type — restaurants, accommodation, car rental, and everything else in AVA's directory.</div>
+    <div class="draftfields">
+      <div>
+        <label>Business type</label>
+        <select id="bizCategory">
+          <option value="restaurant">Restaurant</option>
+          <option value="accommodation">Accommodation</option>
+          <option value="car_rental">Car rental</option>
+          <option value="pharmacy">Pharmacy</option>
+          <option value="doctor">Doctor</option>
+          <option value="taxi_service">Taxi service</option>
+          <option value="cinema">Cinema</option>
+          <option value="retailer">Retailer</option>
+          <option value="pop_up_vendor">Pop-up vendor</option>
+        </select>
+      </div>
+      <div><label>Name</label><input type="text" id="bizName" placeholder="e.g. Sunset Guesthouse"></div>
+      <div class="full"><label>Island</label><input type="text" id="bizIsland" placeholder="e.g. Bequia"></div>
+      <div class="full"><label>Address</label><input type="text" id="bizAddress" placeholder="Optional"></div>
+      <div><label>Phone</label><input type="text" id="bizPhone" placeholder="Optional"></div>
+      <div><label>Website (optional)</label><input type="text" id="bizWebsite" placeholder="Optional — leave blank if none"></div>
+    </div>
+    <button id="addBizBtn">Add business</button>
+    <div class="error" id="addBizError"></div>
+  </div>
+
+  <div class="panel">
     <h2>Edit retail listings</h2>
     <label>Search by item or retailer name</label>
     <input type="text" id="retailSearchInput" placeholder="e.g. rice, or Sky Lounge…" autocomplete="off">
@@ -418,6 +446,43 @@ async function loadInterest(){
     </tr>`).join('')}
   </table>`;
 }
+
+const DIRECTORY_API = '/.netlify/functions/admin-directory';
+
+document.getElementById('addBizBtn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('addBizError');
+  errorEl.textContent = '';
+  const name = document.getElementById('bizName').value.trim();
+  if(!name){
+    errorEl.textContent = 'Business name is required.';
+    return;
+  }
+  const body = {
+    category: document.getElementById('bizCategory').value,
+    name,
+    island: document.getElementById('bizIsland').value.trim() || null,
+    address: document.getElementById('bizAddress').value.trim() || null,
+    phone: document.getElementById('bizPhone').value.trim() || null,
+    website: document.getElementById('bizWebsite').value.trim() || null,
+  };
+  const res = await fetch(`${DIRECTORY_API}?action=add`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify(body),
+  });
+  if(res.ok){
+    document.getElementById('bizName').value = '';
+    document.getElementById('bizIsland').value = '';
+    document.getElementById('bizAddress').value = '';
+    document.getElementById('bizPhone').value = '';
+    document.getElementById('bizWebsite').value = '';
+    errorEl.style.color = 'var(--live)';
+    errorEl.textContent = `Added "${name}" successfully.`;
+  } else {
+    const data = await res.json().catch(() => ({}));
+    errorEl.style.color = 'var(--danger)';
+    errorEl.textContent = data.error || 'Something went wrong adding this business.';
+  }
+});
 
 const RETAIL_API = '/.netlify/functions/admin-retail';
 
