@@ -714,19 +714,29 @@ const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 async function geocodePlace(placeName){
   const query = /svg|vincent/i.test(placeName) ? placeName : `${placeName}, Saint Vincent and the Grenadines`;
-  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${GOOGLE_KEY}`);
-  if(!res.ok) throw new Error(`Geocoding request failed: ${res.status}`);
+  // Places' Find Place From Text, not the plain Geocoding API — geocoding is
+  // built for structured addresses and can resolve informal/landmark names
+  // like "Indian Bay" to an imprecise area centroid (sometimes over water),
+  // which a driving-route engine then can't route to at all. Places search
+  // is built specifically for this kind of informal query, with a location
+  // bias circle constrained to SVG so it doesn't match a same-named place
+  // elsewhere in the world.
+  const params = new URLSearchParams({
+    input: query,
+    inputtype: 'textquery',
+    fields: 'geometry',
+    locationbias: 'circle:40000@13.25,-61.20', // ~40km around SVG's main islands
+    key: GOOGLE_KEY,
+  });
+  const res = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?${params}`);
+  if(!res.ok) throw new Error(`Places lookup request failed: ${res.status}`);
   const data = await res.json();
 
-  if(data.status === 'OK' && data.results && data.results.length){
-    return { location: data.results[0].geometry.location, status: 'OK' };
+  if(data.status === 'OK' && data.candidates && data.candidates.length){
+    return { location: data.candidates[0].geometry.location, status: 'OK' };
   }
 
-  // Log the real status so a setup problem (API not enabled, key lacking
-  // permission, quota exceeded) is actually visible, rather than silently
-  // collapsing into the same generic "couldn't find this place" message
-  // that wrongly blames data coverage for what's really a config issue.
-  console.error(`Geocoding non-OK status for "${query}":`, data.status, data.error_message || '');
+  console.error(`Places lookup non-OK status for "${query}":`, data.status, data.error_message || '');
   return { location: null, status: data.status };
 }
 
