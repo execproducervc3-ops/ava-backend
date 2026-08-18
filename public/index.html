@@ -32,6 +32,17 @@
     --flag-blue:#0072C6; --flag-gold:#FCD116; --flag-green:#009E60;
     --shadow:0 2px 14px rgba(43,33,22,0.07);
   }
+  html[data-theme="dark"]{
+    --teal:#3FA3A3; --teal-dark:#1B5E5E; --teal-soft:#1A3838;
+    --coral:#E8794A; --coral-soft:#3A2318;
+    --gold:#F0B840; --gold-soft:#3A2E14;
+    --cream:#15181A; --card:#1E2224;
+    --ink:#EDEAE3; --soft:#9C978A; --line:#33383B;
+    --flag-blue:#3B9DE8; --flag-gold:#FCD116; --flag-green:#2FBE7A;
+    --shadow:0 2px 20px rgba(0,0,0,0.4);
+  }
+  html{transition:background-color 0.3s ease;}
+  body{transition:background-color 0.3s ease, color 0.3s ease;}
   *{box-sizing:border-box;}
   html,body{height:100%;}
   body{margin:0;background:var(--cream);color:var(--ink);font-family:'Inter',sans-serif;display:flex;flex-direction:column;}
@@ -217,6 +228,7 @@
 </style>
 </head>
 <body class="home">
+<button id="themeToggleBtn" title="Toggle dark mode" style="position:fixed; top:16px; right:16px; z-index:10; background:var(--card); border:1px solid var(--line); border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer; box-shadow:var(--shadow);"></button>
 <svg class="palm-deco palm-left" id="palmLeft" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <svg class="palm-deco palm-right" id="palmRight" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <div id="homeHero">
@@ -603,6 +615,30 @@ function refreshPalmDecoration(){
 // Initial render, then the original slower, ambient regeneration cycle.
 refreshPalmDecoration();
 setInterval(refreshPalmDecoration, 14000);
+
+// Dark mode — real toggle with persistence. This is a live, deployed site
+// (not a Claude.ai artifact), so localStorage is the correct, standard way
+// to remember the person's choice across visits.
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if(btn) btn.innerHTML = theme === 'dark' ? '&#9728;' : '&#127769;'; // sun to go light, moon to go dark
+}
+
+function initTheme(){
+  const saved = localStorage.getItem('ava_theme');
+  const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved || (systemPrefersDark ? 'dark' : 'light'));
+}
+
+document.getElementById('themeToggleBtn').addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem('ava_theme', next);
+});
+
+initTheme();
 
 const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 
