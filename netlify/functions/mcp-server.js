@@ -1,53 +1,19 @@
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { toFetchResponse, toReqRes } from "fetch-to-node";
-import { z } from "zod";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+// mcp-server.js — CommonJS format, matching every other function in this
+// project. The .mjs (ESM) version repeatedly failed to resolve
+// '@supabase/supabase-js' at runtime on Netlify's servers, even with
+// external_node_modules correctly configured — the one common factor
+// across both failures was that it was the only ESM function in the whole
+// codebase. Every CommonJS function here has always resolved this same
+// dependency correctly, so this rewrites the server to match that proven,
+// working pattern instead of trying a third variation on the ESM approach.
 
-// AVA's shared, reusable tool functions — imported from ava-core.js, not
-// ava-chat.js, specifically to avoid pulling in a whole other Netlify
-// function file (with its own HTTP handler and Anthropic-specific code) as
-// a dependency, which caused real, confirmed esbuild bundling failures.
-import * as ava from "./ava-core.js";
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+const { toFetchResponse, toReqRes } = require('fetch-to-node');
+const { z } = require('zod');
+const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 
-// Netlify serverless function handler — this is the newer Functions v2
-// format (Fetch API Request/Response), which the rest of AVA's codebase
-// doesn't use, but which Netlify's own MCP guide confirms is the correct,
-// proven pattern for a stateless MCP server. Kept isolated to this one
-// file rather than forcing the whole project onto a different style.
-export default async (req) => {
-  try {
-    if (req.method === "POST") {
-      const { req: nodeReq, res: nodeRes } = toReqRes(req);
-      const server = getServer();
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await server.connect(transport);
-      const body = await req.json();
-      await transport.handleRequest(nodeReq, nodeRes, body);
-      nodeRes.on("close", () => {
-        transport.close();
-        server.close();
-      });
-      return toFetchResponse(nodeRes);
-    }
-    return new Response("Method not allowed", { status: 405 });
-  } catch (error) {
-    console.error("MCP error:", error);
-    return new Response(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: "",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
-};
+const ava = require('./ava-core.js');
 
-// Wraps any of AVA's existing functions as an MCP tool result — every one
-// of these is genuinely read-only, exposing exactly the same real data
-// AVA's own conversational tool-use already relies on, nothing more.
 function asToolResult(data) {
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
@@ -219,6 +185,58 @@ function getServer() {
   return server;
 }
 
-export const config = {
-  path: "/mcp",
+
+exports.handler = async (event, context) => {
+  try {
+    // Netlify v1 functions don't provide a native Fetch API Request — it's
+    // reconstructed manually from the Lambda-style event object, matching
+    // the confirmed working pattern for CommonJS MCP servers on Netlify.
+    const req = new Request(`https://${event.headers.host}${event.path}`, {
+      method: event.httpMethod,
+      headers: event.headers,
+      body: event.body ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body) : undefined,
+    });
+
+    if (req.method === "POST") {
+      const { req: nodeReq, res: nodeRes } = toReqRes(req);
+      const server = getServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      await server.connect(transport);
+
+      let body;
+      try {
+        body = await req.json();
+      } catch (e) {
+        return { statusCode: 400, body: JSON.stringify({ error: "Invalid JSON body" }) };
+      }
+
+      await transport.handleRequest(nodeReq, nodeRes, body);
+      nodeRes.on("close", () => {
+        transport.close();
+        server.close();
+      });
+
+      const response = await toFetchResponse(nodeRes);
+      const responseBody = await response.text();
+      const headers = {};
+      response.headers.forEach((value, key) => { headers[key] = value; });
+
+      return { statusCode: response.status, headers, body: responseBody };
+    }
+
+    return { statusCode: 405, body: "Method not allowed" };
+  } catch (error) {
+    console.error("MCP error:", error);
+    return {
+      statusCode: 500,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: "",
+      }),
+    };
+  }
 };

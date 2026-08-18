@@ -2,12 +2,20 @@
   functions = "netlify/functions"
   publish = "public"
 
+# mcp-server.js is a CommonJS (v1) function, which doesn't support the
+# export const config = { path } mechanism the earlier .mjs version used —
+# this redirect provides the same clean /mcp URL instead.
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/mcp-server"
+  status = 200
+  force = true
+
 [functions]
   node_bundler = "esbuild"
-  # Fixes "Cannot find module '@supabase/supabase-js'" in mcp-server.mjs —
-  # it's required indirectly (via importing ava-chat.js as a dependency),
-  # which esbuild's static bundler doesn't correctly trace and inline.
-  # This tells it to copy the module into the bundle as-is instead.
+  # Kept as a harmless safety net from an earlier fix attempt — not known
+  # to be strictly necessary now that mcp-server is CommonJS like every
+  # other function, but costs nothing to leave in place.
   external_node_modules = ["@supabase/supabase-js"]
 
 [functions."ingest-news"]
@@ -21,3 +29,8 @@
 
 [functions."recheck-reference"]
   schedule = "0 0 1 */3 *"     # quarterly: Jan 1, Apr 1, Jul 1, Oct 1 — "@quarterly" is not valid Netlify syntax
+
+# recheck-fuel-prices.js is NOT scheduled here — it appears to be leftover
+# code from the FRED/EIA fuel-tracking approach that was explicitly
+# abandoned in favor of pulling fuel context from the existing news RSS
+# feed instead.
