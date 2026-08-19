@@ -556,7 +556,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
           }
 
           const toolElapsedMs = Date.now() - toolStartTime;
-          console.log(`Tool timing — ${toolUse.name}: ${toolElapsedMs}ms`);
+          console.log(`Tool timing — ${toolUse.name}: ${toolElapsedMs}ms — input: ${JSON.stringify(toolUse.input)}`);
 
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         }
