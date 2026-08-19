@@ -184,7 +184,21 @@
 
   <div class="panel">
     <h2>Businesses with no submissions</h2>
-    <div class="empty-note" style="margin-bottom:10px;">Added to the directory, but no price photos or stock ever submitted — invisible to the search above since that only searches through actual submissions.</div>
+    <div class="empty-note" style="margin-bottom:10px;">Added to the directory, but no price photos or stock ever submitted — invisible to the search above since that only searches through actual submissions. Most of this is just normal, not-yet-onboarded inventory from the weekly Google Places ingestion — "Curated" (manually added) is the source most worth reviewing for genuine mistakes or duplicates.</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+      <select id="emptySourceFilter" style="flex:1; min-width:140px;">
+        <option value="curated" selected>Source: Curated (manual)</option>
+        <option value="google_places">Source: Google Places</option>
+        <option value="all">Source: All</option>
+      </select>
+      <select id="emptyCategoryFilter" style="flex:1; min-width:140px;">
+        <option value="all" selected>Category: All</option>
+      </select>
+      <select id="emptyIslandFilter" style="flex:1; min-width:140px;">
+        <option value="all" selected>Island: All</option>
+      </select>
+    </div>
+    <div id="emptyBusinessCount" class="empty-note" style="margin-bottom:8px;"></div>
     <div id="emptyBusinessList"></div>
   </div>
 
@@ -547,16 +561,51 @@ async function loadPhotoTracker(){
   `).join('');
 }
 
+let allEmptyBusinesses = [];
+
 async function loadEmptyBusinesses(){
   const el = document.getElementById('emptyBusinessList');
   const res = await fetch(`${DIRECTORY_API}?action=list_empty`, { headers: { 'X-Admin-Secret': secret } });
   if(!res.ok){ el.innerHTML = '<div class="empty-note">Could not load businesses.</div>'; return; }
   const data = await res.json();
-  if(!data.results || !data.results.length){
-    el.innerHTML = '<div class="empty-note">Every business in the directory has at least one submission.</div>';
+  allEmptyBusinesses = data.results || [];
+
+  // Populate category/island dropdowns from what's actually in the real
+  // data, rather than a hardcoded list that could drift from reality.
+  const categories = [...new Set(allEmptyBusinesses.map(r => r.category).filter(Boolean))].sort();
+  const islands = [...new Set(allEmptyBusinesses.map(r => r.island).filter(Boolean))].sort();
+
+  const catSelect = document.getElementById('emptyCategoryFilter');
+  catSelect.innerHTML = '<option value="all">Category: All</option>' +
+    categories.map(c => `<option value="${c}">Category: ${c.replace(/_/g, ' ')}</option>`).join('');
+
+  const islandSelect = document.getElementById('emptyIslandFilter');
+  islandSelect.innerHTML = '<option value="all">Island: All</option>' +
+    islands.map(i => `<option value="${i}">Island: ${i}</option>`).join('');
+
+  renderFilteredEmptyBusinesses();
+}
+
+function renderFilteredEmptyBusinesses(){
+  const el = document.getElementById('emptyBusinessList');
+  const countEl = document.getElementById('emptyBusinessCount');
+  const sourceFilter = document.getElementById('emptySourceFilter').value;
+  const categoryFilter = document.getElementById('emptyCategoryFilter').value;
+  const islandFilter = document.getElementById('emptyIslandFilter').value;
+
+  const filtered = allEmptyBusinesses.filter(r =>
+    (sourceFilter === 'all' || r.source === sourceFilter) &&
+    (categoryFilter === 'all' || r.category === categoryFilter) &&
+    (islandFilter === 'all' || r.island === islandFilter)
+  );
+
+  countEl.textContent = `Showing ${filtered.length} of ${allEmptyBusinesses.length} total.`;
+
+  if(!filtered.length){
+    el.innerHTML = '<div class="empty-note">Nothing matches this filter.</div>';
     return;
   }
-  el.innerHTML = data.results.map(r => `
+  el.innerHTML = filtered.map(r => `
     <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); align-items:center;">
       <div style="flex:1; min-width:0;">
         <div style="font-weight:600;">${r.name}</div>
@@ -566,6 +615,10 @@ async function loadEmptyBusinesses(){
     </div>
   `).join('');
 }
+
+document.getElementById('emptySourceFilter').addEventListener('change', renderFilteredEmptyBusinesses);
+document.getElementById('emptyCategoryFilter').addEventListener('change', renderFilteredEmptyBusinesses);
+document.getElementById('emptyIslandFilter').addEventListener('change', renderFilteredEmptyBusinesses);
 
 document.getElementById('emptyBusinessList').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-delete-empty-id]');
@@ -578,7 +631,8 @@ document.getElementById('emptyBusinessList').addEventListener('click', async (e)
     body: JSON.stringify({ listing_id: btn.dataset.deleteEmptyId }),
   });
   if(res.ok){
-    loadEmptyBusinesses();
+    allEmptyBusinesses = allEmptyBusinesses.filter(r => r.id !== btn.dataset.deleteEmptyId);
+    renderFilteredEmptyBusinesses();
   } else {
     const data = await res.json().catch(() => ({}));
     alert(data.error || 'Could not delete this business.');
