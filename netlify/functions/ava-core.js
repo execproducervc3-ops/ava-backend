@@ -695,7 +695,7 @@ async function queryBusFare(origin, destination){
   }
 }
 
-async function queryDirectory(category, island){
+async function queryDirectory(category, island, businessName){
   try{
     let query = supabase
       .from('directory_listings')
@@ -705,6 +705,9 @@ async function queryDirectory(category, island){
 
     if(island && island.trim()){
       query = query.ilike('island', `%${island.trim()}%`);
+    }
+    if(businessName && businessName.trim()){
+      query = query.ilike('name', `%${businessName.trim()}%`);
     }
 
     const { data, error } = await query.order('name', { ascending: true }).limit(10);

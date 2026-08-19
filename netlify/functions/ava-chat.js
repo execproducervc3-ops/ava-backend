@@ -179,12 +179,13 @@ const TOOLS = [
   },
   {
     name: 'query_directory',
-    description: "Search AVA's own directory of real SVG businesses — restaurants, pharmacies, doctors, taxi services — sourced from Google Places and kept current. Use this before web search for 'where can I find X' or 'is there a Y near me' questions. Coverage is limited to what's been ingested so far (mainly Saint Vincent, Bequia, Union Island) — if nothing comes back, say so honestly rather than guessing at a business that might exist.",
+    description: "Search AVA's own directory of real SVG businesses — restaurants, pharmacies, doctors, taxi services — sourced from Google Places and kept current. Use this before web search for 'where can I find X' or 'is there a Y near me' questions. If the person names a SPECIFIC business, always pass it as business_name — otherwise this returns an unfiltered list of the whole category, which is rarely what they actually asked for. Coverage is limited to what's been ingested so far (mainly Saint Vincent, Bequia, Union Island) — if nothing comes back, say so honestly rather than guessing at a business that might exist.",
     input_schema: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental'], description: 'What kind of business to look for' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
+        business_name: { type: 'string', description: 'If the person named a specific business, pass it here to filter to just that one — e.g. "Sky Lounge". Omit only for genuinely general category browsing.' },
       },
       required: ['category']
     }
@@ -399,7 +400,7 @@ exports.handler = async (event) => {
           }
 
           else if(toolUse.name === 'query_directory'){
-            const dirData = await avaCore.queryDirectory(toolUse.input.category, toolUse.input.island);
+            const dirData = await avaCore.queryDirectory(toolUse.input.category, toolUse.input.island, toolUse.input.business_name);
             if(dirData.results && dirData.results.length) directoryResults = dirData.results;
             content = dirData.results && dirData.results.length
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name}${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
