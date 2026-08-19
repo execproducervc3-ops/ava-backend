@@ -765,6 +765,12 @@ async function queryTaxiFare(origin, destination){
     }
     const estimatedFare = TAXI_FARE_INTERCEPT + TAXI_FARE_SLOPE * realMiles;
 
+    // Falling through to here means none of the official tables (airport,
+    // Kingstown, cruise ship) covered this route — worth tracking as a real
+    // gap, since it means only an estimate exists for a route someone
+    // actually asked about.
+    await logUnansweredQuery(`taxi fare: ${origin} to ${destination} (no official rate, estimate only)`, 'taxi_fare');
+
     return {
       type: 'estimate',
       origin, destination,
@@ -786,7 +792,10 @@ async function querySettlementClassification(placeName){
       .limit(1)
       .maybeSingle();
     if(error) throw error;
-    if(!data) return { note: `"${placeName}" isn't in the official settlement hierarchy classification (National Physical Development Plan, 2021 draft) — likely too small to be individually classified, or it's a Grenadines island outside mainland-focused Table 1.` };
+    if(!data){
+      await logUnansweredQuery(`settlement classification: ${placeName.trim()}`, 'settlement_classification');
+      return { note: `"${placeName}" isn't in the official settlement hierarchy classification (National Physical Development Plan, 2021 draft) — likely too small to be individually classified, or it's a Grenadines island outside mainland-focused Table 1.` };
+    }
     return { type: 'official', name: data.name, typology: data.typology, spatial_strategy: data.spatial_strategy };
   } catch(err){
     console.error('querySettlementClassification error:', err);
@@ -803,11 +812,13 @@ async function queryBusFare(origin, destination){
     const hubMatch = ['Kingstown', 'Georgetown', 'Barrouallie', 'Paget Farm', 'Port Elizabeth']
       .find(hub => origin.toLowerCase().includes(hub.toLowerCase()) || destination.toLowerCase().includes(hub.toLowerCase()));
     if(!hubMatch){
+      await logUnansweredQuery(`bus fare: ${origin} to ${destination} (no matching hub)`, 'bus_fare');
       return { note: `Bus fares are published relative to specific hubs (Kingstown, Georgetown, Barrouallie, Paget Farm, Port Elizabeth) — neither "${origin}" nor "${destination}" matches one of these.` };
     }
     const place = origin.toLowerCase().includes(hubMatch.toLowerCase()) ? destination : origin;
     const match = findOfficialFareRow(rows.filter(r => r.hub === hubMatch), place);
     if(!match){
+      await logUnansweredQuery(`bus fare: ${place} from ${hubMatch} hub`, 'bus_fare');
       return { note: `"${place}" isn't in the official bus fare list for the ${hubMatch} hub.` };
     }
     return {
@@ -975,6 +986,7 @@ async function queryScholarships(){
       .order('name', { ascending: true });
     if(error) throw error;
     if(!data || !data.length){
+      await logUnansweredQuery('scholarships (no active listings at all)', 'scholarships');
       return { results: [], note: 'No scholarship data available yet.' };
     }
     return { results: data };
