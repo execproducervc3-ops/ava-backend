@@ -226,6 +226,9 @@
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   .dircard-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);padding:9px 12px 6px;}
   .dirrow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);}
+  .dirrow-pick{background:var(--gold-soft);}
+  .dirpickstar{color:var(--gold);}
+  .dirpicknote{font-size:11px;color:var(--soft);font-style:italic;margin-top:2px;}
   .dirmain{flex:1;min-width:0;}
   .dirname{font-size:12.5px;font-weight:600;}
   .dirmeta{font-size:11px;color:var(--soft);}
@@ -469,10 +472,11 @@ function appendMessage(role, text, linkCard, retailResults, newsResults, ferryRe
 
 function renderDirectoryResults(results){
   const rows = results.map(d => `
-    <div class="dirrow">
+    <div class="dirrow${d.is_top_pick ? ' dirrow-pick' : ''}">
       <div class="dirmain">
-        <div class="dirname">${escapeHtml(d.name)}</div>
+        <div class="dirname">${d.is_top_pick ? '<span class="dirpickstar">&#9733;</span> ' : ''}${escapeHtml(d.name)}</div>
         <div class="dirmeta">${[d.island, d.address].filter(Boolean).map(escapeHtml).join(' &middot; ')}</div>
+        ${d.is_top_pick && d.top_pick_note ? `<div class="dirpicknote">${escapeHtml(d.top_pick_note)}</div>` : ''}
       </div>
       ${d.phone ? `<a href="tel:${escapeHtml(String(d.phone).replace(/[^\d+]/g,''))}" class="dirphone">&#128222;</a>` : ''}
     </div>`).join('');
