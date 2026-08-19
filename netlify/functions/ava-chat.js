@@ -327,6 +327,7 @@ exports.handler = async (event) => {
         const toolResults = [];
         for(const toolUse of toolUseBlocks){
           let content = 'Unknown tool.';
+          const toolStartTime = Date.now();
 
           if(toolUse.name === 'get_deep_link'){
             const link = avaCore.buildDeepLink(toolUse.input.service_type, toolUse.input);
@@ -530,6 +531,9 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
               ? `${refData.result.title}: ${refData.result.summary} [Source: ${refData.result.source_url || 'unknown'}, last verified ${refData.result.last_verified_at ? new Date(refData.result.last_verified_at).toDateString() : 'unknown'}]`
               : (refData.note || 'No reference content available.');
           }
+
+          const toolElapsedMs = Date.now() - toolStartTime;
+          console.log(`Tool timing — ${toolUse.name}: ${toolElapsedMs}ms`);
 
           toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         }
