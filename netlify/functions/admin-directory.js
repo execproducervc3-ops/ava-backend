@@ -23,6 +23,48 @@ exports.handler = async (event) => {
   const action = params.action;
 
   try {
+    if (event.httpMethod === 'GET' && action === 'list_empty') {
+      // Businesses added but with zero linked price submissions — invisible
+      // to the "Edit retail listings" search specifically because that
+      // searches through retail_offers, not directory_listings directly.
+      const { data: allListings, error: listErr } = await supabase
+        .from('directory_listings')
+        .select('id, name, category, island, address, phone, source, created_at')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      if (listErr) throw listErr;
+
+      const { data: offerListingIds, error: offerErr } = await supabase
+        .from('retail_offers')
+        .select('listing_id');
+      if (offerErr) throw offerErr;
+
+      const hasOffers = new Set((offerListingIds || []).map(o => o.listing_id));
+      const emptyListings = (allListings || []).filter(l => !hasOffers.has(l.id));
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: emptyListings }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'delete_empty') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id is required' }) };
+      }
+
+      // Real safety check, not just trusting the frontend's list was
+      // accurate at click time — refuse to delete if this listing has
+      // picked up a submission since the list was last loaded.
+      const { data: offers } = await supabase.from('retail_offers').select('id').eq('listing_id', body.listing_id).limit(1);
+      if (offers && offers.length) {
+        return { statusCode: 409, headers: CORS, body: JSON.stringify({ error: 'This business now has price submissions — refresh the list and use "Delete entire retailer" instead.' }) };
+      }
+
+      const { error: delErr } = await supabase.from('directory_listings').delete().eq('id', body.listing_id);
+      if (delErr) throw delErr;
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     if (event.httpMethod === 'POST' && action === 'add') {
       const body = JSON.parse(event.body || '{}');
       const { category, name, address, island, phone, website } = body;

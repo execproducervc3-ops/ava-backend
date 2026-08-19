@@ -183,6 +183,12 @@
   </div>
 
   <div class="panel">
+    <h2>Businesses with no submissions</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Added to the directory, but no price photos or stock ever submitted — invisible to the search above since that only searches through actual submissions.</div>
+    <div id="emptyBusinessList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Uploaded photos</h2>
     <div class="empty-note" style="margin-bottom:10px;">Retailer-submitted photos, most recent first — mainly promotional uploads (sales, back-to-school, etc.), not a full product catalog.</div>
     <div id="photoTrackerList"></div>
@@ -305,6 +311,7 @@ async function tryLogin(password, showErrors){
   loadGaps();
   loadInterest();
   loadPhotoTracker();
+  loadEmptyBusinesses();
   return true;
 }
 
@@ -453,6 +460,7 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   loadGaps();
   loadInterest();
   loadPhotoTracker();
+  loadEmptyBusinesses();
 });
 
 const INTEREST_API = '/.netlify/functions/admin-interest';
@@ -538,6 +546,44 @@ async function loadPhotoTracker(){
     </div>
   `).join('');
 }
+
+async function loadEmptyBusinesses(){
+  const el = document.getElementById('emptyBusinessList');
+  const res = await fetch(`${DIRECTORY_API}?action=list_empty`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ el.innerHTML = '<div class="empty-note">Could not load businesses.</div>'; return; }
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    el.innerHTML = '<div class="empty-note">Every business in the directory has at least one submission.</div>';
+    return;
+  }
+  el.innerHTML = data.results.map(r => `
+    <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); align-items:center;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600;">${r.name}</div>
+        <div style="color:var(--soft); font-size:13px;">${r.category}${r.island ? ', ' + r.island : ''}${r.source ? ' · added via ' + r.source : ''} · ${new Date(r.created_at).toLocaleDateString()}</div>
+      </div>
+      <button class="btn-danger" data-delete-empty-id="${r.id}" data-delete-empty-name="${r.name.replace(/"/g, '&quot;')}">Delete</button>
+    </div>
+  `).join('');
+}
+
+document.getElementById('emptyBusinessList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete-empty-id]');
+  if(!btn) return;
+  const name = btn.dataset.deleteEmptyName;
+  if(!confirm(`Delete "${name}" permanently? This cannot be undone.`)) return;
+
+  const res = await fetch(`${DIRECTORY_API}?action=delete_empty`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ listing_id: btn.dataset.deleteEmptyId }),
+  });
+  if(res.ok){
+    loadEmptyBusinesses();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || 'Could not delete this business.');
+  }
+});
 
 
 let retailSearchTimeout;
