@@ -163,6 +163,7 @@
           <option value="cinema">Cinema</option>
           <option value="retailer">Retailer</option>
           <option value="pop_up_vendor">Pop-up vendor</option>
+          <option value="promoter">Event promoter</option>
         </select>
       </div>
       <div><label>Name</label><input type="text" id="bizName" placeholder="e.g. Sunset Guesthouse"></div>
@@ -861,7 +862,7 @@ async function loadReviewQueue(){
       <div style="margin-bottom:10px;">
         <label>Business category</label>
         <select data-category-select data-listing-id="${escapeHtml(item.listing_id)}" data-offer-id="${escapeHtml(item.offer_id)}">
-          ${['restaurant','pharmacy','doctor','taxi_service','cinema','retailer','pop_up_vendor','accommodation','car_rental'].map(c =>
+          ${['restaurant','pharmacy','doctor','taxi_service','cinema','retailer','pop_up_vendor','accommodation','car_rental','promoter'].map(c =>
             `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c.replace(/_/g, ' ')}</option>`
           ).join('')}
         </select>

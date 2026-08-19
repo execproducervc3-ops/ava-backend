@@ -183,7 +183,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental'], description: 'What kind of business to look for' },
+        category: { type: 'string', enum: ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter'], description: 'What kind of business to look for' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
         business_name: { type: 'string', description: 'If the person named a specific business, pass it here to filter to just that one — e.g. "Sky Lounge". Omit only for genuinely general category browsing.' },
       },

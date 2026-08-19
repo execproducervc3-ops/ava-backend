@@ -252,6 +252,7 @@ const CATEGORY_TO_LISTING_TYPE = {
   taxi_service: 'service_rate',
   doctor: 'service_rate',
   cinema: 'service_rate',
+  promoter: 'event_ticket',
 };
 
 function listingTypeForCategory(category){
