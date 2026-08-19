@@ -650,7 +650,17 @@ async function confirmLatestDraft(fromId, chatId) {
   }
 
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
-  await sendMessage(chatId, `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`);
+
+  const publishedCount = draft.items.length - flaggedItems.length;
+  let message;
+  if(flaggedItems.length === 0){
+    message = `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`;
+  } else if(publishedCount === 0){
+    message = `Got it — ${draft.items.length} item${draft.items.length === 1 ? '' : 's'} received, but this is your first submission so it needs a quick review before it's visible to customers. You'll be all set once that's done — no action needed from you.`;
+  } else {
+    message = `Published ${publishedCount} item${publishedCount === 1 ? '' : 's'}. ${flaggedItems.length} more need${flaggedItems.length === 1 ? 's' : ''} a quick first-time review before it's visible — you'll be all set once that's done.`;
+  }
+  await sendMessage(chatId, message);
 }
 
 exports.enforcePhotoSubmissionCap = enforcePhotoSubmissionCap;
