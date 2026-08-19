@@ -171,6 +171,10 @@
   .pricerow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);}
   .pricethumb{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:0 0 auto;background:var(--teal-soft);}
   .pricethumb.placeholder{display:flex;align-items:center;justify-content:center;font-size:24px;}
+  .photo-clickable{cursor:pointer;}
+  .photo-viewer-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1100; display:flex; align-items:center; justify-content:center;}
+  .photo-viewer-overlay img{max-width:100%; max-height:100%; object-fit:contain;}
+  .photo-viewer-close{position:fixed; top:16px; right:16px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,0.15); color:#fff; border:none; font-size:20px; cursor:pointer; z-index:1101; display:flex; align-items:center; justify-content:center;}
   .pricemain{flex:1;min-width:0;}
   @media (max-width:400px){
     .pricerow{flex-wrap:wrap;}
@@ -540,7 +544,7 @@ function renderRetailResults(groups){
         : '';
       return `
       <div class="pricerow">
-        ${r.photo_url ? `<img class="pricethumb" src="${r.photo_url}" alt="">` : `<div class="pricethumb placeholder">&#128717;</div>`}
+        ${r.photo_url ? `<img class="pricethumb photo-clickable" src="${r.photo_url}" data-full-photo="${escapeHtml(r.photo_url)}" alt="">` : `<div class="pricethumb placeholder">&#128717;</div>`}
         <div class="pricemain">
           <div class="pricename">${i === 0 ? '<span class="cheapest">Cheapest</span> ' : ''}${escapeHtml(r.retailer)}</div>
           <div class="priceitem">${escapeHtml(r.item_name)}</div>
@@ -668,10 +672,32 @@ const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 
 document.body.addEventListener('click', (e) => {
   const btn = e.target.closest('.enquirybtn');
-  if(!btn) return;
-  openEnquiryModal(btn.dataset.listingId, btn.dataset.offerId, btn.dataset.retailer, btn.dataset.details);
+  if(btn){
+    openEnquiryModal(btn.dataset.listingId, btn.dataset.offerId, btn.dataset.retailer, btn.dataset.details);
+    return;
+  }
+  const photo = e.target.closest('.photo-clickable');
+  if(photo){
+    openPhotoViewer(photo.dataset.fullPhoto);
+  }
 });
 
+function openPhotoViewer(url){
+  const root = document.getElementById('enquiryModalRoot');
+  root.innerHTML = `
+    <div class="photo-viewer-overlay" id="photoViewerOverlay">
+      <button class="photo-viewer-close" id="photoViewerClose">&times;</button>
+      <img src="${url}" alt="">
+    </div>`;
+  document.getElementById('photoViewerClose').addEventListener('click', closePhotoViewer);
+  document.getElementById('photoViewerOverlay').addEventListener('click', (e) => {
+    if(e.target.id === 'photoViewerOverlay') closePhotoViewer();
+  });
+}
+
+function closePhotoViewer(){
+  document.getElementById('enquiryModalRoot').innerHTML = '';
+}
 function openEnquiryModal(listingId, offerId, retailer, details){
   const root = document.getElementById('enquiryModalRoot');
   root.innerHTML = `
