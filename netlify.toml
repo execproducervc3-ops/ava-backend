@@ -24,6 +24,9 @@
 [functions."ingest-directory"]
   schedule = "@weekly"
 
+[functions."ingest-points-of-interest"]
+  schedule = "@weekly"
+
 [functions."recheck-scholarships"]
   schedule = "@monthly"
 
