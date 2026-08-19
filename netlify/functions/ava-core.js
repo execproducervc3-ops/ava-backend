@@ -461,6 +461,46 @@ async function queryPointsOfInterest(category, island, placeName){
 // (the one category with no local alternative), everything else from AVA's
 // own directory listings, since local accommodation and car rental agencies
 // are the actually-relevant options for SVG, not international chains.
+// Real, priced accommodation/vehicle-rental options — distinct from
+// queryDirectory, which only returns bare business listings with no price
+// at all. Joins retail_offers (where the actual rate lives, since a
+// listing_type-classified submission carries a real price) with
+// directory_listings for the business name, sorted cheapest first.
+async function queryPricedListings(listingType, island){
+  try{
+    let query = supabase
+      .from('retail_offers')
+      .select('item_name, price, unit, photo_url, listing_id, directory_listings!inner(name, island)')
+      .eq('listing_type', listingType)
+      .in('review_status', ['auto_published', 'approved']);
+
+    if(island && island.trim()){
+      query = query.ilike('directory_listings.island', `%${island.trim()}%`);
+    }
+
+    const { data, error } = await query.order('price', { ascending: true }).limit(10);
+    if(error) throw error;
+
+    if(!data || !data.length){
+      return { results: [], note: `No priced ${listingType === 'accommodation_rate' ? 'accommodation' : 'vehicle rental'} listings yet${island ? ' for ' + island : ''}.` };
+    }
+
+    return {
+      results: data.map(r => ({
+        name: r.item_name,
+        retailer: r.directory_listings ? r.directory_listings.name : null,
+        island: r.directory_listings ? r.directory_listings.island : null,
+        price: r.price,
+        unit: r.unit,
+        photo_url: r.photo_url,
+      })),
+    };
+  } catch(err){
+    console.error('queryPricedListings error:', err);
+    return { results: [], note: 'Could not reach the listings database right now.' };
+  }
+}
+
 async function planTrip(origin, destination, departureDate, totalBudget, island){
   const { queryDuffelFlights } = require('./duffel-flights.js');
 
@@ -476,8 +516,8 @@ async function planTrip(origin, destination, departureDate, totalBudget, island)
 
   const [flightResults, accommodationResults, carResults, foodResults] = await Promise.all([
     queryDuffelFlights(origin, destination, departureDate, 1),
-    queryDirectory('accommodation', island),
-    queryDirectory('car_rental', island),
+    queryPricedListings('accommodation_rate', island),
+    queryPricedListings('vehicle_rate', island),
     queryDirectory('restaurant', island),
   ]);
 
@@ -887,5 +927,5 @@ module.exports = {
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
   queryReferenceKnowledge, queryPointsOfInterest, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
-  logProductInterest, logUnansweredQuery,
+  logProductInterest, logUnansweredQuery, queryPricedListings,
 };

@@ -236,6 +236,28 @@ async function enforcePhotoSubmissionCap(listingId){
   await supabase.from('retail_offers').delete().in('id', oldestGroup.ids);
 }
 
+// Maps a business's established category to the listing_type its
+// submissions should carry — set once, at that business's mandatory first
+// review, then inherited automatically by every submission after. A
+// genuinely different offering (a restaurant that starts renting bicycles)
+// isn't handled by overriding this — it needs its own separate listing,
+// so this mapping stays a clean, unconditional one-to-one rule.
+const CATEGORY_TO_LISTING_TYPE = {
+  accommodation: 'accommodation_rate',
+  car_rental: 'vehicle_rate',
+  restaurant: 'menu_item',
+  retailer: 'retail_item',
+  pop_up_vendor: 'retail_item',
+  pharmacy: 'retail_item',
+  taxi_service: 'service_rate',
+  doctor: 'service_rate',
+  cinema: 'service_rate',
+};
+
+function listingTypeForCategory(category){
+  return CATEGORY_TO_LISTING_TYPE[category] || 'retail_item';
+}
+
 async function uploadPhotoToStorage(base64, mediaType, fromId) {
   try {
     const buffer = Buffer.from(base64, 'base64');
@@ -507,6 +529,13 @@ async function confirmLatestDraft(fromId, chatId) {
     await supabase.from('retailer_profile').update({ directory_listing_id: listingId }).eq('telegram_user_id', fromId);
   }
 
+  // Single source of truth for the business's category, fetched after
+  // listingId is fully resolved — works correctly whether this was a
+  // returning retailer, a claimed existing match, or a brand new listing,
+  // without threading the value through three separate branches above.
+  const { data: listingRow } = await supabase.from('directory_listings').select('category').eq('id', listingId).maybeSingle();
+  const listingType = listingTypeForCategory(listingRow ? listingRow.category : null);
+
   // Bulk operations instead of N sequential round-trips per item — a photo
   // submission has a handful of items, but a stock-list XLS upload can have
   // hundreds, and the old per-item loop risked a function timeout at exactly
@@ -579,6 +608,7 @@ async function confirmLatestDraft(fromId, chatId) {
       source_submission_id: draft.id,
       photo_url: draft.photo_url,
       tags: draft.tags || [],
+      listing_type: listingType,
     };
   });
   const { data: insertedOffers } = await supabase.from('retail_offers')
@@ -608,3 +638,5 @@ async function confirmLatestDraft(fromId, chatId) {
 }
 
 exports.enforcePhotoSubmissionCap = enforcePhotoSubmissionCap;
+exports.listingTypeForCategory = listingTypeForCategory;
+exports.confirmLatestDraft = confirmLatestDraft;
