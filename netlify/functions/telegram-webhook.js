@@ -657,3 +657,4 @@ exports.enforcePhotoSubmissionCap = enforcePhotoSubmissionCap;
 exports.listingTypeForCategory = listingTypeForCategory;
 exports.confirmLatestDraft = confirmLatestDraft;
 exports.computeNormalization = computeNormalization;
+exports.handlePhotoSubmission = handlePhotoSubmission;
