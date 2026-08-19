@@ -117,8 +117,8 @@ function getServer() {
 
   server.tool(
     "query_reference_knowledge",
-    "AVA's own verified reference knowledge base about SVG — geography, history, government, culture, economy, practical travel info, or indigenous history.",
-    { category: z.enum(["geography", "history", "government", "culture", "economy", "practical", "indigenous_peoples"]) },
+    "AVA's own verified reference knowledge base about SVG — geography, history, government, culture, economy, practical travel info, music, or indigenous history.",
+    { category: z.enum(["geography", "history", "government", "culture", "economy", "practical", "indigenous_peoples", "music"]) },
     async ({ category }) => asToolResult(await ava.queryReferenceKnowledge(category))
   );
 
