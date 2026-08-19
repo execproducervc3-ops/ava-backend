@@ -282,6 +282,13 @@ const VOLUME_TO_GALLON = { gallon:1, gallons:1, gal:1, liter:0.264172, liters:0.
 
 function parseQuantityUnit(unitText){
   if(!unitText) return null;
+  // A spreadsheet cell can genuinely come through as a raw number rather
+  // than text (e.g. a retailer typing a bare "10" in the unit column) —
+  // coerce safely instead of crashing on .toLowerCase().
+  if(typeof unitText !== 'string'){
+    if(typeof unitText === 'number') unitText = String(unitText);
+    else return null;
+  }
   const text = unitText.toLowerCase().trim();
   const match = text.match(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?|kgs?|kilograms?|g|grams?|oz|ounces?|gallons?|gal|liters?|litres?|l|fl\s*oz)\b/);
   if(!match) return null;
@@ -648,3 +655,4 @@ async function confirmLatestDraft(fromId, chatId) {
 exports.enforcePhotoSubmissionCap = enforcePhotoSubmissionCap;
 exports.listingTypeForCategory = listingTypeForCategory;
 exports.confirmLatestDraft = confirmLatestDraft;
+exports.computeNormalization = computeNormalization;
