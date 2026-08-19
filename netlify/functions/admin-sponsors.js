@@ -30,7 +30,7 @@ exports.handler = async (event) => {
       if (!q) return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: [] }) };
       const { data, error } = await supabase
         .from('directory_listings')
-        .select('id, name, island, category')
+        .select('id, name, island, category, is_top_pick, top_pick_note')
         .ilike('name', `%${q}%`)
         .limit(10);
       if (error) throw error;

@@ -222,6 +222,28 @@
   </div>
 
   <div class="panel">
+    <h2>Top picks</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Real, manually-curated picks only — AVA will never invent a recommendation on its own. Search a business, and if you genuinely think it deserves it, mark it and say why.</div>
+    <label>Search business</label>
+    <input type="text" id="topPickSearchInput" placeholder="Start typing a business name…" autocomplete="off">
+    <div id="topPickSearchResults"></div>
+
+    <div id="topPickForm" style="display:none; margin-top:14px;">
+      <div id="topPickSelectedBusiness"></div>
+      <label><input type="checkbox" id="topPickToggle" style="width:auto; margin-right:8px;">Mark as a top pick</label>
+      <label>Why (shown to customers as the real reason)</label>
+      <textarea id="topPickNoteInput" placeholder="e.g. Genuinely the best fish fry on the island, verified in person"></textarea>
+      <button id="topPickSaveBtn">Save</button>
+      <div class="error" id="topPickError"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Current top picks</h2>
+    <div id="topPicksList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Add a sponsor</h2>
     <label>Search business</label>
     <input type="text" id="searchInput" placeholder="Start typing a business name…" autocomplete="off">
@@ -324,6 +346,7 @@ async function tryLogin(password, showErrors){
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
   loadReviewQueue();
+  loadTopPicks();
   loadGaps();
   loadInterest();
   loadPhotoTracker();
@@ -419,6 +442,77 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
   searchTimeout = setTimeout(() => doSearch(q), 300);
 });
 
+let topPickSearchTimeout;
+let selectedTopPickListingId = null;
+document.getElementById('topPickSearchInput').addEventListener('input', (e) => {
+  clearTimeout(topPickSearchTimeout);
+  const q = e.target.value;
+  topPickSearchTimeout = setTimeout(() => doTopPickSearch(q), 300);
+});
+
+async function doTopPickSearch(q){
+  const resultsEl = document.getElementById('topPickSearchResults');
+  if(!q.trim()){ resultsEl.innerHTML = ''; return; }
+  const res = await fetch(`${API}?action=search&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    resultsEl.innerHTML = '<div class="empty-note">No matches.</div>';
+    return;
+  }
+  resultsEl.innerHTML = data.results.map(r =>
+    `<div class="result" data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}" data-pick="${r.is_top_pick ? '1' : ''}" data-note="${escapeHtml(r.top_pick_note || '')}">${escapeHtml(r.name)} — ${escapeHtml(r.island || 'no island set')}${r.is_top_pick ? ' ⭐' : ''}</div>`
+  ).join('');
+  resultsEl.querySelectorAll('.result').forEach(el => {
+    el.addEventListener('click', () => selectTopPickBusiness(el.dataset.id, el.dataset.name, el.dataset.pick === '1', el.dataset.note));
+  });
+}
+
+function selectTopPickBusiness(id, name, isPick, note){
+  selectedTopPickListingId = id;
+  document.getElementById('topPickSelectedBusiness').innerHTML = `<span class="selected-tag">Selected: ${escapeHtml(name)}</span>`;
+  document.getElementById('topPickForm').style.display = 'block';
+  document.getElementById('topPickSearchResults').innerHTML = '';
+  document.getElementById('topPickSearchInput').value = name;
+  document.getElementById('topPickToggle').checked = isPick;
+  document.getElementById('topPickNoteInput').value = note || '';
+}
+
+document.getElementById('topPickSaveBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('topPickError');
+  errEl.textContent = '';
+  const isPick = document.getElementById('topPickToggle').checked;
+  const note = document.getElementById('topPickNoteInput').value.trim();
+  if(isPick && !note){
+    errEl.textContent = 'A real reason is required to mark something as a top pick.';
+    return;
+  }
+  const res = await fetch(`${DIRECTORY_API}?action=update_top_pick`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ listing_id: selectedTopPickListingId, is_top_pick: isPick, top_pick_note: note }),
+  });
+  if(!res.ok){ errEl.textContent = 'Something went wrong saving that.'; return; }
+  document.getElementById('topPickForm').style.display = 'none';
+  document.getElementById('topPickSearchInput').value = '';
+  loadTopPicks();
+});
+
+async function loadTopPicks(){
+  const listEl = document.getElementById('topPicksList');
+  const res = await fetch(`${DIRECTORY_API}?action=list_top_picks`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ listEl.innerHTML = '<div class="empty-note">Could not load top picks.</div>'; return; }
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    listEl.innerHTML = '<div class="empty-note">No top picks marked yet — search above to add one.</div>';
+    return;
+  }
+  listEl.innerHTML = data.results.map(r => `
+    <div style="padding:10px 0; border-top:1px solid var(--line);">
+      <div style="font-weight:600;">⭐ ${escapeHtml(r.name)}${r.island ? ` <span style="font-weight:400; color:var(--soft);">(${escapeHtml(r.island)})</span>` : ''}</div>
+      <div style="color:var(--soft); font-size:13px; margin-top:2px;">${escapeHtml(r.top_pick_note || '')}</div>
+    </div>
+  `).join('');
+}
+
 async function doSearch(q){
   const resultsEl = document.getElementById('searchResults');
   if(!q.trim()){ resultsEl.innerHTML = ''; return; }
@@ -473,6 +567,7 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   selectedListingId = null;
   loadPlacements();
   loadReviewQueue();
+  loadTopPicks();
   loadGaps();
   loadInterest();
   loadPhotoTracker();
@@ -982,6 +1077,7 @@ async function deletePlacement(id, name){
   });
   loadPlacements();
   loadReviewQueue();
+  loadTopPicks();
   loadGaps();
   loadInterest();
 }
@@ -994,6 +1090,7 @@ async function toggle(id, newActive){
   });
   loadPlacements();
   loadReviewQueue();
+  loadTopPicks();
   loadGaps();
   loadInterest();
 }

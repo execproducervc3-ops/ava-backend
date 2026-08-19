@@ -42,6 +42,27 @@ exports.handler = async (event) => {
       nightlife: 'menu_item',
     };
 
+    if (event.httpMethod === 'GET' && action === 'list_top_picks') {
+      const { data, error } = await supabase.from('directory_listings')
+        .select('id, name, island, category, top_pick_note')
+        .eq('is_top_pick', true)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: data || [] }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'update_top_pick') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id || typeof body.is_top_pick !== 'boolean') {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id and is_top_pick (boolean) are required' }) };
+      }
+      const { error: pickErr } = await supabase.from('directory_listings')
+        .update({ is_top_pick: body.is_top_pick, top_pick_note: body.is_top_pick ? (body.top_pick_note || null) : null })
+        .eq('id', body.listing_id);
+      if (pickErr) throw pickErr;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     if (event.httpMethod === 'POST' && action === 'update_subscription_tier') {
       const body = JSON.parse(event.body || '{}');
       if (!body.listing_id || !['free', 'paid'].includes(body.tier)) {

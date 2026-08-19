@@ -824,7 +824,7 @@ async function queryDirectory(category, island, businessName){
   try{
     let query = supabase
       .from('directory_listings')
-      .select('id, name, address, island, phone, category')
+      .select('id, name, address, island, phone, category, is_top_pick, top_pick_note')
       .eq('category', category)
       .eq('status', 'active');
 
@@ -835,7 +835,7 @@ async function queryDirectory(category, island, businessName){
       query = query.ilike('name', `%${businessName.trim()}%`);
     }
 
-    const { data, error } = await query.order('name', { ascending: true }).limit(10);
+    const { data, error } = await query.order('name', { ascending: true }).limit(50);
     if(error) throw error;
 
     if(!data || !data.length){
