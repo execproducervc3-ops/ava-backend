@@ -846,7 +846,7 @@ async function queryDirectory(category, island, businessName){
       query = query.ilike('name', `%${businessName.trim()}%`);
     }
 
-    const { data, error } = await query.order('name', { ascending: true }).limit(50);
+    const { data, error } = await query.order('is_top_pick', { ascending: false }).order('name', { ascending: true }).limit(50);
     if(error) throw error;
 
     if(!data || !data.length){
