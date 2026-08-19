@@ -31,6 +31,7 @@ Rules:
 - Use web search for anything current or specific: prices, hours, events, news. Don't guess at facts that could be out of date.
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
 - This applies just as much to "where can I find/buy X" or "who sells X" phrasing as it does to direct price questions — check query_retail_price for the specific product BEFORE falling back to query_directory or general web suggestions like Facebook Marketplace or generic hardware stores. AVA's own verified data is more useful than a generic pointer, and takes priority when it exists.
+- For a short, product-name-like query (e.g. "rims", "rice", "phone charger"), always attempt a direct search first — query_retail_price and/or query_directory as relevant — rather than presenting a multiple-choice clarifying question. Only ask a clarifying question if the search genuinely comes back empty or too ambiguous to act on; don't ask one as a first response to a query that could just be searched directly.
 - Always check whether you've already found something relevant earlier in this same conversation before answering as if starting fresh — if a specific product or retailer came up a few messages ago, use and mention that instead of giving generic advice that contradicts or ignores what you already found.
 - For ferry schedule questions, use the query_ferry_schedule tool. Compute the correct day_of_week (0=Sunday through 6=Saturday) from today's date and whatever relative term the person used. This data is real but limited to routes AVA has confirmed — if it comes back empty, say so honestly and pass along whatever contact info the tool provides rather than guessing at a time. Always mention that ferry schedules can change and it's worth confirming directly before travel, even when AVA has a confirmed time.
 - For customs/import duty questions: SVG's VAT is 15% standard, 10% reduced (e.g. hotel sector), 0% zero-rated (this includes most computer/electronics equipment) — this was reduced from 16% as part of 2026 tax reforms, so use 15%, not any older figure you may recall. There is also a separate Customs Service Charge (CSC) of a few percent applied to most imports, on top of duty and VAT. Never calculate or state an exact duty amount yourself — rates vary by specific HS tariff code and this changes over time. Instead, give this general context, then call get_deep_link with service_type "customs_general" for ordinary goods or "customs_vehicle" for vehicles specifically (vehicles also have a separate environmental tax based on engine size for vehicles over 4 years old) to hand them to SVG Customs' own official calculator for the exact figure.
@@ -49,21 +50,6 @@ Rules:
 const TOOLS = [
   { type: 'web_search_20260209', name: 'web_search' },
   { type: 'code_execution_20260120', name: 'code_execution' },
-  {
-    name: 'request_from_business',
-    description: "Passes a customer's real interest — a room for specific dates, holding stock, a tour package, anything — directly to a business as a real lead, for paid-tier businesses only. This is NOT a booking or reservation — AVA never confirms availability or holds anything; the business follows up directly. Free-tier businesses fall back to sharing their phone number instead, said honestly, not silently. Use this when someone expresses genuine intent to reach a specific business, not just browsing.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        listing_id: { type: 'string', description: 'The directory_listings id of the business' },
-        offer_id: { type: 'string', description: 'Optional — the specific retail_offers id being asked about, if one was named' },
-        requester_name: { type: 'string', description: "The person's name, if given" },
-        requester_contact: { type: 'string', description: 'How the business should reach them back — phone, WhatsApp, or similar' },
-        details: { type: 'string', description: "What they're asking for, in plain language — e.g. 'Deluxe Room, Aug 25-28' or '5 bags of rice, pickup Saturday'" },
-      },
-      required: ['listing_id', 'requester_contact', 'details'],
-    }
-  },
   {
     name: 'get_deep_link',
     description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, calculating customs import duty, or checking voter registration. Use this instead of claiming you can book, calculate, or look something up yourself.',
@@ -314,6 +300,24 @@ exports.handler = async (event) => {
   try{ body = JSON.parse(event.body || '{}'); } catch(e){
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
+
+  // A real "Send enquiry" button click, not a conversational message —
+  // deliberately bypasses Claude and the whole tool-calling loop entirely.
+  // Relying on a long conversation to correctly remember contact details
+  // turned out to be genuinely unreliable in real use; a direct form
+  // submission with everything needed in one call isn't.
+  if(body.action === 'send_enquiry'){
+    const avaCore = require('./ava-core.js');
+    if(!body.listing_id || !body.requester_contact || !body.details){
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id, requester_contact, and details are required' }) };
+    }
+    const result = await avaCore.requestFromBusiness(
+      body.listing_id, body.offer_id || null, body.requester_name || null,
+      body.requester_contact, body.details
+    );
+    return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
+  }
+
   const incoming = body.messages;
   const deviceId = body.deviceId || null;
   if(!Array.isArray(incoming) || !incoming.length){
@@ -347,14 +351,6 @@ exports.handler = async (event) => {
         for(const toolUse of toolUseBlocks){
           let content = 'Unknown tool.';
           const toolStartTime = Date.now();
-
-          if(toolUse.name === 'request_from_business'){
-            const reqResult = await avaCore.requestFromBusiness(
-              toolUse.input.listing_id, toolUse.input.offer_id, toolUse.input.requester_name,
-              toolUse.input.requester_contact, toolUse.input.details
-            );
-            content = reqResult.note;
-          }
 
           if(toolUse.name === 'get_deep_link'){
             const link = avaCore.buildDeepLink(toolUse.input.service_type, toolUse.input);

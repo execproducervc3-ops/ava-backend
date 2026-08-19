@@ -189,7 +189,7 @@ async function queryRetailPriceDB(productName){
 
     const { data: offers, error: offerErr } = await supabase
       .from('retail_offers')
-      .select('item_name, price, unit, standard_unit_type, price_per_standard_unit, photo_url, listing_id, created_at')
+      .select('id, item_name, price, unit, standard_unit_type, price_per_standard_unit, photo_url, listing_id, created_at')
       .in('canonical_product_id', productIds)
       .in('review_status', ['auto_published', 'approved'])
       .order('price_per_standard_unit', { ascending: true, nullsFirst: false })
@@ -209,6 +209,8 @@ async function queryRetailPriceDB(productName){
     const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
 
     const results = offers.map(o => ({
+      offer_id: o.id,
+      listing_id: o.listing_id,
       retailer: (listingMap[o.listing_id] && listingMap[o.listing_id].name) || 'Unknown retailer',
       island: (listingMap[o.listing_id] && listingMap[o.listing_id].island) || null,
       parish: (listingMap[o.listing_id] && listingMap[o.listing_id].parish) || null,

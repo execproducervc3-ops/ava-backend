@@ -149,6 +149,20 @@
   .linkcard .arrow{float:right;color:var(--coral);}
 
   .pricecard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .pricevalwrap{display:flex; flex-direction:column; align-items:flex-end; gap:6px;}
+  .enquirybtn{background:var(--teal); color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  .enquirybtn:hover{background:var(--teal-dark);}
+  .enquiry-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .enquiry-modal{background:var(--card); border-radius:14px; padding:24px; max-width:380px; width:100%; box-shadow:var(--shadow);}
+  .enquiry-modal h3{margin:0 0 4px; color:var(--ink); font-size:18px;}
+  .enquiry-modal .enquiry-sub{color:var(--soft); font-size:13px; margin-bottom:16px;}
+  .enquiry-modal label{display:block; font-size:12px; font-weight:600; color:var(--soft); margin:12px 0 4px; text-transform:uppercase; letter-spacing:0.03em;}
+  .enquiry-modal input{width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; color:var(--ink); background:transparent;}
+  .enquiry-actions{display:flex; gap:10px; margin-top:20px;}
+  .enquiry-actions button{flex:1; padding:10px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:none;}
+  .enquiry-send{background:var(--teal); color:#fff;}
+  .enquiry-cancel{background:transparent; color:var(--soft); border:1px solid var(--line) !important;}
+  .enquiry-result{margin-top:14px; font-size:13px; padding:10px 12px; border-radius:8px; background:var(--gold-soft); color:var(--ink);}
   .pricecard-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);padding:9px 12px 6px;}
   .pricegroup{border-top:1px solid var(--line);}
   .pricegroup:first-child{border-top:none;}
@@ -529,7 +543,10 @@ function renderRetailResults(groups){
           ${normalizedLine}
           ${contactBits.length ? `<div class="pricecontact">${contactBits.join(' &nbsp;·&nbsp; ')}</div>` : ''}
         </div>
-        <div class="priceval">$${Number(r.price).toFixed(2)}${r.unit ? `<span class="priceunit">/${escapeHtml(r.unit)}</span>` : ''}</div>
+        <div class="pricevalwrap">
+          <div class="priceval">$${Number(r.price).toFixed(2)}${r.unit ? `<span class="priceunit">/${escapeHtml(r.unit)}</span>` : ''}</div>
+          ${r.listing_id ? `<button class="enquirybtn" data-listing-id="${escapeHtml(r.listing_id)}" data-offer-id="${escapeHtml(r.offer_id || '')}" data-details="${escapeHtml(`${r.item_name} — $${Number(r.price).toFixed(2)}${r.unit ? '/' + r.unit : ''}`)}" data-retailer="${escapeHtml(r.retailer)}">Send enquiry</button>` : ''}
+        </div>
       </div>`;
     }).join('');
     return `<div class="pricegroup">
@@ -644,6 +661,80 @@ document.getElementById('themeToggleBtn').addEventListener('click', () => {
 initTheme();
 
 const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
+
+document.body.addEventListener('click', (e) => {
+  const btn = e.target.closest('.enquirybtn');
+  if(!btn) return;
+  openEnquiryModal(btn.dataset.listingId, btn.dataset.offerId, btn.dataset.retailer, btn.dataset.details);
+});
+
+function openEnquiryModal(listingId, offerId, retailer, details){
+  const root = document.getElementById('enquiryModalRoot');
+  root.innerHTML = `
+    <div class="enquiry-overlay" id="enquiryOverlay">
+      <div class="enquiry-modal">
+        <h3>Send enquiry</h3>
+        <div class="enquiry-sub">To ${escapeHtml(retailer)} — ${escapeHtml(details)}</div>
+        <label>Your name</label>
+        <input type="text" id="enquiryName" placeholder="e.g. Rohan">
+        <label>Phone or WhatsApp</label>
+        <input type="text" id="enquiryContact" placeholder="e.g. 784-555-0123">
+        <div class="enquiry-actions">
+          <button class="enquiry-cancel" id="enquiryCancel">Cancel</button>
+          <button class="enquiry-send" id="enquirySend">Send</button>
+        </div>
+        <div id="enquiryResultBox"></div>
+      </div>
+    </div>`;
+
+  document.getElementById('enquiryCancel').addEventListener('click', closeEnquiryModal);
+  document.getElementById('enquiryOverlay').addEventListener('click', (e) => {
+    if(e.target.id === 'enquiryOverlay') closeEnquiryModal();
+  });
+  document.getElementById('enquirySend').addEventListener('click', async () => {
+    const name = document.getElementById('enquiryName').value.trim();
+    const contact = document.getElementById('enquiryContact').value.trim();
+    const resultBox = document.getElementById('enquiryResultBox');
+    if(!contact){
+      resultBox.innerHTML = `<div class="enquiry-result">Please enter a phone or WhatsApp number.</div>`;
+      return;
+    }
+    const sendBtn = document.getElementById('enquirySend');
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+
+    try{
+      const res = await fetch(AVA_CHAT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_enquiry',
+          listing_id: listingId,
+          offer_id: offerId || null,
+          requester_name: name || null,
+          requester_contact: contact,
+          details,
+        }),
+      });
+      const data = await res.json();
+      resultBox.innerHTML = `<div class="enquiry-result">${escapeHtml(data.note || 'Something went wrong.')}</div>`;
+      document.getElementById('enquiryName').style.display = 'none';
+      document.getElementById('enquiryContact').style.display = 'none';
+      document.querySelectorAll('.enquiry-modal label').forEach(l => l.style.display = 'none');
+      document.getElementById('enquiryCancel').textContent = 'Close';
+      sendBtn.style.display = 'none';
+    } catch(err){
+      resultBox.innerHTML = `<div class="enquiry-result">Couldn't send that right now — please try again.</div>`;
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send';
+    }
+  });
+}
+
+function closeEnquiryModal(){
+  document.getElementById('enquiryModalRoot').innerHTML = '';
+}
+
 
 // Anonymous device identifier — generated once per browser, never tied to a
 // name or account. Used only to distinguish repeat visits from genuinely
@@ -844,5 +935,6 @@ loadHistory();
   scheduleNext();
 })();
 </script>
+<div id="enquiryModalRoot"></div>
 </body>
 </html>
