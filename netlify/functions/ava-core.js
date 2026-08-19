@@ -425,7 +425,7 @@ function generateLuckyNumbers(game){
   return { note: `Unknown game "${game}". Available: super6, lotto, 3d, play4.` };
 }
 
-async function queryPointsOfInterest(category, island){
+async function queryPointsOfInterest(category, island, placeName){
   try{
     let query = supabase
       .from('points_of_interest')
@@ -438,12 +438,15 @@ async function queryPointsOfInterest(category, island){
     if(island && island.trim()){
       query = query.ilike('island', `%${island.trim()}%`);
     }
+    if(placeName && placeName.trim()){
+      query = query.ilike('name', `%${placeName.trim()}%`);
+    }
 
     const { data, error } = await query.order('name', { ascending: true }).limit(15);
     if(error) throw error;
 
     if(!data || !data.length){
-      await logUnansweredQuery(`points_of_interest: ${category || 'any'}${island ? ' in ' + island : ''}`, 'points_of_interest');
+      await logUnansweredQuery(`points_of_interest: ${category || 'any'}${island ? ' in ' + island : ''}${placeName ? ' named ' + placeName : ''}`, 'points_of_interest');
       return { results: [], note: `No matching attractions found in AVA's database yet${island ? ' for ' + island : ''}.` };
     }
 

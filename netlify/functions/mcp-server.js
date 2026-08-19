@@ -41,15 +41,15 @@ function getServer() {
   server.tool(
     "query_economic_data",
     "Real economic indicators for SVG.",
-    { indicator_key: z.string().describe("Economic indicator to look up") },
-    async ({ indicator_key }) => asToolResult(await ava.queryEconomicData(indicator_key))
+    { indicator: z.string().describe("Economic indicator to look up") },
+    async ({ indicator }) => asToolResult(await ava.queryEconomicData(indicator))
   );
 
   server.tool(
     "query_imf_data",
     "Real IMF economic data for SVG.",
-    { indicator_key: z.string().describe("IMF indicator to look up") },
-    async ({ indicator_key }) => asToolResult(await ava.queryImfData(indicator_key))
+    { indicator: z.string().describe("IMF indicator to look up") },
+    async ({ indicator }) => asToolResult(await ava.queryImfData(indicator))
   );
 
   server.tool(
@@ -65,25 +65,26 @@ function getServer() {
   server.tool(
     "generate_lucky_numbers",
     "Generates real, valid lottery number sets for SVG's National Lottery games.",
-    { game_type: z.string().describe("Lottery game, e.g. 'super6', 'lotto', '3d', 'play4'") },
-    async ({ game_type }) => asToolResult(ava.generateLuckyNumbers(game_type))
+    { game: z.string().describe("Lottery game, e.g. 'super6', 'lotto', '3d', 'play4'") },
+    async ({ game }) => asToolResult(ava.generateLuckyNumbers(game))
   );
 
   server.tool(
     "query_directory",
-    "Real local SVG business directory — restaurants, pharmacies, doctors, taxi services, accommodation, car rental, and more.",
+    "Real local SVG business directory — restaurants, pharmacies, doctors, taxi services, accommodation, car rental, and more. If a specific business is named, always pass business_name — otherwise this returns an unfiltered category list.",
     {
       category: z.string().describe("Business category, e.g. 'restaurant', 'pharmacy', 'accommodation', 'car_rental'"),
       island: z.string().optional().describe("Optional island to filter by"),
+      business_name: z.string().optional().describe("If a specific business was named, pass it here to filter to just that one, e.g. 'Sky Lounge'"),
     },
-    async ({ category, island }) => asToolResult(await ava.queryDirectory(category, island))
+    async ({ category, island, business_name }) => asToolResult(await ava.queryDirectory(category, island, business_name))
   );
 
   server.tool(
     "query_health_data",
     "Real WHO health indicator data for SVG.",
-    { indicator_key: z.string().describe("Health indicator to look up") },
-    async ({ indicator_key }) => asToolResult(await ava.queryHealthData(indicator_key))
+    { indicator: z.string().describe("Health indicator to look up") },
+    async ({ indicator }) => asToolResult(await ava.queryHealthData(indicator))
   );
 
   server.tool(
@@ -123,12 +124,13 @@ function getServer() {
 
   server.tool(
     "query_points_of_interest",
-    "Real, researched beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across SVG.",
+    "Real, researched beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across SVG. If a specific place is named, always pass place_name — otherwise this returns an unfiltered category list.",
     {
       category: z.string().optional().describe("Optional: 'beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', or 'garden'"),
       island: z.string().optional().describe("Optional island to filter by"),
+      place_name: z.string().optional().describe("If a specific place was named, pass it here to filter to just that one, e.g. 'Macaroni Beach'"),
     },
-    async ({ category, island }) => asToolResult(await ava.queryPointsOfInterest(category, island))
+    async ({ category, island, place_name }) => asToolResult(await ava.queryPointsOfInterest(category, island, place_name))
   );
 
   server.tool(

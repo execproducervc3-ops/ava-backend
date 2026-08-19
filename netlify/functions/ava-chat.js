@@ -192,12 +192,13 @@ const TOOLS = [
   },
   {
     name: 'query_points_of_interest',
-    description: "Look up real beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across Saint Vincent and the Grenadines — genuinely researched, named places, not general reference knowledge. Use this for 'what beaches should I visit' or 'best hikes on Saint Vincent' type questions. Coverage is a solid first pass, not exhaustive — if nothing comes back for a specific island or category, say so honestly.",
+    description: "Look up real beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across Saint Vincent and the Grenadines — genuinely researched, named places, not general reference knowledge. If the person names a SPECIFIC place, always pass it as place_name — otherwise this returns an unfiltered list of the whole category, which is rarely what they actually asked for. Use this for 'what beaches should I visit' or 'best hikes on Saint Vincent' type questions. Coverage is a solid first pass, not exhaustive — if nothing comes back for a specific island or category, say so honestly.",
     input_schema: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'], description: 'Optional — narrow to a specific type of attraction. Omit to search all types.' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
+        place_name: { type: 'string', description: 'If the person named a specific place, pass it here to filter to just that one — e.g. "Macaroni Beach". Omit only for genuinely general category browsing.' },
       },
     }
   },
@@ -408,7 +409,7 @@ exports.handler = async (event) => {
           }
 
           else if(toolUse.name === 'query_points_of_interest'){
-            const poiData = await avaCore.queryPointsOfInterest(toolUse.input.category, toolUse.input.island);
+            const poiData = await avaCore.queryPointsOfInterest(toolUse.input.category, toolUse.input.island, toolUse.input.place_name);
             content = poiData.results && poiData.results.length
               ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
               : (poiData.note || 'No attractions found.');
