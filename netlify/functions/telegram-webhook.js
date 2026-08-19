@@ -441,8 +441,11 @@ async function handleXlsSubmission(message, fromId, chatId) {
 // Claude's own extraction uncertainty ignored at confirmation, or a price
 // that's a wild outlier vs. other retailers or vs. this retailer's own
 // history for the same product. Most submissions never trip any of this.
-function detectFlagReason(item, listingId, existingOffersForProduct, hasMissingFields, isFirstEverSubmission){
-  if(isFirstEverSubmission) return "First submission from a new retailer — not yet vetted. Review once, then future submissions flow through normally.";
+function detectFlagReason(item, listingId, existingOffersForProduct, hasMissingFields, isFirstEverSubmission, otherItemsInBatch){
+  if(isFirstEverSubmission){
+    const batchNote = otherItemsInBatch > 0 ? ` Submitted alongside ${otherItemsInBatch} other item${otherItemsInBatch === 1 ? '' : 's'} in the same batch, which have been auto-published without individual review.` : '';
+    return `First submission from a new retailer — not yet vetted. Review once, then future submissions flow through normally.${batchNote}`;
+  }
   if(hasMissingFields) return "Claude flagged uncertainty reading part of this submission, and the retailer confirmed anyway";
 
   const normalized = computeNormalization(item.price, item.unit);
@@ -592,7 +595,12 @@ async function confirmLatestDraft(fromId, chatId) {
     const normalized = computeNormalization(item.price, item.unit);
     const productId = canonicalMap.get(item.name.toLowerCase()) || null;
     const existingForProduct = productId ? (offersByProduct.get(productId) || []) : [];
-    const flagReason = detectFlagReason(item, listingId, existingForProduct, hasMissingFields, isFirstEverSubmission);
+    // Only the first item in a first-ever batch carries the "new retailer"
+    // flag — a 50-item stock list shouldn't create 50 individual review
+    // cards for what's conceptually one event. The rest still go through
+    // their own normal flagging (price anomalies, etc.), just not this one.
+    const isThisItemFirstEver = isFirstEverSubmission && idx === 0;
+    const flagReason = detectFlagReason(item, listingId, existingForProduct, hasMissingFields, isThisItemFirstEver, isFirstEverSubmission ? items.length - 1 : 0);
     if(flagReason) flaggedItems.push({ idx, reason: flagReason });
 
     return {
