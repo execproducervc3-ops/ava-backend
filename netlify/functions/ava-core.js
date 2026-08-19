@@ -807,7 +807,7 @@ async function queryDirectory(category, island, businessName){
   try{
     let query = supabase
       .from('directory_listings')
-      .select('name, address, island, phone, category')
+      .select('id, name, address, island, phone, category')
       .eq('category', category)
       .eq('status', 'active');
 

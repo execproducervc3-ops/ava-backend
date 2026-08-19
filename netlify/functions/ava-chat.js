@@ -427,7 +427,7 @@ exports.handler = async (event) => {
             const dirData = await avaCore.queryDirectory(toolUse.input.category, toolUse.input.island, toolUse.input.business_name);
             if(dirData.results && dirData.results.length) directoryResults = dirData.results;
             content = dirData.results && dirData.results.length
-              ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name}${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
+              ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}`).join('; ')
               : (dirData.note || 'No listings found.');
           }
 
