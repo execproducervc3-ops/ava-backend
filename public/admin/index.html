@@ -183,6 +183,12 @@
   </div>
 
   <div class="panel">
+    <h2>Uploaded photos</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Retailer-submitted photos, most recent first — mainly promotional uploads (sales, back-to-school, etc.), not a full product catalog.</div>
+    <div id="photoTrackerList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Knowledge gaps</h2>
     <div class="empty-note" style="margin-bottom:10px;">What AVA couldn't answer from its own data, grouped and ranked by how often it's actually been asked.</div>
     <div id="gapsList"></div>
@@ -298,6 +304,7 @@ async function tryLogin(password, showErrors){
   loadReviewQueue();
   loadGaps();
   loadInterest();
+  loadPhotoTracker();
   return true;
 }
 
@@ -445,6 +452,7 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   loadReviewQueue();
   loadGaps();
   loadInterest();
+  loadPhotoTracker();
 });
 
 const INTEREST_API = '/.netlify/functions/admin-interest';
@@ -510,6 +518,27 @@ document.getElementById('addBizBtn').addEventListener('click', async () => {
 });
 
 const RETAIL_API = '/.netlify/functions/admin-retail';
+
+async function loadPhotoTracker(){
+  const el = document.getElementById('photoTrackerList');
+  const res = await fetch(`${RETAIL_API}?action=list_photos`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ el.innerHTML = '<div class="empty-note">Could not load uploaded photos.</div>'; return; }
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    el.innerHTML = '<div class="empty-note">No photos uploaded yet.</div>';
+    return;
+  }
+  el.innerHTML = data.results.map(r => `
+    <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); align-items:center;">
+      <img src="${r.photo_url}" alt="" style="width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid var(--line); flex:0 0 auto;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600;">${r.item_name} — $${r.price}${r.unit ? '/' + r.unit : ''}</div>
+        <div style="color:var(--soft); font-size:13px;">${r.retailer_name || 'Unknown retailer'}${r.island ? ', ' + r.island : ''} · ${new Date(r.created_at).toLocaleDateString()}${r.valid_until ? ' · valid until ' + r.valid_until : ''}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
 
 let retailSearchTimeout;
 document.getElementById('retailSearchInput').addEventListener('input', (e) => {

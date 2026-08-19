@@ -47,6 +47,34 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const action = params.action;
 
+    if (event.httpMethod === 'GET' && action === 'list_photos') {
+      // Tracks retailer-uploaded photos specifically — mainly promotional
+      // submissions (sale events, back-to-school, etc.), not a full product
+      // catalog. Joined with directory_listings for the retailer name, most
+      // recent first, so admins can see what's actually been coming in.
+      const { data, error } = await supabase
+        .from('retail_offers')
+        .select('id, item_name, price, unit, photo_url, created_at, valid_until, directory_listings(name, island)')
+        .not('photo_url', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+
+      const results = (data || []).map(r => ({
+        id: r.id,
+        item_name: r.item_name,
+        price: r.price,
+        unit: r.unit,
+        photo_url: r.photo_url,
+        created_at: r.created_at,
+        valid_until: r.valid_until,
+        retailer_name: r.directory_listings ? r.directory_listings.name : null,
+        island: r.directory_listings ? r.directory_listings.island : null,
+      }));
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ results }) };
+    }
+
     if (event.httpMethod === 'GET' && action === 'search') {
       const q = (params.q || '').trim();
       if (!q) return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: [] }) };
