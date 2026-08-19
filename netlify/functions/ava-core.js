@@ -230,6 +230,21 @@ async function queryRetailPriceDB(productName){
   }
 }
 
+// For a real shopping list — several products in one request. Runs the
+// same proven single-product lookup for each item in parallel, rather
+// than requiring Claude to generate a separate tool call per item, which
+// measurably added both generation and execution time to the request.
+async function queryMultipleRetailPrices(productNames){
+  if(!Array.isArray(productNames) || !productNames.length){
+    return { items: [] };
+  }
+  const results = await Promise.all(productNames.map(async (name) => {
+    const data = await queryRetailPriceDB(name);
+    return { product: name, results: data.results || [], note: (!data.results || !data.results.length) ? data.note : null };
+  }));
+  return { items: results };
+}
+
 async function queryNewsDB(topic){
   const t = (topic || '').trim().toLowerCase();
   const isBrowseRequest = !t || ['news', 'latest', 'latest news', 'all', 'everything', 'general', 'recent', 'local news', 'current events', 'what\'s new'].includes(t);
@@ -989,7 +1004,7 @@ async function queryReferenceKnowledge(category){
 }
 
 module.exports = {
-  queryRetailPriceDB, queryNewsDB, queryEconomicData, queryImfData,
+  queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
   queryReferenceKnowledge, queryPointsOfInterest, planTrip, queryTaxiFare,

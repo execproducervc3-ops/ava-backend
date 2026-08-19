@@ -70,13 +70,24 @@ const TOOLS = [
   },
   {
     name: 'query_retail_price',
-    description: "Look up real, retailer-submitted prices for a specific product in AVA's own database (e.g. groceries, food items). Returns every current offer, cheapest first, with retailer name and location. Use this before web search for product/price questions.",
+    description: "Look up real, retailer-submitted prices for a specific product in AVA's own database (e.g. groceries, food items). Returns every current offer, cheapest first, with retailer name and location. Use this before web search for product/price questions. IMPORTANT: only use this for a SINGLE product. If someone asks about several products at once (a shopping list, 'find me the cheapest X, Y, and Z'), use query_multiple_retail_prices instead — calling this tool once per item is much slower and should be avoided.",
     input_schema: {
       type: 'object',
       properties: {
         product_name: { type: 'string', description: 'The product to look up, e.g. "chicken tacos" or "rice"' },
       },
       required: ['product_name']
+    }
+  },
+  {
+    name: 'query_multiple_retail_prices',
+    description: "Look up real, retailer-submitted prices for SEVERAL products at once — use this whenever someone gives a shopping list or asks about more than one item together, instead of calling query_retail_price repeatedly. Runs all lookups in parallel internally, which is significantly faster than multiple separate calls and avoids request timeouts on longer lists.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        product_names: { type: 'array', items: { type: 'string' }, description: 'The list of products to look up, e.g. ["rice", "sugar", "cooking oil"]' },
+      },
+      required: ['product_names']
     }
   },
   {
@@ -334,7 +345,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
       loops++;
@@ -347,9 +358,9 @@ exports.handler = async (event) => {
         // Every tool_use block in this turn MUST get a matching tool_result in the
         // next message — Anthropic's API rejects the request otherwise. Process
         // all of them, not just the first, even if Claude asked for several at once.
-        const toolResults = [];
-        for(const toolUse of toolUseBlocks){
+        const toolExecutions = await Promise.all(toolUseBlocks.map(async (toolUse) => {
           let content = 'Unknown tool.';
+          let retailResultEntry = null;
           const toolStartTime = Date.now();
 
           if(toolUse.name === 'get_deep_link'){
@@ -369,11 +380,15 @@ exports.handler = async (event) => {
           else if(toolUse.name === 'query_retail_price'){
             const priceData = await avaCore.queryRetailPriceDB(toolUse.input.product_name);
             await avaCore.logProductInterest(toolUse.input.product_name, deviceId);
-            retailResults.push({
+            // Returned rather than pushed directly — multiple price lookups
+            // now run in parallel, and pushing here would let whichever one
+            // happens to finish first determine display order, rather than
+            // the order the person actually asked for their items in.
+            retailResultEntry = {
               product: toolUse.input.product_name,
               results: priceData.results || [],
               note: (!priceData.results || !priceData.results.length) ? (priceData.note || 'No results found.') : null,
-            });
+            };
             content = priceData.results && priceData.results.length
               ? `Found ${priceData.results.length} offer(s), cheapest first (normalized by price per lb or per gallon where the unit could be parsed, so this correctly compares different package sizes — e.g. a 10kg bag vs a 5lb bag): ` + priceData.results.map(r => {
                   const loc = [r.parish, r.island].filter(Boolean).join(', ');
@@ -381,6 +396,19 @@ exports.handler = async (event) => {
                   return `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}${normalized}${loc ? ` (${loc})` : ''}${r.phone ? `, phone ${r.phone}` : ''}`;
                 }).join('; ')
               : (priceData.note || 'No results found in the database for that product.');
+          }
+
+          else if(toolUse.name === 'query_multiple_retail_prices'){
+            const multiData = await avaCore.queryMultipleRetailPrices(toolUse.input.product_names);
+            await Promise.all((toolUse.input.product_names || []).map(name => avaCore.logProductInterest(name, deviceId)));
+            // An array here rather than a single object — handled in the
+            // post-processing step below alongside the single-item case.
+            retailResultEntry = multiData.items;
+            content = multiData.items.map(item =>
+              item.results.length
+                ? `${item.product}: ` + item.results.map(r => `${r.retailer}: $${r.price}${r.unit ? '/' + r.unit : ''}`).join(', ')
+                : `${item.product}: ${item.note || 'No results found.'}`
+            ).join('\n');
           }
 
           else if(toolUse.name === 'query_economic_data'){
@@ -558,8 +586,20 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
           const toolElapsedMs = Date.now() - toolStartTime;
           console.log(`Tool timing — ${toolUse.name}: ${toolElapsedMs}ms — input: ${JSON.stringify(toolUse.input)} — returned: ${String(content).slice(0, 400)}`);
 
-          toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
-        }
+          return { toolUse, content, retailResultEntry };
+        }));
+
+        // Promise.all preserves input order in its output regardless of
+        // which call actually finished first, so rebuilding both arrays
+        // here — rather than pushing inside the parallel section above —
+        // guarantees results land in the same order the person asked for
+        // their items in, not whichever database round-trip happened to
+        // come back first.
+        const toolResults = toolExecutions.map(({ toolUse, content }) => ({ type: 'tool_result', tool_use_id: toolUse.id, content }));
+        toolExecutions.forEach(({ retailResultEntry }) => {
+          if(Array.isArray(retailResultEntry)) retailResults.push(...retailResultEntry);
+          else if(retailResultEntry) retailResults.push(retailResultEntry);
+        });
 
         messages = messages.concat([
           { role: 'assistant', content: data.content },
