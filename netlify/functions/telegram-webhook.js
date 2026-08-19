@@ -180,6 +180,62 @@ If several items are visible (e.g. a shelf of tags), return all of them. If a pr
   try { return JSON.parse(clean); } catch (e) { return null; }
 }
 
+// Enforces a 100-photo-submission cap per business — once reached, the
+// oldest submission gets fully deleted (price info included, not just the
+// photo) to make room for the new one. Only applies to photo-bearing
+// submissions; routine price updates without a photo aren't affected.
+// "Submission" means one submission event, not one item — a single photo
+// with several items still only counts as one slot.
+async function enforcePhotoSubmissionCap(listingId){
+  const { data: rows } = await supabase
+    .from('retail_offers')
+    .select('id, source_submission_id, created_at')
+    .eq('listing_id', listingId)
+    .not('photo_url', 'is', null)
+    .not('source_submission_id', 'is', null);
+  if(!rows || !rows.length) return;
+
+  // Group by submission event, keep the earliest created_at per group.
+  const bySubmission = new Map();
+  for(const row of rows){
+    const existing = bySubmission.get(row.source_submission_id);
+    if(!existing || row.created_at < existing.earliest){
+      bySubmission.set(row.source_submission_id, { earliest: row.created_at, ids: existing ? [...existing.ids, row.id] : [row.id] });
+    } else {
+      existing.ids.push(row.id);
+    }
+  }
+
+  if(bySubmission.size < 100) return;
+
+  let oldestId = null, oldestTime = null;
+  for(const [submissionId, info] of bySubmission){
+    if(!oldestTime || info.earliest < oldestTime){
+      oldestTime = info.earliest;
+      oldestId = submissionId;
+    }
+  }
+  if(!oldestId) return;
+
+  const oldestGroup = bySubmission.get(oldestId);
+
+  // Delete the actual storage file(s) too, not just the DB rows — otherwise
+  // the orphaned image keeps consuming real storage space regardless of
+  // whether anything still references it.
+  const { data: photoRows } = await supabase
+    .from('retail_offers')
+    .select('photo_url')
+    .in('id', oldestGroup.ids)
+    .limit(1);
+  const photoUrl = photoRows && photoRows[0] ? photoRows[0].photo_url : null;
+  if(photoUrl){
+    const match = photoUrl.match(/submission-photos\/(.+)$/);
+    if(match) await supabase.storage.from('submission-photos').remove([match[1]]);
+  }
+
+  await supabase.from('retail_offers').delete().in('id', oldestGroup.ids);
+}
+
 async function uploadPhotoToStorage(base64, mediaType, fromId) {
   try {
     const buffer = Buffer.from(base64, 'base64');
@@ -529,6 +585,12 @@ async function confirmLatestDraft(fromId, chatId) {
     .upsert(offersToInsert, { onConflict: 'listing_id,canonical_product_id', ignoreDuplicates: false })
     .select();
 
+  // Only photo-bearing submissions count toward or trigger the cap —
+  // routine price updates without a photo are unaffected.
+  if(draft.photo_url){
+    await enforcePhotoSubmissionCap(listingId);
+  }
+
   if(flaggedItems.length && insertedOffers){
     const reviewRows = flaggedItems
       .filter(f => insertedOffers[f.idx])
@@ -544,3 +606,5 @@ async function confirmLatestDraft(fromId, chatId) {
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
   await sendMessage(chatId, `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`);
 }
+
+exports.enforcePhotoSubmissionCap = enforcePhotoSubmissionCap;
