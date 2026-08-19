@@ -43,7 +43,7 @@ exports.handler = async (event) => {
       const offerMap = Object.fromEntries((offers || []).map(o => [o.id, o]));
 
       const listingIds = [...new Set((offers || []).map(o => o.listing_id))];
-      const { data: listings } = await supabase.from('directory_listings').select('id, name, category').in('id', listingIds);
+      const { data: listings } = await supabase.from('directory_listings').select('id, name, category, subscription_tier').in('id', listingIds);
       const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
 
       const results = queueRows
@@ -58,6 +58,7 @@ exports.handler = async (event) => {
             reason: q.reason,
             retailer: (listing && listing.name) || 'Unknown retailer',
             category: listing ? listing.category : null,
+            subscription_tier: listing ? listing.subscription_tier : 'free',
             item_name: offer.item_name,
             price: offer.price,
             unit: offer.unit,

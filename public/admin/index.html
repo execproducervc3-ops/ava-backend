@@ -867,6 +867,13 @@ async function loadReviewQueue(){
           ).join('')}
         </select>
       </div>
+      <div style="margin-bottom:10px;">
+        <label>Subscription tier</label>
+        <select data-tier-select data-listing-id="${escapeHtml(item.listing_id)}">
+          <option value="free" ${item.subscription_tier === 'free' ? 'selected' : ''}>Free</option>
+          <option value="paid" ${item.subscription_tier === 'paid' ? 'selected' : ''}>Paid (enables customer lead routing)</option>
+        </select>
+      </div>
       <div class="reviewfields">
         <div><label>Item</label><input type="text" data-field="item_name" value="${escapeHtml(item.item_name)}"></div>
         <div><label>Price</label><input type="text" data-field="price" value="${escapeHtml(item.price)}"></div>
@@ -894,6 +901,14 @@ async function loadReviewQueue(){
       await fetch(`${DIRECTORY_API}?action=update_category`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
         body: JSON.stringify({ listing_id: select.dataset.listingId, category: select.value, offer_id: select.dataset.offerId }),
+      });
+    });
+  });
+  listEl.querySelectorAll('[data-tier-select]').forEach(select => {
+    select.addEventListener('change', async () => {
+      await fetch(`${DIRECTORY_API}?action=update_subscription_tier`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ listing_id: select.dataset.listingId, tier: select.value }),
       });
     });
   });

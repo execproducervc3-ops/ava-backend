@@ -41,6 +41,16 @@ exports.handler = async (event) => {
       promoter: 'event_ticket',
     };
 
+    if (event.httpMethod === 'POST' && action === 'update_subscription_tier') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id || !['free', 'paid'].includes(body.tier)) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id and a real tier (free/paid) are required' }) };
+      }
+      const { error: tierErr } = await supabase.from('directory_listings').update({ subscription_tier: body.tier }).eq('id', body.listing_id);
+      if (tierErr) throw tierErr;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     if (event.httpMethod === 'POST' && action === 'update_category') {
       const body = JSON.parse(event.body || '{}');
       if (!body.listing_id || !body.category) {

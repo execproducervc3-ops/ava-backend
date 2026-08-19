@@ -19,6 +19,71 @@ function hashDeviceId(deviceId){
   return crypto.createHash('sha256').update('ava-interest-salt:' + deviceId).digest('hex');
 }
 
+// Small, self-contained — deliberately NOT importing telegram-webhook.js's
+// sendMessage. Requiring a whole other Netlify function file as a
+// dependency is exactly the pattern that caused the real, confirmed
+// esbuild bundling failures earlier tonight. A tiny duplicate here is the
+// safe, proven fix for that class of problem.
+async function sendTelegramLead(chatId, text){
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if(!token) return false;
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    return res.ok;
+  } catch(err){
+    console.error('sendTelegramLead error:', err);
+    return false;
+  }
+}
+
+// Facilitates a customer lead to a paid-tier business — deliberately NOT a
+// booking or reservation. No availability check, no payment, no confirmed
+// status. AVA makes the introduction; the business owns everything after
+// that, the same as an informal phone inquiry would today.
+async function requestFromBusiness(listingId, offerId, requesterName, requesterContact, details){
+  try{
+    const { data: listing } = await supabase.from('directory_listings').select('id, name, subscription_tier, phone').eq('id', listingId).maybeSingle();
+    if(!listing){
+      return { ok: false, note: "Couldn't find that business." };
+    }
+    if(listing.subscription_tier !== 'paid'){
+      return { ok: false, note: `Request routing isn't available for ${listing.name} yet — but here's their contact info if you'd like to reach out directly: ${listing.phone || 'not on file'}.` };
+    }
+
+    const { data: profile } = await supabase.from('retailer_profile').select('telegram_user_id').eq('directory_listing_id', listingId).maybeSingle();
+
+    const { data: request } = await supabase.from('booking_requests').insert({
+      listing_id: listingId,
+      offer_id: offerId || null,
+      requester_name: requesterName || null,
+      requester_contact: requesterContact,
+      details,
+      status: profile ? 'sent_to_business' : 'no_channel_available',
+    }).select().maybeSingle();
+
+    if(!profile || !profile.telegram_user_id){
+      return { ok: true, routed: false, note: `${listing.name} isn't reachable through AVA directly yet — here's their contact info: ${listing.phone || 'not on file'}.` };
+    }
+
+    const leadMessage = `New customer lead via AVA!\n\n${details}\n\nFrom: ${requesterName || 'A customer'}\nContact: ${requesterContact}`;
+    const sent = await sendTelegramLead(profile.telegram_user_id, leadMessage);
+
+    if(!sent){
+      await supabase.from('booking_requests').update({ status: 'no_channel_available' }).eq('id', request.id);
+      return { ok: true, routed: false, note: `Couldn't reach ${listing.name} directly right now — here's their contact info: ${listing.phone || 'not on file'}.` };
+    }
+
+    return { ok: true, routed: true, note: `Passed your request straight to ${listing.name} — they'll follow up with you directly.` };
+  } catch(err){
+    console.error('requestFromBusiness error:', err);
+    return { ok: false, note: 'Something went wrong sending that request.' };
+  }
+}
+
 function buildDeepLink(service_type, params){
   params = params || {};
   if(service_type === 'flights'){
@@ -927,5 +992,5 @@ module.exports = {
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
   queryReferenceKnowledge, queryPointsOfInterest, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
-  logProductInterest, logUnansweredQuery, queryPricedListings,
+  logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness,
 };

@@ -48,6 +48,21 @@ const TOOLS = [
   { type: 'web_search_20260209', name: 'web_search' },
   { type: 'code_execution_20260120', name: 'code_execution' },
   {
+    name: 'request_from_business',
+    description: "Passes a customer's real interest — a room for specific dates, holding stock, a tour package, anything — directly to a business as a real lead, for paid-tier businesses only. This is NOT a booking or reservation — AVA never confirms availability or holds anything; the business follows up directly. Free-tier businesses fall back to sharing their phone number instead, said honestly, not silently. Use this when someone expresses genuine intent to reach a specific business, not just browsing.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        listing_id: { type: 'string', description: 'The directory_listings id of the business' },
+        offer_id: { type: 'string', description: 'Optional — the specific retail_offers id being asked about, if one was named' },
+        requester_name: { type: 'string', description: "The person's name, if given" },
+        requester_contact: { type: 'string', description: 'How the business should reach them back — phone, WhatsApp, or similar' },
+        details: { type: 'string', description: "What they're asking for, in plain language — e.g. 'Deluxe Room, Aug 25-28' or '5 bags of rice, pickup Saturday'" },
+      },
+      required: ['listing_id', 'requester_contact', 'details'],
+    }
+  },
+  {
     name: 'get_deep_link',
     description: 'Generate a link to a real external platform for booking flights, hotels, car rentals, finding event tickets, calculating customs import duty, or checking voter registration. Use this instead of claiming you can book, calculate, or look something up yourself.',
     input_schema: {
@@ -330,6 +345,14 @@ exports.handler = async (event) => {
         for(const toolUse of toolUseBlocks){
           let content = 'Unknown tool.';
           const toolStartTime = Date.now();
+
+          if(toolUse.name === 'request_from_business'){
+            const reqResult = await avaCore.requestFromBusiness(
+              toolUse.input.listing_id, toolUse.input.offer_id, toolUse.input.requester_name,
+              toolUse.input.requester_contact, toolUse.input.details
+            );
+            content = reqResult.note;
+          }
 
           if(toolUse.name === 'get_deep_link'){
             const link = avaCore.buildDeepLink(toolUse.input.service_type, toolUse.input);
