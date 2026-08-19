@@ -73,7 +73,7 @@ function getServer() {
     "query_directory",
     "Real local SVG business directory — restaurants, pharmacies, doctors, taxi services, accommodation, car rental, and more. If a specific business is named, always pass business_name — otherwise this returns an unfiltered category list.",
     {
-      category: z.string().describe("Business category, e.g. 'restaurant', 'pharmacy', 'accommodation', 'car_rental', 'promoter'"),
+      category: z.string().describe("Business category, e.g. 'restaurant', 'pharmacy', 'accommodation', 'car_rental', 'promoter', 'nightlife'"),
       island: z.string().optional().describe("Optional island to filter by"),
       business_name: z.string().optional().describe("If a specific business was named, pass it here to filter to just that one, e.g. 'Sky Lounge'"),
     },

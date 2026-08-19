@@ -253,6 +253,7 @@ const CATEGORY_TO_LISTING_TYPE = {
   doctor: 'service_rate',
   cinema: 'service_rate',
   promoter: 'event_ticket',
+  nightlife: 'menu_item',
 };
 
 function listingTypeForCategory(category){

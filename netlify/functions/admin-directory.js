@@ -8,7 +8,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter'];
+const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife'];
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
@@ -39,6 +39,7 @@ exports.handler = async (event) => {
       doctor: 'service_rate',
       cinema: 'service_rate',
       promoter: 'event_ticket',
+      nightlife: 'menu_item',
     };
 
     if (event.httpMethod === 'POST' && action === 'update_subscription_tier') {
