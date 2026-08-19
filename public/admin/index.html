@@ -858,6 +858,14 @@ async function loadReviewQueue(){
     <div class="reviewitem">
       <div class="reviewretailer">${escapeHtml(item.retailer)}</div>
       <div class="reviewreason">${escapeHtml(item.reason)}</div>
+      <div style="margin-bottom:10px;">
+        <label>Business category</label>
+        <select data-category-select data-listing-id="${escapeHtml(item.listing_id)}" data-offer-id="${escapeHtml(item.offer_id)}">
+          ${['restaurant','pharmacy','doctor','taxi_service','cinema','retailer','pop_up_vendor','accommodation','car_rental'].map(c =>
+            `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c.replace(/_/g, ' ')}</option>`
+          ).join('')}
+        </select>
+      </div>
       <div class="reviewfields">
         <div><label>Item</label><input type="text" data-field="item_name" value="${escapeHtml(item.item_name)}"></div>
         <div><label>Price</label><input type="text" data-field="price" value="${escapeHtml(item.price)}"></div>
@@ -879,6 +887,14 @@ async function loadReviewQueue(){
   });
   listEl.querySelectorAll('[data-reject-queue]').forEach(btn => {
     btn.addEventListener('click', () => rejectReview(btn.dataset.rejectQueue, btn.dataset.rejectOffer));
+  });
+  listEl.querySelectorAll('[data-category-select]').forEach(select => {
+    select.addEventListener('change', async () => {
+      await fetch(`${DIRECTORY_API}?action=update_category`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+        body: JSON.stringify({ listing_id: select.dataset.listingId, category: select.value, offer_id: select.dataset.offerId }),
+      });
+    });
   });
 }
 

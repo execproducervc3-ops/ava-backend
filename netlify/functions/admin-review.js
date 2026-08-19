@@ -43,18 +43,21 @@ exports.handler = async (event) => {
       const offerMap = Object.fromEntries((offers || []).map(o => [o.id, o]));
 
       const listingIds = [...new Set((offers || []).map(o => o.listing_id))];
-      const { data: listings } = await supabase.from('directory_listings').select('id, name').in('id', listingIds);
+      const { data: listings } = await supabase.from('directory_listings').select('id, name, category').in('id', listingIds);
       const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
 
       const results = queueRows
         .filter(q => offerMap[q.reference_id]) // guard against a stale queue row whose offer somehow doesn't exist
         .map(q => {
           const offer = offerMap[q.reference_id];
+          const listing = listingMap[offer.listing_id];
           return {
             queue_id: q.id,
             offer_id: offer.id,
+            listing_id: offer.listing_id,
             reason: q.reason,
-            retailer: (listingMap[offer.listing_id] && listingMap[offer.listing_id].name) || 'Unknown retailer',
+            retailer: (listing && listing.name) || 'Unknown retailer',
+            category: listing ? listing.category : null,
             item_name: offer.item_name,
             price: offer.price,
             unit: offer.unit,

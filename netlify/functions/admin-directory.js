@@ -8,6 +8,8 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental'];
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
@@ -23,6 +25,45 @@ exports.handler = async (event) => {
   const action = params.action;
 
   try {
+    // Same mapping as telegram-webhook.js's listingTypeForCategory — small,
+    // self-contained duplication matching this codebase's existing pattern
+    // rather than a cross-file import for one shared helper.
+    const CATEGORY_TO_LISTING_TYPE = {
+      accommodation: 'accommodation_rate',
+      car_rental: 'vehicle_rate',
+      restaurant: 'menu_item',
+      retailer: 'retail_item',
+      pop_up_vendor: 'retail_item',
+      pharmacy: 'retail_item',
+      taxi_service: 'service_rate',
+      doctor: 'service_rate',
+      cinema: 'service_rate',
+    };
+
+    if (event.httpMethod === 'POST' && action === 'update_category') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id || !body.category) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id and category are required' }) };
+      }
+      if (!VALID_CATEGORIES.includes(body.category)) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Not a real category' }) };
+      }
+      const { error: updateErr } = await supabase.from('directory_listings').update({ category: body.category }).eq('id', body.listing_id);
+      if (updateErr) throw updateErr;
+
+      // If this correction happened while reviewing a specific submission,
+      // also fix that submission's already-stored listing_type — it was
+      // computed from the old, wrong category at confirm time, and
+      // correcting the business alone wouldn't retroactively fix it.
+      if (body.offer_id) {
+        const correctedType = CATEGORY_TO_LISTING_TYPE[body.category] || 'retail_item';
+        const { error: offerErr } = await supabase.from('retail_offers').update({ listing_type: correctedType }).eq('id', body.offer_id);
+        if (offerErr) throw offerErr;
+      }
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     if (event.httpMethod === 'GET' && action === 'list_empty') {
       // Businesses added but with zero linked price submissions — invisible
       // to the "Edit retail listings" search specifically because that
