@@ -627,9 +627,18 @@ async function confirmLatestDraft(fromId, chatId) {
       listing_type: listingType,
     };
   });
-  const { data: insertedOffers } = await supabase.from('retail_offers')
+  const { data: insertedOffers, error: insertError } = await supabase.from('retail_offers')
     .upsert(offersToInsert, { onConflict: 'listing_id,canonical_product_id', ignoreDuplicates: false })
     .select();
+
+  if(insertError || !insertedOffers){
+    // Real, previously-silent gap: this failing used to fall through to
+    // marking the draft confirmed and telling the retailer "Published!" —
+    // even though nothing was actually saved. Stop here and be honest.
+    console.error('confirmLatestDraft: retail_offers upsert failed:', insertError);
+    await sendMessage(chatId, "Something went wrong saving that submission — nothing was lost, but it wasn't saved either. Please try sending it again, or reach out if this keeps happening.");
+    return;
+  }
 
   // Only photo-bearing submissions count toward or trigger the cap —
   // routine price updates without a photo are unaffected.
@@ -637,7 +646,7 @@ async function confirmLatestDraft(fromId, chatId) {
     await enforcePhotoSubmissionCap(listingId);
   }
 
-  if(flaggedItems.length && insertedOffers){
+  if(flaggedItems.length){
     const reviewRows = flaggedItems
       .filter(f => insertedOffers[f.idx])
       .map(f => ({
