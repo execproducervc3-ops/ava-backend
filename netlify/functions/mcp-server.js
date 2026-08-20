@@ -124,10 +124,10 @@ function getServer() {
 
   server.tool(
     "query_deep_dive",
-    "Genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records — for when the short query_reference_knowledge overview isn't enough. Call with just category first for a lightweight list of available document titles; call again with a specific slug from that list to get one document's full text.",
+    "Genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records — for when the short query_reference_knowledge overview isn't enough. Call with just category — immediately returns one full document's real text; if others exist for that category they'll be named, and can be fetched individually by slug if specifically wanted.",
     {
       category: z.string().describe("Category to look up, e.g. 'vincy_mas' — matches the same category names used by query_reference_knowledge"),
-      slug: z.string().optional().describe("Optional — the exact slug of one specific document, from a prior category-only call, to get its full text"),
+      slug: z.string().optional().describe("Optional — only pass this to fetch a specific, named document mentioned in a prior result"),
     },
     async ({ category, slug }) => asToolResult(await ava.queryDeepDive(category, slug))
   );

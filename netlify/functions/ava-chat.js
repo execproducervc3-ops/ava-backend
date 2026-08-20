@@ -149,12 +149,12 @@ const TOOLS = [
   },
   {
     name: 'query_deep_dive',
-    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Multiple documents may exist for one category. IMPORTANT: call with just a category first — this returns a lightweight list of available document titles, not their full text. If the person wants one specific document read in full, call again passing its slug from that list; only then does the full text come back. Never assume a slug — always discover it via the category-only call first. Only use this tool at all when real detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
+    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Call with just a category — this immediately returns one full document's real text, ready to read and summarize from directly. If more than one document exists for that category, the result will name the others; only fetch one of those by its slug if the person specifically asks for that particular one — never fetch more than one full document per request, since only one can ever be returned. Only use this tool at all when real detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
     input_schema: {
       type: 'object',
       properties: {
         category: { type: 'string', description: 'Category to look up, e.g. "vincy_mas" — matches the same category names used by query_reference_knowledge' },
-        slug: { type: 'string', description: 'Optional — the exact slug of one specific document, from a prior category-only call, to get its full text' },
+        slug: { type: 'string', description: 'Optional — only pass this if the person specifically asked for a particular document by name, from a title/slug mentioned in a prior result' },
       },
       required: ['category']
     }
@@ -607,20 +607,22 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
           }
 
           else if(toolUse.name === 'query_deep_dive'){
-            if(toolUse.input.slug && deepDiveFullTextCount >= 1){
+            if(deepDiveFullTextCount >= 1){
               // Checked and incremented synchronously, before any await —
-              // safe even if Claude requested two full documents in the
-              // same batch, since JS never interleaves between two
-              // synchronous statements.
-              content = 'Only one full deep-dive document can be retrieved per request. Please synthesize your answer from the document already retrieved, or the category list, rather than fetching another full document.';
+              // safe even if Claude requested two documents in the same
+              // batch, since JS never interleaves between two synchronous
+              // statements. Applies to every call now, not just
+              // slug-specific ones — a no-slug call also returns a full
+              // document's body eagerly, so it counts against the cap too.
+              content = 'Only one full deep-dive document can be retrieved per request. Please synthesize your answer from the document already retrieved, or mention by name that more exists, rather than fetching another full document.';
             } else {
-              if(toolUse.input.slug) deepDiveFullTextCount++;
+              deepDiveFullTextCount++;
               const deepData = await avaCore.queryDeepDive(toolUse.input.category, toolUse.input.slug);
               if(deepData.result){
-                content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]`;
-              } else if(deepData.list && deepData.list.length){
-                content = `Available deep-dive documents for "${toolUse.input.category}" (call again with one of these exact slugs to get its full text): ` +
-                  deepData.list.map(d => `"${d.title}" (slug: ${d.slug})`).join('; ');
+                const othersNote = deepData.others && deepData.others.length
+                  ? ` (${deepData.others.length} more document${deepData.others.length > 1 ? 's' : ''} also exist${deepData.others.length > 1 ? '' : 's'} for this category: ${deepData.others.map(d => `"${d.title}" (slug: ${d.slug})`).join(', ')} — mention these by name if relevant, don't fetch them unless the person specifically asks for one)`
+                  : '';
+                content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]${othersNote}`;
               } else {
                 content = deepData.note || 'No deep-dive content available.';
               }

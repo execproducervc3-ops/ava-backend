@@ -1028,7 +1028,7 @@ async function queryReferenceKnowledge(category){
 async function queryDeepDive(category, slug){
   try{
     if(slug){
-      // A specific document was requested — safe to return its full body,
+      // A specific document was named — safe to return its full body,
       // since this is bounded to one document's real size, not every
       // document for the category combined.
       const { data, error } = await supabase
@@ -1042,24 +1042,36 @@ async function queryDeepDive(category, slug){
       return { result: data };
     }
 
-    // No specific document named — return a lightweight list (no body)
-    // so Claude can see what's available and ask for a specific one by
-    // slug next. Returning every full document for a category at once
-    // was the real cause of a genuine production timeout: two documents
-    // for 'vincy_mas' alone total over 26,000 characters combined, which
-    // measurably slowed the model's own response generation, not just
-    // tool execution time.
-    const { data, error } = await supabase
+    // No specific document named — eagerly return the first matching
+    // document's FULL body directly, plus the titles of any others, rather
+    // than returning just a bare list and making Claude come back for the
+    // actual content in a second round-trip. Two real production timeouts
+    // traced to this exact tool: the first from returning every document's
+    // full body at once (26,000+ combined characters slowing generation);
+    // the second from a "discover, then fetch" design that was safe on
+    // payload size but still needed multiple sequential real round-trips
+    // to the model, each with real, non-zero latency, which alone was
+    // enough to exceed the platform timeout even with a small payload
+    // each time. This eliminates the discovery round-trip in the typical
+    // case entirely: one document's real content, on the first call.
+    const { data: listData, error: listErr } = await supabase
       .from('knowledge_deep_dives')
-      .select('slug, title, source_url, last_verified_at')
+      .select('slug, title')
       .eq('category', category)
       .eq('review_status', 'published')
       .order('title', { ascending: true });
-    if(error) throw error;
-    if(!data || !data.length){
+    if(listErr) throw listErr;
+    if(!listData || !listData.length){
       return { note: `No deep-dive content for "${category}" yet.` };
     }
-    return { list: data };
+    const [first, ...rest] = listData;
+    const { data: fullDoc, error: fullErr } = await supabase
+      .from('knowledge_deep_dives')
+      .select('slug, title, body, source_url, last_verified_at')
+      .eq('slug', first.slug)
+      .maybeSingle();
+    if(fullErr) throw fullErr;
+    return { result: fullDoc, others: rest };
   } catch(err){
     console.error('queryDeepDive error:', err);
     return { note: 'Could not reach the deep-dive knowledge database right now.' };
