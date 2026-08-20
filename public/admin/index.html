@@ -264,6 +264,7 @@
     <div id="manualAddForm" style="display:none; margin-top:14px;">
       <div id="manualBizSelected"></div>
       <div id="manualGateStatus"></div>
+      <button id="manualCancelBtn" class="btn-secondary" style="margin-top:10px;">Cancel</button>
 
       <div id="manualProductSection" style="display:none;">
         <label>Product</label>
@@ -558,6 +559,25 @@ async function doManualProductSearch(q){
     });
   });
 }
+
+document.getElementById('manualCancelBtn').addEventListener('click', () => {
+  selectedManualListingId = null;
+  selectedManualProductId = null;
+  document.getElementById('manualAddForm').style.display = 'none';
+  document.getElementById('manualBizSelected').innerHTML = '';
+  document.getElementById('manualGateStatus').innerHTML = '';
+  document.getElementById('manualBizSearchInput').value = '';
+  document.getElementById('manualBizSearchResults').innerHTML = '';
+  document.getElementById('manualProductSection').style.display = 'none';
+  document.getElementById('manualProductSearchInput').value = '';
+  document.getElementById('manualProductSearchResults').innerHTML = '';
+  document.getElementById('manualProductSelected').innerHTML = '';
+  document.getElementById('manualPriceInput').value = '';
+  document.getElementById('manualUnitInput').value = '';
+  const errEl = document.getElementById('manualAddError');
+  errEl.textContent = '';
+  errEl.style.color = '';
+});
 
 document.getElementById('manualAddBtn').addEventListener('click', async () => {
   const errEl = document.getElementById('manualAddError');
