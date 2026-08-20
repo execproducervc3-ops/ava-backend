@@ -123,6 +123,13 @@ function getServer() {
   );
 
   server.tool(
+    "query_deep_dive",
+    "Genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records — for when the short query_reference_knowledge overview isn't enough. Multiple documents may exist per category.",
+    { category: z.string().describe("Category to look up, e.g. 'vincy_mas' — matches the same category names used by query_reference_knowledge") },
+    async ({ category }) => asToolResult(await ava.queryDeepDive(category))
+  );
+
+  server.tool(
     "query_points_of_interest",
     "Real, researched beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across SVG. If a specific place is named, always pass place_name — otherwise this returns an unfiltered category list.",
     {

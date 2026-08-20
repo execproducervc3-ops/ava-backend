@@ -1015,11 +1015,35 @@ async function queryReferenceKnowledge(category){
   }
 }
 
+// For genuinely long, detailed reference content that reference_knowledge's
+// one-short-row-per-category design can't hold — multiple full-length
+// documents can exist per category here, with no size limit. Enforces the
+// same human-review gate as knowledge_articles: draft/pending_review rows
+// can never be returned here, regardless of the query.
+async function queryDeepDive(category){
+  try{
+    const { data, error } = await supabase
+      .from('knowledge_deep_dives')
+      .select('slug, title, body, source_url, last_verified_at')
+      .eq('category', category)
+      .eq('review_status', 'published')
+      .order('title', { ascending: true });
+    if(error) throw error;
+    if(!data || !data.length){
+      return { note: `No deep-dive content for "${category}" yet.` };
+    }
+    return { results: data };
+  } catch(err){
+    console.error('queryDeepDive error:', err);
+    return { note: 'Could not reach the deep-dive knowledge database right now.' };
+  }
+}
+
 module.exports = {
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
-  queryReferenceKnowledge, queryPointsOfInterest, planTrip, queryTaxiFare,
+  queryReferenceKnowledge, queryDeepDive, queryPointsOfInterest, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
   logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness,
 };

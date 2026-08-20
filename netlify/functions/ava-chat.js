@@ -138,11 +138,22 @@ const TOOLS = [
   },
   {
     name: 'query_reference_knowledge',
-    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — for anything current or detailed, supplement with web search.",
+    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — if the person genuinely wants real depth on a topic (e.g. Vincy Mas specifically), also try query_deep_dive for that category, since a full-length document may exist there. For anything current or not covered by either, supplement with web search.",
     input_schema: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy', 'practical', 'indigenous_peoples', 'music', 'motorsports', 'vincy_mas'], description: 'Which reference category to look up' },
+      },
+      required: ['category']
+    }
+  },
+  {
+    name: 'query_deep_dive',
+    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Multiple documents may exist for one category. Only use this when detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'Category to look up, e.g. "vincy_mas" — matches the same category names used by query_reference_knowledge' },
       },
       required: ['category']
     }
@@ -346,7 +357,7 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
       loops++;
@@ -583,6 +594,13 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
             content = refData.result
               ? `${refData.result.title}: ${refData.result.summary} [Source: ${refData.result.source_url || 'unknown'}, last verified ${refData.result.last_verified_at ? new Date(refData.result.last_verified_at).toDateString() : 'unknown'}]`
               : (refData.note || 'No reference content available.');
+          }
+
+          else if(toolUse.name === 'query_deep_dive'){
+            const deepData = await avaCore.queryDeepDive(toolUse.input.category);
+            content = deepData.results && deepData.results.length
+              ? deepData.results.map(d => `=== ${d.title} ===\n${d.body}\n[Source: ${d.source_url || 'unknown'}]`).join('\n\n')
+              : (deepData.note || 'No deep-dive content available.');
           }
 
           const toolElapsedMs = Date.now() - toolStartTime;
