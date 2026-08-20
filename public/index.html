@@ -258,7 +258,8 @@
 <button id="themeToggleBtn" class="theme-toggle" title="Toggle dark mode"></button>
 <svg class="palm-deco palm-left" id="palmLeft" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
 <svg class="palm-deco palm-right" id="palmRight" viewBox="0 0 260 500" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
-<div id="homeHero">
+<div id="homeHero" style="position:relative;">
+  <div id="petroStage" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;"></div>
   <div class="hero-wordmark">
     <span class="w-ask">ASK</span><span class="w-pipe">|</span><span class="w-vincy">VINCY</span><span class="w-pipe">|</span><span class="w-any">ANYTHING</span>
   </div>
@@ -970,5 +971,90 @@ loadHistory();
 })();
 </script>
 <div id="enquiryModalRoot"></div>
+<script>
+(function(){
+  const designs = [
+    '<path d="M14 30 Q13 8 40 8 Q67 8 66 30 L67 62 Q68 84 40 85 Q12 84 13 62 Z M23 38 A9 9 0 1 1 23 38.1 M57 38 A9 9 0 1 1 57 38.1 M40 48 L40 58 M27 68 L53 68" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M41 39 Q62 38 61 61 Q60 82 39 81 Q19 80 20 60 Q21 44 36 46 Q46 47 44 57 Q43 64 36 62" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M22 20 Q20 6 38 6 Q56 6 54 20 L55 42 Q56 58 38 59 Q20 58 21 42 Z M28 26 A6 6 0 1 1 28 26.1 M48 26 A6 6 0 1 1 48 26.1 M31 42 L45 42" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M40 50 A22 22 0 1 1 40 50.1 M40 50 A13 13 0 1 1 40 50.1 M40 50 A5 5 0 1 1 40 50.1" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M40 8 L64 24 L64 58 L40 82 L16 58 L16 24 Z M28 34 L36 34 M44 34 L52 34 M32 54 L48 54" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M20 25 A5 5 0 1 1 20 25.1 M40 15 A5 5 0 1 1 40 15.1 M60 25 A5 5 0 1 1 60 25.1 M20 55 A5 5 0 1 1 20 55.1 M40 65 A5 5 0 1 1 40 65.1 M60 55 A5 5 0 1 1 60 55.1" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M20 20 L60 60 M60 20 L20 60" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M10 70 Q20 50 12 40 Q4 30 16 22 Q28 14 22 8 M22 8 L14 10 M22 8 L20 16" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M28 6 Q18 6 18 20 L18 66 Q18 80 28 80 L52 80 Q62 80 62 66 L62 20 Q62 6 52 6 Z M27 26 A5 5 0 1 1 27 26.1 M53 26 A5 5 0 1 1 53 26.1 M33 44 L47 44 M31 58 Q40 65 49 58" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>',
+    '<path d="M40 8 L58 40 L40 72 L22 40 Z M40 22 L40 58 M28 40 L52 40" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalkTexture)"/>'
+  ];
+  const stage = document.getElementById('petroStage');
+  if(!stage) return;
+  const chalkFilter = `<svg width="0" height="0" style="position:absolute;"><defs><filter id="chalkTexture" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.2" numOctaves="2" seed="7" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2" xChannelSelector="R" yChannelSelector="G"/></filter></defs></svg>`;
+  stage.insertAdjacentHTML('beforebegin', chalkFilter);
+  const GAP = 14;
+  const UI_PADDING = 16;
+  const active = [];
+
+  function getUIExclusionRects(){
+    const stageRect = stage.getBoundingClientRect();
+    const selectors = ['.hero-wordmark', '.hero-mascot', '.hero-searchwrap'];
+    return selectors.map(sel => {
+      const el = document.querySelector(sel);
+      if(!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        x: r.left - stageRect.left - UI_PADDING,
+        y: r.top - stageRect.top - UI_PADDING,
+        size: 0, w: r.width + UI_PADDING*2, h: r.height + UI_PADDING*2,
+      };
+    }).filter(Boolean);
+  }
+
+  function overlaps(a, b){
+    const aw = a.w || a.size, ah = a.h || a.size;
+    const bw = b.w || b.size, bh = b.h || b.size;
+    return !(a.x + aw + GAP < b.x || b.x + bw + GAP < a.x || a.y + ah + GAP < b.y || b.y + bh + GAP < a.y);
+  }
+  function findSpot(size){
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const exclusions = getUIExclusionRects();
+    for(let i = 0; i < 40; i++){
+      const x = Math.random() * Math.max(0, w - size);
+      const y = Math.random() * Math.max(0, h - size);
+      const candidate = { x, y, size };
+      if(!active.some(r => overlaps(candidate, r)) && !exclusions.some(r => overlaps(candidate, r))) return candidate;
+    }
+    return null;
+  }
+  function spawn(){
+    const size = 50 + Math.random()*30;
+    const spot = findSpot(size);
+    if(!spot) return;
+    active.push(spot);
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:absolute;left:${spot.x}px;top:${spot.y}px;width:${size}px;height:${size}px;opacity:0.8;`;
+    wrap.innerHTML = `<svg viewBox="0 0 80 95" width="100%" height="100%">${designs[Math.floor(Math.random()*designs.length)]}</svg>`;
+    stage.appendChild(wrap);
+    const path = wrap.querySelector('path');
+    const len = path.getTotalLength();
+    path.style.strokeDasharray = len;
+    path.style.strokeDashoffset = len;
+    const dur = 2200 + Math.random()*800;
+    path.animate(
+      [{strokeDashoffset: len},{strokeDashoffset: len*0.55, offset:0.3},{strokeDashoffset: len*0.42, offset:0.42},{strokeDashoffset: len*0.15, offset:0.75},{strokeDashoffset: 0}],
+      {duration: dur, easing:'ease-in-out', fill:'forwards'}
+    );
+    setTimeout(()=>{
+      wrap.style.transition = 'opacity 1.5s ease';
+      wrap.style.opacity = '0';
+      setTimeout(()=>{
+        wrap.remove();
+        const idx = active.indexOf(spot);
+        if(idx > -1) active.splice(idx, 1);
+      }, 1500);
+    }, dur+2200);
+  }
+  spawn();
+  setInterval(spawn, 2400);
+})();
+</script>
 </body>
 </html>
