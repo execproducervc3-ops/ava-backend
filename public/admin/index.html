@@ -57,6 +57,9 @@
   .btn-secondary{background:var(--panel); color:var(--ink); border:1px solid var(--line);}
   .btn-secondary:hover{background:#F0F2F4;}
   .btn-danger{background:var(--panel); color:var(--danger); border:1px solid var(--danger);}
+  .gate-status{display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:8px; margin-top:14px; font-size:13.5px;}
+  .gate-ok{background:#EAF7F0; border:1px solid var(--live); color:#166B44;}
+  .gate-blocked{background:#FDECEA; border:1px solid var(--danger); color:#8E2E22;}
   .btn-danger:hover{background:#FBEAE8;}
   .empty-note{font-size:13px; color:var(--soft); text-align:center; padding:16px 0;}
   .reviewitem{border:1px solid #E0C36A; background:#FFFBEF; border-radius:8px; padding:12px 14px; margin-bottom:10px;}
@@ -252,6 +255,39 @@
   </div>
 
   <div class="panel">
+    <h2>Add product manually</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Only allowed for businesses with a real Telegram submission already on file.</div>
+    <label>Business</label>
+    <input type="text" id="manualBizSearchInput" placeholder="Start typing a business name…" autocomplete="off">
+    <div id="manualBizSearchResults"></div>
+
+    <div id="manualAddForm" style="display:none; margin-top:14px;">
+      <div id="manualBizSelected"></div>
+      <div id="manualGateStatus"></div>
+
+      <div id="manualProductSection" style="display:none;">
+        <label>Product</label>
+        <input type="text" id="manualProductSearchInput" placeholder="Search existing products…" autocomplete="off">
+        <div id="manualProductSearchResults"></div>
+        <div id="manualProductSelected"></div>
+
+        <div style="display:flex; gap:12px;">
+          <div style="flex:1;">
+            <label>Price (EC$)</label>
+            <input type="number" id="manualPriceInput" step="0.01">
+          </div>
+          <div style="flex:1;">
+            <label>Unit</label>
+            <input type="text" id="manualUnitInput" placeholder="e.g. 5lb bag">
+          </div>
+        </div>
+        <button id="manualAddBtn">Add product</button>
+        <div class="error" id="manualAddError"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>Add a sponsor</h2>
     <label>Search business</label>
     <input type="text" id="searchInput" placeholder="Start typing a business name…" autocomplete="off">
@@ -442,6 +478,115 @@ function logout(){
 document.getElementById('logoutBtn').addEventListener('click', logout);
 
 initAuth();
+
+let manualBizSearchTimeout;
+let selectedManualListingId = null;
+let selectedManualProductId = null;
+
+document.getElementById('manualBizSearchInput').addEventListener('input', (e) => {
+  clearTimeout(manualBizSearchTimeout);
+  const q = e.target.value;
+  manualBizSearchTimeout = setTimeout(() => doManualBizSearch(q), 300);
+});
+
+async function doManualBizSearch(q){
+  const resultsEl = document.getElementById('manualBizSearchResults');
+  if(!q.trim()){ resultsEl.innerHTML = ''; return; }
+  const res = await fetch(`${API}?action=search&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    resultsEl.innerHTML = '<div class="empty-note">No matches.</div>';
+    return;
+  }
+  resultsEl.innerHTML = data.results.map(r =>
+    `<div class="result" data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)} — ${escapeHtml(r.island || 'no island set')}</div>`
+  ).join('');
+  resultsEl.querySelectorAll('.result').forEach(el => {
+    el.addEventListener('click', () => selectManualBusiness(el.dataset.id, el.dataset.name));
+  });
+}
+
+async function selectManualBusiness(id, name){
+  selectedManualListingId = id;
+  selectedManualProductId = null;
+  document.getElementById('manualBizSelected').innerHTML = `<span class="selected-tag">Selected: ${escapeHtml(name)}</span>`;
+  document.getElementById('manualAddForm').style.display = 'block';
+  document.getElementById('manualBizSearchResults').innerHTML = '';
+  document.getElementById('manualBizSearchInput').value = name;
+  document.getElementById('manualProductSection').style.display = 'none';
+  document.getElementById('manualGateStatus').innerHTML = '<div class="empty-note">Checking eligibility…</div>';
+
+  const res = await fetch(`${DIRECTORY_API}?action=check_manual_add_eligibility&listing_id=${encodeURIComponent(id)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  const gateEl = document.getElementById('manualGateStatus');
+  if(data.qualifies){
+    const since = new Date(data.since).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    gateEl.innerHTML = `<div class="gate-status gate-ok">✓ Connected via Telegram since ${since} — first submission already on file. Manual additions are allowed.</div>`;
+    document.getElementById('manualProductSection').style.display = 'block';
+  } else {
+    gateEl.innerHTML = `<div class="gate-status gate-blocked">✕ No Telegram submission on file yet. This business needs to complete its first real submission via the bot before manual additions can be added here.</div>`;
+    document.getElementById('manualProductSection').style.display = 'none';
+  }
+}
+
+let manualProductSearchTimeout;
+document.getElementById('manualProductSearchInput').addEventListener('input', (e) => {
+  clearTimeout(manualProductSearchTimeout);
+  selectedManualProductId = null; // typing again means whatever was picked no longer applies
+  const q = e.target.value;
+  manualProductSearchTimeout = setTimeout(() => doManualProductSearch(q), 300);
+});
+
+async function doManualProductSearch(q){
+  const resultsEl = document.getElementById('manualProductSearchResults');
+  if(!q.trim()){ resultsEl.innerHTML = ''; return; }
+  const res = await fetch(`${DIRECTORY_API}?action=search_products&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+  const data = await res.json();
+  if(!data.results || !data.results.length){
+    resultsEl.innerHTML = '<div class="empty-note">No existing match — a new product will be created with this name.</div>';
+    return;
+  }
+  resultsEl.innerHTML = data.results.map(p =>
+    `<div class="result" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}">${escapeHtml(p.name)} <span style="color:var(--soft);">— already exists, ${p.retailer_count} retailer${p.retailer_count === 1 ? '' : 's'} carr${p.retailer_count === 1 ? 'ies' : 'y'} this</span></div>`
+  ).join('');
+  resultsEl.querySelectorAll('.result').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedManualProductId = el.dataset.id;
+      document.getElementById('manualProductSearchInput').value = el.dataset.name;
+      document.getElementById('manualProductSearchResults').innerHTML = '';
+      document.getElementById('manualProductSelected').innerHTML = `<span class="selected-tag">Using existing product</span>`;
+    });
+  });
+}
+
+document.getElementById('manualAddBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('manualAddError');
+  errEl.textContent = '';
+  errEl.style.color = '';
+  const productName = document.getElementById('manualProductSearchInput').value.trim();
+  const price = parseFloat(document.getElementById('manualPriceInput').value);
+  const unit = document.getElementById('manualUnitInput').value.trim();
+
+  if(!productName || isNaN(price) || !unit){
+    errEl.textContent = 'Product, price, and unit are all required.';
+    return;
+  }
+
+  const res = await fetch(`${DIRECTORY_API}?action=manual_add_product`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ listing_id: selectedManualListingId, canonical_product_id: selectedManualProductId, product_name: productName, price, unit }),
+  });
+  const data = await res.json();
+  if(!res.ok){ errEl.textContent = data.error || 'Something went wrong saving that.'; return; }
+
+  document.getElementById('manualProductSearchInput').value = '';
+  document.getElementById('manualProductSelected').innerHTML = '';
+  document.getElementById('manualPriceInput').value = '';
+  document.getElementById('manualUnitInput').value = '';
+  errEl.style.color = 'var(--live)';
+  errEl.textContent = 'Added.';
+  setTimeout(() => { errEl.textContent = ''; errEl.style.color = ''; }, 2000);
+});
 
 let searchTimeout;
 document.getElementById('searchInput').addEventListener('input', (e) => {

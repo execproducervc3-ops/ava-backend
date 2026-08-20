@@ -162,6 +162,63 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, listing: data[0] }) };
     }
 
+    if (event.httpMethod === 'GET' && action === 'check_manual_add_eligibility') {
+      const listingId = params.listing_id;
+      if (!listingId) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id required' }) };
+
+      // Exact same check telegram-webhook.js uses to detect a business's
+      // first-ever submission — reused here, not reimplemented, so this
+      // stays correct if that logic ever changes.
+      const { data } = await supabase.from('retail_offers').select('created_at').eq('listing_id', listingId).order('created_at', { ascending: true }).limit(1);
+      const qualifies = !!(data && data.length);
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ qualifies, since: qualifies ? data[0].created_at : null }) };
+    }
+
+    if (event.httpMethod === 'GET' && action === 'search_products') {
+      const q = (params.q || '').trim();
+      if (!q) return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: [] }) };
+      const { data: products, error: prodErr } = await supabase.from('canonical_products').select('id, name, standard_unit').ilike('name', `%${q}%`).limit(10);
+      if (prodErr) throw prodErr;
+      const results = await Promise.all((products || []).map(async (p) => {
+        const { count } = await supabase.from('retail_offers').select('id', { count: 'exact', head: true }).eq('canonical_product_id', p.id);
+        return { ...p, retailer_count: count || 0 };
+      }));
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ results }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'manual_add_product') {
+      const body = JSON.parse(event.body || '{}');
+      const { listing_id, canonical_product_id, product_name, price, unit } = body;
+      if (!listing_id || !product_name || price == null || !unit) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id, product_name, price, and unit are all required' }) };
+      }
+
+      const { data: prior } = await supabase.from('retail_offers').select('id').eq('listing_id', listing_id).limit(1);
+      if (!prior || !prior.length) {
+        return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This business has no Telegram submission on file yet — manual additions are only allowed after a real first submission.' }) };
+      }
+
+      let productId = canonical_product_id;
+      if (!productId) {
+        const { data: existing } = await supabase.from('canonical_products').select('id').ilike('name', product_name).maybeSingle();
+        if (existing) {
+          productId = existing.id;
+        } else {
+          const { data: created, error: createErr } = await supabase.from('canonical_products').insert({ name: product_name, standard_unit: unit }).select().single();
+          if (createErr) throw createErr;
+          productId = created.id;
+        }
+      }
+
+      const { error: offerErr } = await supabase.from('retail_offers').upsert({
+        listing_id, canonical_product_id: productId, item_name: product_name, price, unit,
+        review_status: 'approved', // admin-entered directly — no separate review queue needed
+      }, { onConflict: 'listing_id,canonical_product_id' });
+      if (offerErr) throw offerErr;
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, product_id: productId }) };
+    }
+
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Unknown action' }) };
   } catch (err) {
     console.error('admin-directory error:', err);
