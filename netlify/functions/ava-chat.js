@@ -358,6 +358,15 @@ exports.handler = async (event) => {
     let luckyNumbers = null;
     let directoryResults = null;
     let loops = 0;
+    // Request-scoped, not module-level — a warm function instance can
+    // serve different users' concurrent requests, so this must reset for
+    // every invocation, never leak across them. Caps full-document fetches
+    // at one per request: a phrase like "the whole story" can reasonably
+    // lead Claude to fetch multiple full documents sequentially across
+    // loop iterations, which would silently rebuild the exact same
+    // combined-size problem this was built to prevent, just spread across
+    // several tool calls instead of one.
+    let deepDiveFullTextCount = 0;
     const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
@@ -598,14 +607,23 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
           }
 
           else if(toolUse.name === 'query_deep_dive'){
-            const deepData = await avaCore.queryDeepDive(toolUse.input.category, toolUse.input.slug);
-            if(deepData.result){
-              content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]`;
-            } else if(deepData.list && deepData.list.length){
-              content = `Available deep-dive documents for "${toolUse.input.category}" (call again with one of these exact slugs to get its full text): ` +
-                deepData.list.map(d => `"${d.title}" (slug: ${d.slug})`).join('; ');
+            if(toolUse.input.slug && deepDiveFullTextCount >= 1){
+              // Checked and incremented synchronously, before any await —
+              // safe even if Claude requested two full documents in the
+              // same batch, since JS never interleaves between two
+              // synchronous statements.
+              content = 'Only one full deep-dive document can be retrieved per request. Please synthesize your answer from the document already retrieved, or the category list, rather than fetching another full document.';
             } else {
-              content = deepData.note || 'No deep-dive content available.';
+              if(toolUse.input.slug) deepDiveFullTextCount++;
+              const deepData = await avaCore.queryDeepDive(toolUse.input.category, toolUse.input.slug);
+              if(deepData.result){
+                content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]`;
+              } else if(deepData.list && deepData.list.length){
+                content = `Available deep-dive documents for "${toolUse.input.category}" (call again with one of these exact slugs to get its full text): ` +
+                  deepData.list.map(d => `"${d.title}" (slug: ${d.slug})`).join('; ');
+              } else {
+                content = deepData.note || 'No deep-dive content available.';
+              }
             }
           }
 
