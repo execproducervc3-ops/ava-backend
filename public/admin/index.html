@@ -296,6 +296,7 @@
 
     <div id="createForm" style="display:none; margin-top:14px;">
       <div id="selectedBusiness"></div>
+      <button id="sponsorCancelBtn" class="btn-secondary" style="margin-top:10px;">Cancel</button>
       <label>Blurb</label>
       <textarea id="blurbInput" placeholder="e.g. Rooftop dining with harbour views"></textarea>
       <label>Target URL</label>
@@ -765,6 +766,19 @@ function selectBusiness(id, name){
   document.getElementById('searchResults').innerHTML = '';
   document.getElementById('searchInput').value = name;
 }
+
+document.getElementById('sponsorCancelBtn').addEventListener('click', () => {
+  selectedListingId = null;
+  selectedListingName = '';
+  document.getElementById('createForm').style.display = 'none';
+  document.getElementById('selectedBusiness').innerHTML = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResults').innerHTML = '';
+  document.getElementById('blurbInput').value = '';
+  document.getElementById('urlInput').value = '';
+  document.getElementById('photoInput').value = '';
+  document.getElementById('createError').textContent = '';
+});
 
 document.getElementById('createBtn').addEventListener('click', async () => {
   const errEl = document.getElementById('createError');
