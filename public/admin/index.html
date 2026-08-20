@@ -233,6 +233,7 @@
 
     <div id="topPickForm" style="display:none; margin-top:14px;">
       <div id="topPickSelectedBusiness"></div>
+      <button id="topPickCancelBtn" class="btn-secondary" style="margin-top:10px;">Cancel</button>
       <label><input type="checkbox" id="topPickToggle" style="width:auto; margin-right:8px;">Mark as a top pick</label>
       <label>Why (shown to customers as the real reason)</label>
       <textarea id="topPickNoteInput" placeholder="e.g. Genuinely the best fish fry on the island, verified in person"></textarea>
@@ -650,6 +651,17 @@ function selectTopPickBusiness(id, name, isPick, note){
   document.getElementById('topPickToggle').checked = isPick;
   document.getElementById('topPickNoteInput').value = note || '';
 }
+
+document.getElementById('topPickCancelBtn').addEventListener('click', () => {
+  selectedTopPickListingId = null;
+  document.getElementById('topPickForm').style.display = 'none';
+  document.getElementById('topPickSelectedBusiness').innerHTML = '';
+  document.getElementById('topPickSearchInput').value = '';
+  document.getElementById('topPickSearchResults').innerHTML = '';
+  document.getElementById('topPickToggle').checked = false;
+  document.getElementById('topPickNoteInput').value = '';
+  document.getElementById('topPickError').textContent = '';
+});
 
 document.getElementById('topPickSaveBtn').addEventListener('click', async () => {
   const errEl = document.getElementById('topPickError');
