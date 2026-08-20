@@ -124,9 +124,12 @@ function getServer() {
 
   server.tool(
     "query_deep_dive",
-    "Genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records — for when the short query_reference_knowledge overview isn't enough. Multiple documents may exist per category.",
-    { category: z.string().describe("Category to look up, e.g. 'vincy_mas' — matches the same category names used by query_reference_knowledge") },
-    async ({ category }) => asToolResult(await ava.queryDeepDive(category))
+    "Genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records — for when the short query_reference_knowledge overview isn't enough. Call with just category first for a lightweight list of available document titles; call again with a specific slug from that list to get one document's full text.",
+    {
+      category: z.string().describe("Category to look up, e.g. 'vincy_mas' — matches the same category names used by query_reference_knowledge"),
+      slug: z.string().optional().describe("Optional — the exact slug of one specific document, from a prior category-only call, to get its full text"),
+    },
+    async ({ category, slug }) => asToolResult(await ava.queryDeepDive(category, slug))
   );
 
   server.tool(

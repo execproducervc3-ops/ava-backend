@@ -149,11 +149,12 @@ const TOOLS = [
   },
   {
     name: 'query_deep_dive',
-    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Multiple documents may exist for one category. Only use this when detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
+    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Multiple documents may exist for one category. IMPORTANT: call with just a category first — this returns a lightweight list of available document titles, not their full text. If the person wants one specific document read in full, call again passing its slug from that list; only then does the full text come back. Never assume a slug — always discover it via the category-only call first. Only use this tool at all when real detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
     input_schema: {
       type: 'object',
       properties: {
         category: { type: 'string', description: 'Category to look up, e.g. "vincy_mas" — matches the same category names used by query_reference_knowledge' },
+        slug: { type: 'string', description: 'Optional — the exact slug of one specific document, from a prior category-only call, to get its full text' },
       },
       required: ['category']
     }
@@ -597,10 +598,15 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
           }
 
           else if(toolUse.name === 'query_deep_dive'){
-            const deepData = await avaCore.queryDeepDive(toolUse.input.category);
-            content = deepData.results && deepData.results.length
-              ? deepData.results.map(d => `=== ${d.title} ===\n${d.body}\n[Source: ${d.source_url || 'unknown'}]`).join('\n\n')
-              : (deepData.note || 'No deep-dive content available.');
+            const deepData = await avaCore.queryDeepDive(toolUse.input.category, toolUse.input.slug);
+            if(deepData.result){
+              content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]`;
+            } else if(deepData.list && deepData.list.length){
+              content = `Available deep-dive documents for "${toolUse.input.category}" (call again with one of these exact slugs to get its full text): ` +
+                deepData.list.map(d => `"${d.title}" (slug: ${d.slug})`).join('; ');
+            } else {
+              content = deepData.note || 'No deep-dive content available.';
+            }
           }
 
           const toolElapsedMs = Date.now() - toolStartTime;

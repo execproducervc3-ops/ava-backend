@@ -1020,11 +1020,33 @@ async function queryReferenceKnowledge(category){
 // documents can exist per category here, with no size limit. Enforces the
 // same human-review gate as knowledge_articles: draft/pending_review rows
 // can never be returned here, regardless of the query.
-async function queryDeepDive(category){
+async function queryDeepDive(category, slug){
   try{
+    if(slug){
+      // A specific document was requested — safe to return its full body,
+      // since this is bounded to one document's real size, not every
+      // document for the category combined.
+      const { data, error } = await supabase
+        .from('knowledge_deep_dives')
+        .select('slug, title, body, source_url, last_verified_at')
+        .eq('slug', slug)
+        .eq('review_status', 'published')
+        .maybeSingle();
+      if(error) throw error;
+      if(!data) return { note: `No deep-dive document found for "${slug}".` };
+      return { result: data };
+    }
+
+    // No specific document named — return a lightweight list (no body)
+    // so Claude can see what's available and ask for a specific one by
+    // slug next. Returning every full document for a category at once
+    // was the real cause of a genuine production timeout: two documents
+    // for 'vincy_mas' alone total over 26,000 characters combined, which
+    // measurably slowed the model's own response generation, not just
+    // tool execution time.
     const { data, error } = await supabase
       .from('knowledge_deep_dives')
-      .select('slug, title, body, source_url, last_verified_at')
+      .select('slug, title, source_url, last_verified_at')
       .eq('category', category)
       .eq('review_status', 'published')
       .order('title', { ascending: true });
@@ -1032,7 +1054,7 @@ async function queryDeepDive(category){
     if(!data || !data.length){
       return { note: `No deep-dive content for "${category}" yet.` };
     }
-    return { results: data };
+    return { list: data };
   } catch(err){
     console.error('queryDeepDive error:', err);
     return { note: 'Could not reach the deep-dive knowledge database right now.' };
