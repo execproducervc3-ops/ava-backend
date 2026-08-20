@@ -268,12 +268,16 @@ async function queryNewsDB(topic){
       if(!data || !data.length) specificSearchFailed = true;
     }
 
-    // Fall back to "most recent published" for generic/browse-style asks, and
-    // also for a specific search that came up empty — a graceful degrade
-    // rather than a dead end. specificSearchFailed still gets logged below
-    // even though the user gets a useful fallback answer instead of nothing —
-    // the gap is real even when the UX papers over it gracefully.
-    if(isBrowseRequest || !data || !data.length){
+    // Fall back to "most recent published" ONLY for a genuine browse-style
+    // ask ("what's the latest news"), where showing recent general news is
+    // literally what was requested. A specific, named-topic search that
+    // came up empty must NOT fall back to this — silently substituting
+    // unrelated recent articles (a real, confirmed production bug: a
+    // "Vincy Mas 2026" search returned articles about land leases, the
+    // NDB, and an unrelated politician's death) is actively misleading,
+    // not a graceful degrade. An honest "nothing found" is the correct
+    // answer for a failed specific search.
+    if(isBrowseRequest){
       ({ data, error } = await supabase
         .from('knowledge_articles')
         .select('topic, body, source_url, published_at')
@@ -285,6 +289,7 @@ async function queryNewsDB(topic){
 
     if(specificSearchFailed) await logUnansweredQuery(topic.trim(), 'news');
 
+    if(specificSearchFailed) return { results: [], note: `No published news articles found on "${topic.trim()}" specifically.` };
     if(!data || !data.length) return { results: [], note: 'No published articles available yet.' };
     return { results: data };
   } catch(err){
