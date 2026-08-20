@@ -1078,11 +1078,53 @@ async function queryDeepDive(category, slug){
   }
 }
 
+// For genuinely obscure terms that don't announce their own category —
+// "Vincy Dab" gives no hint it belongs under 'vincy_mas', so a category-
+// based lookup can never find it even though the content genuinely
+// exists. Searches by keyword across both knowledge tables directly,
+// instead of requiring the right category to be known in advance. Real
+// content only, in one call: a matching reference_knowledge summary is
+// always short and safe; a matching deep-dive is bounded to one document,
+// the same safe limit already proven for query_deep_dive itself.
+async function searchKnowledgeBase(query){
+  const q = (query || '').trim();
+  if(!q) return { note: 'No search term given.' };
+  try{
+    const { data: refMatches, error: refErr } = await supabase
+      .from('reference_knowledge')
+      .select('category, title, summary, source_url')
+      .eq('active', true)
+      .or(`title.ilike.%${q}%,summary.ilike.%${q}%`)
+      .limit(1);
+    if(refErr) throw refErr;
+
+    const { data: deepMatches, error: deepErr } = await supabase
+      .from('knowledge_deep_dives')
+      .select('slug, category, title, body, source_url')
+      .eq('review_status', 'published')
+      .or(`title.ilike.%${q}%,body.ilike.%${q}%`)
+      .limit(1);
+    if(deepErr) throw deepErr;
+
+    const refResult = refMatches && refMatches.length ? refMatches[0] : null;
+    const deepResult = deepMatches && deepMatches.length ? deepMatches[0] : null;
+
+    if(!refResult && !deepResult){
+      await logUnansweredQuery(q, 'knowledge_search');
+      return { note: `Nothing found for "${q}" in AVA's reference or deep-dive knowledge.` };
+    }
+    return { referenceMatch: refResult, deepDiveMatch: deepResult };
+  } catch(err){
+    console.error('searchKnowledgeBase error:', err);
+    return { note: 'Could not reach the knowledge base right now.' };
+  }
+}
+
 module.exports = {
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
-  queryReferenceKnowledge, queryDeepDive, queryPointsOfInterest, planTrip, queryTaxiFare,
+  queryReferenceKnowledge, queryDeepDive, searchKnowledgeBase, queryPointsOfInterest, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
   logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness,
 };

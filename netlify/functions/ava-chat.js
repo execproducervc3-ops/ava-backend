@@ -160,6 +160,17 @@ const TOOLS = [
     }
   },
   {
+    name: 'search_knowledge_base',
+    description: "Search AVA's reference and deep-dive knowledge by keyword or phrase, rather than by category — use this specifically when the person names something specific (a term, event, person, phrase) and you don't already know which reference category it would fall under. query_reference_knowledge and query_deep_dive both require knowing the right category in advance, so a genuinely obscure or unfamiliar term can be missed by them even when real content about it exists — this searches across everything directly instead. Try this before concluding something isn't in AVA's knowledge base.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The specific term or phrase to search for, e.g. "Vincy Dab" or "Monkey Kong"' },
+      },
+      required: ['query']
+    }
+  },
+  {
     name: 'query_scholarships',
     description: "Look up regional scholarships, funding, and grant opportunities for Vincentians that AVA tracks — Commonwealth, Chevening, Taiwan, CDB, and SVG National Scholarships. This is a fixed, individually-verified list, not an exhaustive search — if it comes back empty or the person asks about something not on this list, say so honestly and suggest a web search for that specific program.",
     input_schema: {
@@ -367,7 +378,7 @@ exports.handler = async (event) => {
     // combined-size problem this was built to prevent, just spread across
     // several tool calls instead of one.
     let deepDiveFullTextCount = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
       loops++;
@@ -627,6 +638,29 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
                 content = deepData.note || 'No deep-dive content available.';
               }
             }
+          }
+
+          else if(toolUse.name === 'search_knowledge_base'){
+            const hasDeepBudget = deepDiveFullTextCount < 1;
+            const searchData = await avaCore.searchKnowledgeBase(toolUse.input.query);
+            const parts = [];
+            if(searchData.referenceMatch){
+              const r = searchData.referenceMatch;
+              parts.push(`Reference (${r.category}): ${r.title} — ${r.summary} [Source: ${r.source_url || 'unknown'}]`);
+            }
+            if(searchData.deepDiveMatch){
+              // Shares the exact same cap as query_deep_dive — both draw
+              // full document bodies from the same table, so the size risk
+              // is identical regardless of which tool actually fetched it.
+              if(hasDeepBudget){
+                deepDiveFullTextCount++;
+                const d = searchData.deepDiveMatch;
+                parts.push(`Deep-dive document (${d.category}): === ${d.title} ===\n${d.body}\n[Source: ${d.source_url || 'unknown'}]`);
+              } else {
+                parts.push(`A matching deep-dive document ("${searchData.deepDiveMatch.title}") also exists, but a full document has already been retrieved this request — mention it by name if relevant, don't fetch its full text.`);
+              }
+            }
+            content = parts.length ? parts.join('\n\n') : (searchData.note || 'Nothing found.');
           }
 
           const toolElapsedMs = Date.now() - toolStartTime;

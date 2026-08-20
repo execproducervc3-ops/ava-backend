@@ -133,6 +133,13 @@ function getServer() {
   );
 
   server.tool(
+    "search_knowledge_base",
+    "Search AVA's reference and deep-dive knowledge by keyword, rather than by category — use when a term, event, or person is named and the right category isn't already known. Catches genuinely obscure content that category-based lookups would miss.",
+    { query: z.string().describe("The specific term or phrase to search for, e.g. 'Vincy Dab' or 'Monkey Kong'") },
+    async ({ query }) => asToolResult(await ava.searchKnowledgeBase(query))
+  );
+
+  server.tool(
     "query_points_of_interest",
     "Real, researched beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across SVG. If a specific place is named, always pass place_name — otherwise this returns an unfiltered category list.",
     {
