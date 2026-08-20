@@ -46,7 +46,7 @@
   .theme-toggle{position:fixed; top:16px; right:16px; z-index:10; background:var(--card); border:1px solid var(--line); border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer; box-shadow:var(--shadow);}
   @media (max-width:480px){ .theme-toggle{width:32px; height:32px; top:8px; right:8px; font-size:14px;} }
   *{box-sizing:border-box;}
-  html,body{height:100%; overflow-x:hidden; max-width:100%;}
+  html,body{height:100%; overflow-x:hidden; max-width:100%; overscroll-behavior-x:none;}
   body{margin:0;background:var(--cream);color:var(--ink);font-family:'Inter',sans-serif;display:flex;flex-direction:column;}
   .disp{font-family:'Fraunces',serif;}
 
@@ -115,7 +115,7 @@
     .m-eye.blink,.m-head.tilt,.m-wing-l.flutter,.m-wing-r.flutter,.m-bob.bob{animation:none;}
   }
 
-  main{flex:1 1 auto;overflow-y:auto;display:flex;justify-content:center;}
+  main{flex:1 1 auto;overflow-y:auto;display:flex;justify-content:center;touch-action:pan-y;overscroll-behavior-x:none;}
   .thread{width:100%;max-width:720px;padding:20px 16px 10px;display:flex;flex-direction:column;gap:14px;}
 
   .intro{text-align:center;padding:26px 10px 6px;}
