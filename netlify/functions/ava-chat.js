@@ -633,7 +633,25 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
                 const othersNote = deepData.others && deepData.others.length
                   ? ` (${deepData.others.length} more document${deepData.others.length > 1 ? 's' : ''} also exist${deepData.others.length > 1 ? '' : 's'} for this category: ${deepData.others.map(d => `"${d.title}" (slug: ${d.slug})`).join(', ')} — mention these by name if relevant, don't fetch them unless the person specifically asks for one)`
                   : '';
-                content = `=== ${deepData.result.title} ===\n${deepData.result.body}\n[Source: ${deepData.result.source_url || 'unknown'}]${othersNote}`;
+                // Truncated specifically here, not in queryDeepDive itself —
+                // MCP clients call that function directly too, and don't
+                // share this Netlify-timeout constraint, so they should
+                // still get the complete document. This dispatch path is
+                // the one actually at risk: a real production 504 traced
+                // directly to a full ~15,000-character document being added
+                // on top of an already-substantial prior conversation
+                // history (the previous turn's own generated response),
+                // for both the tool-decision call and the final synthesis —
+                // a combination never exercised by earlier fresh-conversation
+                // testing, which only ever measured the document in isolation.
+                const MAX_DEEP_DIVE_CHARS = 6000;
+                let bodyText = deepData.result.body;
+                let truncationNote = '';
+                if(bodyText.length > MAX_DEEP_DIVE_CHARS){
+                  bodyText = bodyText.slice(0, MAX_DEEP_DIVE_CHARS);
+                  truncationNote = `\n\n[Truncated for length — this document continues beyond what's shown here. Say so honestly if summarizing, rather than implying this is the complete document.]`;
+                }
+                content = `=== ${deepData.result.title} ===\n${bodyText}${truncationNote}\n[Source: ${deepData.result.source_url || 'unknown'}]${othersNote}`;
               } else {
                 content = deepData.note || 'No deep-dive content available.';
               }
@@ -655,7 +673,14 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
               if(hasDeepBudget){
                 deepDiveFullTextCount++;
                 const d = searchData.deepDiveMatch;
-                parts.push(`Deep-dive document (${d.category}): === ${d.title} ===\n${d.body}\n[Source: ${d.source_url || 'unknown'}]`);
+                const MAX_DEEP_DIVE_CHARS = 6000;
+                let bodyText = d.body;
+                let truncationNote = '';
+                if(bodyText.length > MAX_DEEP_DIVE_CHARS){
+                  bodyText = bodyText.slice(0, MAX_DEEP_DIVE_CHARS);
+                  truncationNote = `\n\n[Truncated for length — say so honestly if summarizing, rather than implying this is the complete document.]`;
+                }
+                parts.push(`Deep-dive document (${d.category}): === ${d.title} ===\n${bodyText}${truncationNote}\n[Source: ${d.source_url || 'unknown'}]`);
               } else {
                 parts.push(`A matching deep-dive document ("${searchData.deepDiveMatch.title}") also exists, but a full document has already been retrieved this request — mention it by name if relevant, don't fetch its full text.`);
               }
