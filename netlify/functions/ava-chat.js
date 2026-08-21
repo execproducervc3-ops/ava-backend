@@ -138,7 +138,7 @@ const TOOLS = [
   },
   {
     name: 'query_reference_knowledge',
-    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive — if the person genuinely wants real depth on a topic (e.g. Vincy Mas specifically), also try query_deep_dive for that category, since a full-length document may exist there. For anything current or not covered by either, supplement with web search.",
+    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive. IMPORTANT: answer from this alone for a plain topic question — do not also call query_deep_dive automatically, since chaining tool calls adds real, noticeable latency. Only reach for query_deep_dive separately if the person explicitly asks for more detail, the full story, or a complete history after seeing this overview. For anything current or not covered here, supplement with web search instead of guessing.",
     input_schema: {
       type: 'object',
       properties: {
