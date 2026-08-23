@@ -800,7 +800,16 @@ async function handleSend(text){
     const res = await fetch(AVA_CHAT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.slice(), deviceId: getDeviceId() }),
+      // Only the current message plus the single most recent exchange is
+      // sent to the backend — not the full, ever-growing conversation.
+      // AVA's content is fundamentally lookup-and-read (prices, schedules,
+      // reference facts), not analysis someone builds on across many turns,
+      // so a real follow-up ("history in more depth" after a Vincy Mas
+      // overview) still has what it needs, while unrelated earlier turns
+      // don't get resent and reprocessed on every single message. The full
+      // history array itself is untouched — display and persistence work
+      // exactly as before.
+      body: JSON.stringify({ messages: history.slice(-3), deviceId: getDeviceId() }),
     });
     if(!res.ok) throw new Error('Request failed: ' + res.status);
     const data = await res.json();
