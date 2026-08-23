@@ -529,8 +529,32 @@ async function queryPointsOfInterest(category, island, placeName){
       query = query.ilike('name', `%${placeName.trim()}%`);
     }
 
-    const { data, error } = await query.order('name', { ascending: true }).limit(15);
+    let { data, error } = await query.order('name', { ascending: true }).limit(15);
     if(error) throw error;
+
+    // A precise ilike match is fragile to real, common spelling variation —
+    // "moon hole" vs the stored "Moonhole" — which previously meant a
+    // correct, real match could come back empty just from spacing,
+    // triggering an unnecessary extra web-search-verification round-trip
+    // and real added latency for something that was actually right there
+    // in the database the whole time. Normalize spaces/hyphens out of both
+    // sides and retry once before giving up, fixing the actual root cause
+    // directly rather than papering over it with a slower fallback.
+    if((!data || !data.length) && placeName && placeName.trim()){
+      let broadQuery = supabase
+        .from('points_of_interest')
+        .select('name, category, island, description, source_url')
+        .eq('active', true);
+      if(category && category.trim()) broadQuery = broadQuery.eq('category', category.trim());
+      if(island && island.trim()) broadQuery = broadQuery.ilike('island', `%${island.trim()}%`);
+      const { data: broadData, error: broadErr } = await broadQuery.limit(300);
+      if(!broadErr && broadData && broadData.length){
+        const normalize = s => s.toLowerCase().replace(/[\s\-']/g, '');
+        const target = normalize(placeName.trim());
+        const matched = broadData.filter(row => normalize(row.name).includes(target));
+        if(matched.length) data = matched.slice(0, 15);
+      }
+    }
 
     if(!data || !data.length){
       await logUnansweredQuery(`points_of_interest: ${category || 'any'}${island ? ' in ' + island : ''}${placeName ? ' named ' + placeName : ''}`, 'points_of_interest');
