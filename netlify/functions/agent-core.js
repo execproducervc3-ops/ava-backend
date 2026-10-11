@@ -61,7 +61,7 @@ async function claudeCall(messages, { search }){
 async function claudeText(prompt, { search }){
   let messages = [{ role: 'user', content: prompt }];
   let text = '';
-  for(let i = 0; i < 6; i++){
+  for(let i = 0; i < 3; i++){
     const data = await claudeCall(messages, { search });
     text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     if(data.stop_reason === 'pause_turn'){
@@ -172,8 +172,29 @@ function validatePlace(p){
   };
 }
 
-async function runGapResearch({ limit = 5 } = {}){
+// Cost guard: a run is allowed at most once per lock window, however it was
+// started (schedule, button, script). The marker is a hidden agent_drafts row,
+// so no extra table is needed; it is never shown in the review queue.
+const RUN_LOCK_MINUTES = 60;
+async function gapResearchLocked(){
+  const { data } = await supabase.from('agent_drafts').select('payload')
+    .eq('agent', 'gap_research').eq('subject', '__run_lock__').maybeSingle();
+  const startedAt = data && data.payload && data.payload.started_at;
+  if(!startedAt) return null;
+  const mins = (Date.now() - new Date(startedAt).getTime()) / 60000;
+  return mins < RUN_LOCK_MINUTES ? Math.ceil(RUN_LOCK_MINUTES - mins) : null;
+}
+async function setGapResearchLock(){
+  await supabase.from('agent_drafts').upsert(
+    { agent: 'gap_research', kind: 'finding', subject: '__run_lock__', payload: { started_at: new Date().toISOString() }, status: 'rejected' },
+    { onConflict: 'agent,subject' });
+}
+
+async function runGapResearch({ limit = 3 } = {}){
   const summary = { considered: 0, drafts: 0, findings: 0, skipped: 0, errors: [] };
+  const waitMins = await gapResearchLocked();
+  if(waitMins){ summary.locked = true; summary.retry_in_minutes = waitMins; return summary; }
+  await setGapResearchLock();
 
   const { data: rows, error } = await supabase.from('unanswered_queries')
     .select('query_text, category_guess').eq('resolved', false)
@@ -435,6 +456,6 @@ async function triggerBackground(functionName){
 
 module.exports = {
   supabase, normalize, islandOf, extractJson, validatePlace, cleanSources,
-  runGapResearch, runDataQuality, triggerBackground,
+  runGapResearch, gapResearchLocked, runDataQuality, triggerBackground,
   POI_CATEGORIES, REFERENCE_CATEGORIES, ISLANDS,
 };

@@ -34,7 +34,7 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET' && action === 'list') {
       const status = ['pending', 'approved', 'rejected'].includes(params.status) ? params.status : 'pending';
       const { data, error } = await supabase.from('agent_drafts').select('*')
-        .eq('status', status).order('created_at', { ascending: false }).limit(200);
+        .eq('status', status).neq('subject', '__run_lock__').order('created_at', { ascending: false }).limit(200);
       if (error) throw error;
       return json(200, { drafts: data || [], categories: { poi: core.POI_CATEGORIES, reference: core.REFERENCE_CATEGORIES }, islands: core.ISLANDS });
     }
@@ -47,6 +47,8 @@ exports.handler = async (event) => {
           return json(200, { ok: true, summary: await core.runDataQuality() });
         }
         if (body.agent === 'gap_research') {
+          const waitMins = await core.gapResearchLocked();
+          if (waitMins) return json(200, { ok: true, message: `Gap research already ran recently. It can run again in about ${waitMins} minutes. (This limit stops runaway API costs.)` });
           await core.triggerBackground('agent-gap-research-background');
           return json(200, { ok: true, message: 'Gap research started. New drafts appear here in a few minutes.' });
         }

@@ -7,7 +7,7 @@ exports.handler = async (event) => {
     return { statusCode: 401, body: 'Unauthorized' };
   }
   try {
-    const summary = await core.runGapResearch({ limit: 5 });
+    const summary = await core.runGapResearch({ limit: 3 });
     console.log('gap research done:', JSON.stringify(summary));
   } catch (err) {
     console.error('gap research failed:', err.message);
