@@ -832,6 +832,32 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       break;
     }
 
+    // Last attempt: the loop can end with no text at all (a search that
+    // finished without writing anything, the loop cap reached right after a
+    // tool call, and similar). Rather than show the generic "couldn't work
+    // that out" reply when there is still time, make one final plain-text
+    // call that cannot use any tool and must answer from what is in hand.
+    if(!finalText && !budgetExceeded){
+      const remaining = HARD_MS - (Date.now() - startTime);
+      if(remaining >= MIN_CALL_MS){
+        try{
+          let lastMsgs = messages;
+          const tail = lastMsgs[lastMsgs.length - 1];
+          if(tail && tail.role === 'assistant'){
+            lastMsgs = lastMsgs.concat([{ role: 'user', content: 'Please answer now, in plain text, from what you have.' }]);
+          }
+          const lastData = await callClaude(lastMsgs, { timeoutMs: remaining, noTools: true });
+          const lastText = (lastData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
+          if(lastText){
+            finalText = lastText;
+            console.log(`Last-attempt answer used after ${Date.now() - startTime}ms`);
+          }
+        } catch(lastErr){
+          console.log('Last-attempt call failed (non-fatal):', lastErr.name, lastErr.message);
+        }
+      }
+    }
+
     if(budgetExceeded){
       console.log(`Budget exceeded after ${Date.now() - startTime}ms — answering with what was gathered`);
       const haveCards = !!(directoryResults || (retailResults && retailResults.length) || newsResults || ferryResults || luckyNumbers || linkCard);
