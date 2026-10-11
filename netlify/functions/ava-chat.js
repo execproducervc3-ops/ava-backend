@@ -297,24 +297,52 @@ const TOOLS = [
 const avaCore = require('./ava-core.js');
 
 
-async function callClaude(messages){
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: [
-        { type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } },
-      ],
-      messages,
-      tools: TOOLS,
-    }),
-  });
+// Per-request time budget. Netlify kills a synchronous function at roughly
+// 26-30s and the person gets a bare 504 with nothing. Everything below is
+// designed so the function always answers (HTTP 200, honest text) before
+// that happens. Measured in production: ~5-6s per Claude round trip, one
+// full-history answer took 27.8s, and a web-search verification pushed
+// "moon hole" past 30s.
+const HARD_MS = 25000;     // never start or continue anything past this
+const SOFT_MS = 9000;      // after this much elapsed, no more tool use / web search
+const RESERVE_MS = 6000;   // kept back so a no-tools answer is always possible
+const MIN_CALL_MS = 4000;  // not worth starting a Claude call with less than this
+
+async function callClaude(messages, opts){
+  opts = opts || {};
+  const controller = new AbortController();
+  const timer = opts.timeoutMs ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
+  const body = {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1000,
+    system: [
+      { type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } },
+    ],
+    messages,
+    tools: TOOLS,
+  };
+  // Deterministic, not prompt-hope: tool_choice none makes it impossible for
+  // the model to start a web search or another lookup, so a late call can
+  // only ever be a plain-text answer from what is already in hand.
+  if(opts.noTools){
+    body.tool_choice = { type: 'none' };
+    body.system.push({ type: 'text', text: "Time is short. Answer now in plain text from what you already have. Do not search or look anything up. If AVA's data had nothing on what was asked, say it isn't in AVA's data yet and that you couldn't verify it in time — never claim it doesn't exist." });
+  }
+  let res;
+  try{
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    if(timer) clearTimeout(timer);
+  }
   if(!res.ok){
     const errBody = await res.text().catch(() => '');
     throw new Error(`Anthropic request failed: ${res.status} ${errBody}`.trim());
@@ -326,6 +354,33 @@ async function callClaude(messages){
       (data.usage.cache_creation_input_tokens ? `, cache_creation: ${data.usage.cache_creation_input_tokens}` : ''));
   }
   return data;
+}
+
+// Returns { skipped: true } or { timedOut: true } instead of throwing when the
+// budget is gone, so the caller can answer with what it already has.
+async function callWithBudget(messages, startTime){
+  const remaining = HARD_MS - (Date.now() - startTime);
+  if(remaining < MIN_CALL_MS) return { skipped: true };
+  const elapsed = Date.now() - startTime;
+  const allowTools = elapsed < SOFT_MS;
+  try{
+    // While tools are allowed, leave RESERVE_MS spare so a slow web search
+    // can be cut off and still be followed by a quick plain-text answer.
+    const timeoutMs = allowTools ? Math.max(remaining - RESERVE_MS, MIN_CALL_MS) : remaining;
+    return await callClaude(messages, { timeoutMs, noTools: !allowTools });
+  } catch(err){
+    if(err.name !== 'AbortError') throw err;
+    console.log(`Budget: Claude call aborted after ${Date.now() - startTime}ms (tools ${allowTools ? 'allowed' : 'disabled'})`);
+    const rem2 = HARD_MS - (Date.now() - startTime);
+    if(allowTools && rem2 >= MIN_CALL_MS){
+      try{
+        return await callClaude(messages, { timeoutMs: rem2, noTools: true });
+      } catch(err2){
+        if(err2.name !== 'AbortError') throw err2;
+      }
+    }
+    return { timedOut: true };
+  }
 }
 
 exports.handler = async (event) => {
@@ -360,8 +415,10 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'messages array is required' }) };
   }
 
+  const startTime = Date.now();
   try{
     let messages = incoming.slice();
+    let budgetExceeded = false;
     let finalText = '';
     let linkCard = null;
     let retailResults = [];
@@ -383,7 +440,8 @@ exports.handler = async (event) => {
 
     while(loops < 4){
       loops++;
-      const data = await callClaude(messages);
+      const data = await callWithBudget(messages, startTime);
+      if(data.skipped || data.timedOut){ budgetExceeded = true; break; }
       const toolUseBlocks = (data.content || []).filter(b => b.type === 'tool_use' && CUSTOM_TOOL_NAMES.includes(b.name));
       const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       if(textBlocks) finalText += (finalText ? '\n\n' : '') + textBlocks;
@@ -722,6 +780,14 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       break;
     }
 
+    if(budgetExceeded){
+      console.log(`Budget exceeded after ${Date.now() - startTime}ms — answering with what was gathered`);
+      const haveCards = !!(directoryResults || (retailResults && retailResults.length) || newsResults || ferryResults || luckyNumbers || linkCard);
+      const slowNote = haveCards
+        ? "I'm running slower than usual on this one, so I couldn't finish my full answer — here's what I found so far."
+        : "That one is taking longer than usual and I couldn't finish in time. Please try again, or ask it a little more specifically.";
+      finalText = finalText ? `${finalText}\n\n_${slowNote}_` : slowNote;
+    }
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults }) };
   } catch(err){
