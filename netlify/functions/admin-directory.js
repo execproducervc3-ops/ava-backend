@@ -8,6 +8,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+const VALID_ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent', 'Tobago Cays'];
 const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife'];
 
 exports.handler = async (event) => {
@@ -146,10 +147,16 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'category and name are required' }) };
       }
 
+      // An island is required: listings without one are skipped by island-based searches.
+      const cleanIsland = VALID_ISLANDS.find(i => i.toLowerCase() === String(island || '').trim().toLowerCase());
+      if (!cleanIsland) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'A valid island is required: ' + VALID_ISLANDS.join(', ') }) };
+      }
+
       const { data, error } = await supabase.from('directory_listings').insert({
         category, name,
         address: address || null,
-        island: island || null,
+        island: cleanIsland,
         phone: phone || null,
         website: website || null,
         source: 'curated',

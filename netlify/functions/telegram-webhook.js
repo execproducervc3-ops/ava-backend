@@ -256,6 +256,21 @@ const CATEGORY_TO_LISTING_TYPE = {
   nightlife: 'menu_item',
 };
 
+// Works out the island from saved coordinates. Only islands that are large and
+// clearly separated are checked; anything else returns null and is left for the
+// weekly data-quality check, rather than guessing.
+function islandFromCoords(lat, lng){
+  if(typeof lat !== 'number' || typeof lng !== 'number') return null;
+  const boxes = [
+    ['Saint Vincent', 13.10, 13.40, -61.30, -61.08],
+    ['Bequia', 12.95, 13.06, -61.31, -61.19],
+    ['Mustique', 12.85, 12.91, -61.21, -61.15],
+    ['Canouan', 12.68, 12.74, -61.35, -61.30],
+  ];
+  const hit = boxes.find(b => lat >= b[1] && lat <= b[2] && lng >= b[3] && lng <= b[4]);
+  return hit ? hit[0] : null;
+}
+
 function listingTypeForCategory(category){
   return CATEGORY_TO_LISTING_TYPE[category] || 'retail_item';
 }
@@ -533,6 +548,7 @@ async function confirmLatestDraft(fromId, chatId) {
         name: businessName,
         lat: profile ? profile.default_lat : null,
         lng: profile ? profile.default_lng : null,
+        island: profile ? islandFromCoords(profile.default_lat, profile.default_lng) : null,
         source: 'community_submission',
         claimed_by_telegram_id: fromId,
       }).select().single();
