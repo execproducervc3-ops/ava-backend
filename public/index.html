@@ -710,8 +710,9 @@ function refreshPalmDecoration(){
 }
 
 // Initial render, then the original slower, ambient regeneration cycle.
+// Drawn once and left still (no 14-second redraw). To restore the slow
+// ambient redraw, add back: setInterval(refreshPalmDecoration, 14000);
 refreshPalmDecoration();
-setInterval(refreshPalmDecoration, 14000);
 
 // Dark mode — real toggle with persistence. This is a live, deployed site
 // (not a Claude.ai artifact), so localStorage is the correct, standard way
