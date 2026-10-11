@@ -339,8 +339,8 @@ const avaCore = require('./ava-core.js');
 // that happens. Measured in production: ~5-6s per Claude round trip, one
 // full-history answer took 27.8s, and a web-search verification pushed
 // "moon hole" past 30s.
-const HARD_MS = 25000;     // never start or continue anything past this
-const SOFT_MS = 9000;      // after this much elapsed, no more tool use / web search
+const HARD_MS = 21000;     // never start or continue anything past this
+const SOFT_MS = 8000;      // after this much elapsed, no more tool use / web search
 const RESERVE_MS = 6000;   // kept back so a no-tools answer is always possible
 const MIN_CALL_MS = 4000;  // not worth starting a Claude call with less than this
 
