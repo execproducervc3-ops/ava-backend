@@ -577,6 +577,74 @@ async function queryPointsOfInterest(category, island, placeName){
 // at all. Joins retail_offers (where the actual rate lives, since a
 // listing_type-classified submission carries a real price) with
 // directory_listings for the business name, sorted cheapest first.
+
+// Upcoming events from subscribed promoters and businesses only. An event is
+// visible when it is approved (or auto-published), its organiser's
+// subscription (directory_listings.subscribed_until) is still current, and it
+// has not finished yet. Never logs a knowledge gap: an empty result just means
+// nobody subscribed has listed anything, not that nothing is happening.
+function formatEventWhen(startsAt, endsAt, timeKnown){
+  const tz = 'America/St_Vincent';
+  const start = new Date(startsAt);
+  const day = start.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  if(!timeKnown) return `${day} (time not listed)`;
+  const t = d => d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${t(start)}${endsAt ? ' to ' + t(new Date(endsAt)) : ''}`;
+}
+
+async function queryEvents(island, keyword){
+  try{
+    const now = new Date();
+    const today = new Date(now.getTime() - 4 * 3600 * 1000).toISOString().slice(0, 10); // SVG local date (UTC-4)
+    const { data, error } = await supabase
+      .from('events')
+      .select('title, description, starts_at, ends_at, time_known, venue, island, ticket_price, ticket_info, flyer_url, directory_listings!inner(name, island, subscribed_until, website)')
+      .in('review_status', ['auto_published', 'approved'])
+      .gte('starts_at', new Date(now.getTime() - 24 * 3600 * 1000).toISOString())
+      .order('starts_at', { ascending: true })
+      .limit(100);
+    if(error) throw error;
+
+    const norm = s => String(s || '').toLowerCase();
+    let rows = (data || []).filter(r => {
+      const l = r.directory_listings;
+      if(!l || !l.subscribed_until || l.subscribed_until < today) return false;
+      const end = r.ends_at ? new Date(r.ends_at) : new Date(new Date(r.starts_at).getTime() + 8 * 3600 * 1000);
+      return end >= now;
+    });
+    if(island && island.trim()){
+      const i = norm(island.trim());
+      rows = rows.filter(r => norm(r.island || (r.directory_listings && r.directory_listings.island)).includes(i));
+    }
+    if(keyword && keyword.trim()){
+      const k = norm(keyword.trim());
+      rows = rows.filter(r => norm(r.title).includes(k) || norm(r.description).includes(k) || norm(r.venue).includes(k));
+    }
+    rows = rows.slice(0, 15);
+
+    if(!rows.length){
+      return { results: [], note: `No upcoming events listed in AVA${island ? ' for ' + island : ''}${keyword ? ' matching "' + keyword + '"' : ''}. AVA only lists events from subscribed promoters, so this does not mean nothing is happening.` };
+    }
+    return {
+      results: rows.map(r => ({
+        title: r.title,
+        when: formatEventWhen(r.starts_at, r.ends_at, r.time_known),
+        venue: r.venue || null,
+        island: r.island || (r.directory_listings && r.directory_listings.island) || null,
+        organiser: r.directory_listings ? r.directory_listings.name : null,
+        description: r.description || null,
+        ticket_price: r.ticket_price,
+        ticket_info: r.ticket_info || null,
+        flyer_url: r.flyer_url || null,
+        website: r.directory_listings ? r.directory_listings.website || null : null,
+      })),
+    };
+  } catch(err){
+    console.error('queryEvents error:', err);
+    return { results: [], note: 'Could not reach the events database right now.' };
+  }
+}
+
 async function queryPricedListings(listingType, island){
   try{
     let query = supabase
@@ -1195,7 +1263,7 @@ module.exports = {
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
-  queryReferenceKnowledge, queryDeepDive, searchKnowledgeBase, queryPointsOfInterest, planTrip, queryTaxiFare,
+  queryReferenceKnowledge, queryDeepDive, searchKnowledgeBase, queryPointsOfInterest, queryEvents, formatEventWhen, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
   logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness,
 };

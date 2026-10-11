@@ -151,6 +151,16 @@ function getServer() {
   );
 
   server.tool(
+    "query_events",
+    "Upcoming events (parties, concerts, fetes, festivals) from promoters and businesses subscribed to AVA. Partial coverage: empty means none listed, not that nothing is happening.",
+    {
+      island: z.string().optional().describe("Optional island to filter by"),
+      keyword: z.string().optional().describe("Optional word to match in title, description or venue"),
+    },
+    async ({ island, keyword }) => asToolResult(await ava.queryEvents(island, keyword))
+  );
+
+  server.tool(
     "plan_trip",
     "Builds a full trip plan from one total budget — real live flight prices from Duffel, plus accommodation, car rental, and food from AVA's own local directory.",
     {

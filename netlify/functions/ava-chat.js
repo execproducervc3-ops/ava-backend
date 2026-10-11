@@ -43,6 +43,7 @@ Rules:
 - For voter registration questions: this is real, public information published by SVG's Electoral Office, but as a set of static PDF lists by constituency, not a live searchable tool — set that expectation honestly. Ask which of the 15 constituencies the person is registered in if they haven't said (Central Kingstown, Central Leeward, East Kingstown, East St George, Marriaqua, North Central Windward, North Leeward, North Windward, Northern Grenadines, South Central Windward, South Leeward, South Windward, Southern Grenadines, West Kingstown, West St George), then call get_deep_link with service_type "voter_registration" and location set to their constituency. If they don't know their constituency, call it without a location — this links to the page listing all of them instead.
 - For a shopping list with multiple items (e.g. "milk, rice, chicken tacos"), call query_retail_price once per distinct item, not once with the whole list as a single string — each call should have exactly one product name. It's fine and expected to make several query_retail_price calls in the same turn for a list like this.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
+- For events (what is on, parties, concerts, fetes, shows, festivals): call query_events first. Events are listed only by promoters and businesses who subscribe to AVA, so coverage is partial. Present only what the tool returns, with the exact date and time given, and never invent an event, date or ticket price. If it returns nothing, say AVA has no listed events for that and offer the Eventbrite search link via get_deep_link, without claiming nothing is happening.
 - When someone wants to book or search flights, hotels, car rentals, or event tickets, call the get_deep_link tool to hand them to the real platform. Never claim you can book, pay, or hold a reservation yourself.
 - For civic/legal topics (like the UK ETA, immigration, or medical questions), give accurate general guidance but make clear where to go for anything requiring an official/formal step.
 - If you don't have enough information after searching, say so plainly rather than guessing.
@@ -238,6 +239,17 @@ const TOOLS = [
         category: { type: 'string', enum: ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'], description: 'Optional — narrow to a specific type of attraction. Omit to search all types.' },
         island: { type: 'string', description: 'Optional — narrow to a specific island, e.g. "Bequia" or "Saint Vincent". Omit to search all islands.' },
         place_name: { type: 'string', description: 'If the person named a specific place, pass it here to filter to just that one — e.g. "Macaroni Beach". Omit only for genuinely general category browsing.' },
+      },
+    }
+  },
+  {
+    name: 'query_events',
+    description: "Look up upcoming events (parties, concerts, fetes, shows, festivals, regattas, and similar) in Saint Vincent and the Grenadines. These come only from promoters and businesses who subscribe to list with AVA, so coverage is partial: an empty result means none are listed, never that nothing is happening. Use this BEFORE any web search or the Eventbrite link when someone asks what is on, what to do this weekend, or about a specific event. Pass island and/or keyword only if the person gave them.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        island: { type: 'string', description: 'Optional island, e.g. "Bequia" or "Saint Vincent".' },
+        keyword: { type: 'string', description: 'Optional word to match in the title, description or venue, e.g. "soca" or "regatta".' },
       },
     }
   },
@@ -467,7 +479,7 @@ exports.handler = async (event) => {
     // combined-size problem this was built to prevent, just spread across
     // several tool calls instead of one.
     let deepDiveFullTextCount = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'query_events', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
 
     while(loops < 4){
       loops++;
@@ -586,6 +598,13 @@ exports.handler = async (event) => {
             content = poiData.results && poiData.results.length
               ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
               : (poiData.note || 'No attractions found.');
+          }
+
+          else if(toolUse.name === 'query_events'){
+            const evData = await avaCore.queryEvents(toolUse.input.island, toolUse.input.keyword);
+            content = evData.results && evData.results.length
+              ? evData.results.map(e => `${e.title} — ${e.when}${e.venue ? ' at ' + e.venue : ''}${e.island ? ' (' + e.island + ')' : ''}. Organiser: ${e.organiser || 'unknown'}.${e.description ? ' ' + e.description : ''}${e.ticket_price != null ? ' Ticket: EC$' + e.ticket_price + '.' : ''}${e.ticket_info ? ' ' + e.ticket_info : ''}${e.flyer_url ? ' [flyer: ' + e.flyer_url + ']' : ''}`).join('\n\n')
+              : (evData.note || 'No upcoming events listed.');
           }
 
           else if(toolUse.name === 'query_taxi_fare'){
