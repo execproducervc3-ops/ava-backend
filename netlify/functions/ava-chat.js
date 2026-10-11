@@ -50,8 +50,18 @@ Rules:
 - Keep answers to a few short paragraphs unless the question genuinely needs more.`;
 }
 
+// Cost controls, all in one place:
+// - CHAT_MODEL: change this one line to move the chat to a different model.
+// - MAX_WEB_SEARCHES: web search costs per search plus the tokens of the results,
+//   so each question is capped. Most questions are answered from AVA's own data.
+// - CACHE_TTL: how long the instructions and tool list stay cached. '1h' costs
+//   more to write but survives gaps in traffic; use '5m' for very busy periods.
+const CHAT_MODEL = 'claude-sonnet-5-5';
+const MAX_WEB_SEARCHES = 2;
+const CACHE_TTL = '1h';
+
 const TOOLS = [
-  { type: 'web_search_20260209', name: 'web_search' },
+  { type: 'web_search_20260209', name: 'web_search', max_uses: MAX_WEB_SEARCHES },
   { type: 'code_execution_20260120', name: 'code_execution' },
   {
     name: 'get_deep_link',
@@ -325,10 +335,10 @@ async function callClaude(messages, opts){
   const controller = new AbortController();
   const timer = opts.timeoutMs ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
   const body = {
-    model: 'claude-sonnet-4-6',
+    model: CHAT_MODEL,
     max_tokens: 1000,
     system: [
-      { type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
     ],
     messages,
     tools: TOOLS,
