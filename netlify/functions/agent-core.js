@@ -24,7 +24,7 @@ const MODEL = 'claude-sonnet-4-6';
 const POI_CATEGORIES = ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'];
 const REFERENCE_CATEGORIES = ['geography', 'history', 'government', 'culture', 'economy', 'practical', 'indigenous_peoples', 'music', 'motorsports', 'vincy_mas'];
 const DIRECTORY_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife'];
-const ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent'];
+const ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent', 'Tobago Cays'];
 
 // Rough bounding box around all of SVG, used only to catch obviously wrong coordinates.
 const SVG_BOX = { latMin: 12.4, latMax: 13.5, lngMin: -61.6, lngMax: -60.9 };
