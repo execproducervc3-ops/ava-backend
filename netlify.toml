@@ -37,3 +37,9 @@
 # code from the FRED/EIA fuel-tracking approach that was explicitly
 # abandoned in favor of pulling fuel context from the existing news RSS
 # feed instead.
+
+[functions."agent-gap-research"]
+  schedule = "@daily"
+
+[functions."agent-data-quality"]
+  schedule = "@weekly"

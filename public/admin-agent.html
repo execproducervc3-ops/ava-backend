@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>AVA Agent Review</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f6f8;color:#1c2330;line-height:1.45}
+header{background:#0b3d5c;color:#fff;padding:14px 16px}
+header h1{margin:0;font-size:18px}
+header p{margin:4px 0 0;font-size:13px;opacity:.85}
+main{max-width:900px;margin:0 auto;padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #c5ccd6;background:#fff;cursor:pointer}
+button.primary{background:#0b3d5c;color:#fff;border-color:#0b3d5c}
+button.danger{color:#a12b2b;border-color:#e2b4b4}
+button:disabled{opacity:.5;cursor:default}
+.tab.active{background:#0b3d5c;color:#fff;border-color:#0b3d5c}
+input,select,textarea{font:inherit;width:100%;padding:8px;border:1px solid #c5ccd6;border-radius:8px;background:#fff}
+textarea{min-height:90px;resize:vertical}
+.card{background:#fff;border:1px solid #dde2ea;border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:16px}
+.meta{font-size:12px;color:#5b6677;margin-bottom:8px}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#e8eef5;margin-right:6px}
+.badge.high{background:#d9f2e0}.badge.low{background:#fdecc8}.badge.medium{background:#fdecc8}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
+.place{border-top:1px solid #eef0f4;padding-top:10px;margin-top:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.src a{display:block;font-size:13px;word-break:break-all}
+#login{max-width:340px;margin:60px auto;padding:16px}
+#msg{padding:10px 12px;border-radius:8px;margin-bottom:12px;display:none;font-size:14px}
+#msg.ok{display:block;background:#d9f2e0}#msg.err{display:block;background:#f8d7d7}
+.empty{text-align:center;color:#5b6677;padding:40px 0}
+</style></head><body>
+<header><h1>AVA Agent Review</h1><p>Agents only draft. Nothing goes live until you approve it here.</p></header>
+<div id="login"><label for="pw">Admin password</label><input id="pw" type="password" autocomplete="off"><div class="actions"><button class="primary" id="go">Sign in</button></div></div>
+<main id="app" style="display:none">
+  <div id="msg"></div>
+  <div class="bar">
+    <button class="tab active" data-s="pending">Pending</button>
+    <button class="tab" data-s="approved">Approved</button>
+    <button class="tab" data-s="rejected">Rejected</button>
+    <span style="flex:1"></span>
+    <button id="runGap">Run gap research</button>
+    <button id="runDq">Run data check</button>
+  </div>
+  <div id="list"></div>
+</main>
+<script>
+(function(){
+  var API='/.netlify/functions/admin-agent';
+  var pw='', status='pending', meta={categories:{poi:[],reference:[]},islands:[]}, drafts=[];
+  var $=function(id){return document.getElementById(id)};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function say(t,ok){var m=$('msg');m.textContent=t;m.className=ok?'ok':'err'}
+  function api(action,method,body){
+    return fetch(API+'?action='+action+(method==='GET'&&body?'&'+body:''),{method:method,headers:{'X-Admin-Secret':pw,'Content-Type':'application/json'},body:method==='POST'?JSON.stringify(body||{}):undefined})
+      .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('Error '+r.status));return j})});
+  }
+  function opts(list,sel){return list.map(function(v){return '<option value="'+esc(v)+'"'+(v===sel?' selected':'')+'>'+esc(v)+'</option>'}).join('')}
+  function links(arr){return (arr||[]).filter(function(u){return /^https?:\/\//.test(u)}).map(function(u){return '<a href="'+esc(u)+'" target="_blank" rel="noopener noreferrer">'+esc(u)+'</a>'}).join('')}
+
+  function render(){
+    var el=$('list');
+    if(!drafts.length){el.innerHTML='<div class="empty">Nothing '+esc(status)+'.</div>';return}
+    el.innerHTML=drafts.map(function(d,i){
+      var p=d.payload||{}, h='<div class="card" data-i="'+i+'">';
+      h+='<div class="meta"><span class="badge">'+esc(d.agent==='gap_research'?'Gap research':'Data quality')+'</span><span class="badge">'+esc(d.kind)+'</span>'+(p.severity?'<span class="badge '+esc(p.severity)+'">'+esc(p.severity)+'</span>':'')+(p.asked_count?'asked '+esc(p.asked_count)+'x · ':'')+esc(new Date(d.created_at).toLocaleString())+'</div>';
+      if(d.kind==='poi'){
+        h+='<h3>Question: '+esc(d.subject)+'</h3>';
+        (p.places||[]).forEach(function(pl,j){
+          h+='<div class="place" data-j="'+j+'"><label><input type="checkbox" class="inc" checked style="width:auto"> Include</label>';
+          h+='<span class="badge '+esc(pl.confidence)+'">'+esc(pl.confidence==='high'?'2+ sources agree':'single source: check carefully')+'</span>';
+          h+='<div class="row"><div><label>Name</label><input class="f-name" value="'+esc(pl.name)+'"></div><div><label>Island</label><select class="f-island">'+opts(meta.islands,pl.island)+'</select></div></div>';
+          h+='<div class="row"><div><label>Category</label><select class="f-cat">'+opts(meta.categories.poi,pl.category)+'</select></div></div>';
+          h+='<label>Description</label><textarea class="f-desc">'+esc(pl.description)+'</textarea>';
+          if(pl.island_mismatch_note)h+='<div class="meta">Note: '+esc(pl.island_mismatch_note)+'</div>';
+          h+='<div class="src">'+links(pl.sources)+'</div></div>';
+        });
+        if(p.notes)h+='<div class="meta" style="margin-top:8px">Agent notes: '+esc(p.notes)+'</div>';
+      } else if(d.kind==='reference'){
+        h+='<h3>Question: '+esc(d.subject)+'</h3>';
+        h+='<div class="row"><div><label>Category</label><select class="f-rcat">'+opts(meta.categories.reference,p.category)+'</select></div><div><label>Title</label><input class="f-rtitle" value="'+esc(p.title)+'"></div></div>';
+        h+='<label>Summary</label><textarea class="f-rsum" style="min-height:160px">'+esc(p.summary)+'</textarea><div class="src">'+links(p.sources)+'</div>';
+        if(p.notes)h+='<div class="meta" style="margin-top:8px">Agent notes: '+esc(p.notes)+'</div>';
+      } else {
+        h+='<h3>'+esc(p.issue||'Finding')+'</h3><div class="meta">'+esc(d.subject)+'</div><p>'+esc(p.detail)+'</p>';
+        if(p.suggested_action)h+='<p><strong>Suggested:</strong> '+esc(p.suggested_action)+'</p>';
+        h+='<div class="src">'+links(p.sources)+'</div>';
+      }
+      if(status==='pending'){
+        h+='<div class="actions"><button class="primary ok">'+(d.kind==='finding'?'Acknowledge':'Approve and publish')+'</button><button class="danger no">'+(d.kind==='finding'?'Dismiss':'Reject')+'</button>';
+        if(d.kind!=='finding')h+='<button class="no-dismiss danger">Reject and dismiss question</button>';
+        h+='</div>';
+      } else h+='<div class="meta">'+esc(d.status)+' '+esc(d.reviewed_at?new Date(d.reviewed_at).toLocaleString():'')+'</div>';
+      return h+'</div>';
+    }).join('');
+  }
+
+  function load(){
+    return api('list','GET','status='+status).then(function(j){drafts=j.drafts;meta={categories:j.categories,islands:j.islands};render()}).catch(function(e){say(e.message)});
+  }
+
+  $('go').onclick=function(){
+    pw=$('pw').value;
+    api('list','GET','status=pending').then(function(j){
+      drafts=j.drafts;meta={categories:j.categories,islands:j.islands};
+      $('login').style.display='none';$('app').style.display='block';$('pw').value='';render();
+    }).catch(function(e){pw='';alert(e.message==='Unauthorized'?'Wrong password.':e.message)});
+  };
+  $('pw').onkeydown=function(e){if(e.key==='Enter')$('go').click()};
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){
+    b.onclick=function(){status=b.dataset.s;Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(x){x.classList.toggle('active',x===b)});load()};
+  });
+
+  function runAgent(agent,btn){
+    btn.disabled=true;
+    api('run','POST',{agent:agent}).then(function(j){
+      say(j.message||('Data check done: '+(j.summary&&j.summary.new_findings!=null?j.summary.new_findings+' new findings.':'ok')),true);
+      return load();
+    }).catch(function(e){say(e.message)}).then(function(){btn.disabled=false});
+  }
+  $('runGap').onclick=function(){runAgent('gap_research',this)};
+  $('runDq').onclick=function(){runAgent('data_quality',this)};
+
+  $('list').addEventListener('click',function(e){
+    var card=e.target.closest('.card'); if(!card)return;
+    var cls=e.target.classList, d=drafts[+card.dataset.i];
+    if(!cls.contains('ok')&&!cls.contains('no')&&!cls.contains('no-dismiss'))return;
+    var body={id:d.id};
+    if(cls.contains('ok')){
+      if(d.kind==='poi'){
+        body.places=[];body.include_only=[];
+        Array.prototype.forEach.call(card.querySelectorAll('.place'),function(pl,j){
+          body.places.push({name:pl.querySelector('.f-name').value,island:pl.querySelector('.f-island').value,category:pl.querySelector('.f-cat').value,description:pl.querySelector('.f-desc').value,sources:(d.payload.places[j]||{}).sources||[]});
+          if(pl.querySelector('.inc').checked)body.include_only.push(j);
+        });
+        if(!body.include_only.length){say('Select at least one place.');return}
+        if(!confirm('Publish '+body.include_only.length+' place(s) to AVA now?'))return;
+      } else if(d.kind==='reference'){
+        body.category=card.querySelector('.f-rcat').value;body.title=card.querySelector('.f-rtitle').value;body.summary=card.querySelector('.f-rsum').value;
+        if(!confirm('Publish this overview to AVA now?'))return;
+      }
+    } else {
+      if(!confirm(cls.contains('no-dismiss')?'Reject and remove this question from the gaps list?':'Reject this draft?'))return;
+      body.dismiss_gap=cls.contains('no-dismiss');
+    }
+    e.target.disabled=true;
+    api(cls.contains('ok')?'approve':'reject','POST',body).then(function(j){
+      say(cls.contains('ok')?(j.published?'Published '+j.published+'.':'Acknowledged.'):'Rejected.',true);return load();
+    }).catch(function(er){say(er.message);e.target.disabled=false});
+  });
+})();
+</script></body></html>
