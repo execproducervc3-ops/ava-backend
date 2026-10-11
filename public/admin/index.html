@@ -87,6 +87,14 @@
   .btn-publish:hover{background:#166B44;}
   label{font-size:11.5px; font-weight:600; color:var(--soft); display:block; margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
   input, select, textarea{background:var(--panel); color:var(--ink); border:1px solid var(--line);}
+  .agentcard{border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:12px; background:var(--bg);}
+  .agentcard select{width:100%; border-radius:6px; padding:9px 11px; font-size:14px; font-family:inherit; margin-bottom:0;}
+  .agentcard .draftfields input{margin-bottom:0;}
+  .agentcard .btn-danger{background:var(--panel);}
+  .agentcard .draftfields{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+  #subList .gaprow-meta{white-space:normal;}
+  #subList .gaprow > div{min-width:0;}
+  #subList .gaprow button{flex:0 0 auto;}
 </style>
 </head>
 <body>
@@ -217,6 +225,48 @@
     <h2>Knowledge gaps</h2>
     <div class="empty-note" style="margin-bottom:10px;">What AVA couldn't answer from its own data, grouped and ranked by how often it's actually been asked.</div>
     <div id="gapsList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Agent drafts</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Drafts and findings from the research and data-quality agents. Nothing goes live until you approve it here.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="btn-secondary" id="agentTabPending">Pending</button>
+      <button class="btn-secondary" id="agentTabApproved">Approved</button>
+      <button class="btn-secondary" id="agentTabRejected">Rejected</button>
+      <span style="flex:1;"></span>
+      <button class="btn-secondary" id="agentRunGap">Run gap research</button>
+      <button class="btn-secondary" id="agentRunDq">Run data check</button>
+    </div>
+    <div class="empty-note" id="agentMsg" style="display:none;"></div>
+    <div id="agentDraftsList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Events</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Events sent by subscribed promoters. A promoter's first event is held here for approval, along with any event the AI couldn't read clearly.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="btn-secondary" id="evTabPending">Needs review</button>
+      <button class="btn-secondary" id="evTabUpcoming">Live and upcoming</button>
+    </div>
+    <div class="empty-note" id="evMsg" style="display:none;"></div>
+    <div id="evList"></div>
+
+    <h2 style="margin-top:22px;">Subscriptions</h2>
+    <div class="empty-note" style="margin-bottom:10px;">A business's events show in AVA only while its subscription date has not passed.</div>
+    <label>Find a business</label>
+    <input type="text" id="subSearchInput" placeholder="Start typing a business name&hellip;" autocomplete="off">
+    <div id="subSearchResults"></div>
+    <div id="subForm" style="display:none; margin-top:10px;">
+      <div id="subSelected" class="selected-tag"></div>
+      <label>Subscribed until</label>
+      <input type="date" id="subDateInput">
+      <div style="display:flex; gap:8px;">
+        <button id="subSaveBtn">Save subscription</button>
+        <button class="btn-secondary" id="subCancelBtn">Cancel</button>
+      </div>
+    </div>
+    <div style="margin-top:14px;" id="subList"></div>
   </div>
 
   <div class="panel">
@@ -395,6 +445,9 @@ async function tryLogin(password, showErrors){
   loadReviewQueue();
   loadTopPicks();
   loadGaps();
+  loadAgentDrafts();
+  loadEvents();
+  loadSubscribers();
   loadInterest();
   loadPhotoTracker();
   loadEmptyBusinesses();
@@ -1347,6 +1400,300 @@ async function toggle(id, newActive){
   loadGaps();
   loadInterest();
 }
+
+// ---------------------------------------------------------- Agent drafts ---
+const AGENT_API = '/.netlify/functions/admin-agent';
+let agentStatus = 'pending', agentDrafts = [], agentMeta = { categories: { poi: [], reference: [] }, islands: [] };
+
+function agentOpts(list, sel){
+  return list.map(v => `<option value="${escapeHtml(v)}"${v === sel ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('');
+}
+function agentLinks(arr){
+  return (arr || []).filter(u => /^https?:\/\//.test(u))
+    .map(u => `<div style="font-size:12.5px; word-break:break-all;"><a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${escapeHtml(u)}</a></div>`).join('');
+}
+function agentSay(text, isErr){
+  const el = document.getElementById('agentMsg');
+  el.style.display = text ? 'block' : 'none';
+  el.style.color = isErr ? 'var(--danger)' : 'var(--live)';
+  el.textContent = text || '';
+}
+async function agentApi(action, method, body, qs){
+  const res = await fetch(`${AGENT_API}?action=${action}${qs ? '&' + qs : ''}`, {
+    method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
+  return data;
+}
+
+async function loadAgentDrafts(){
+  const listEl = document.getElementById('agentDraftsList');
+  try{
+    const data = await agentApi('list', 'GET', null, `status=${agentStatus}`);
+    agentDrafts = data.drafts || [];
+    agentMeta = { categories: data.categories, islands: data.islands };
+  } catch(err){
+    listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if(!agentDrafts.length){
+    listEl.innerHTML = `<div class="empty-note">Nothing ${escapeHtml(agentStatus)}.</div>`;
+    return;
+  }
+  listEl.innerHTML = agentDrafts.map((d, i) => {
+    const p = d.payload || {};
+    let h = `<div class="agentcard" data-i="${i}">`;
+    h += `<div class="gaprow-meta" style="white-space:normal; margin-bottom:8px;">${escapeHtml(d.agent === 'gap_research' ? 'Gap research' : 'Data quality')} &middot; ${escapeHtml(d.kind)}${p.severity ? ' &middot; ' + escapeHtml(p.severity) : ''}${p.asked_count ? ' &middot; asked ' + escapeHtml(p.asked_count) + '&times;' : ''} &middot; ${escapeHtml(new Date(d.created_at).toLocaleDateString())}</div>`;
+    if(d.kind === 'poi'){
+      h += `<div class="placement-name" style="margin-bottom:8px;">Question: ${escapeHtml(d.subject)}</div>`;
+      (p.places || []).forEach(pl => {
+        h += `<div class="agent-place" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
+          <label><input type="checkbox" class="a-inc" checked style="width:auto; margin:0 6px 0 0;">Include</label>
+          <div class="reviewreason">${pl.confidence === 'high' ? '2+ independent sources agree' : 'Single source: check carefully'}${pl.island_mismatch_note ? ' &middot; ' + escapeHtml(pl.island_mismatch_note) : ''}</div>
+          <div class="draftfields">
+            <div><label>Name</label><input class="a-name" value="${escapeHtml(pl.name)}"></div>
+            <div><label>Island</label><select class="a-island">${agentOpts(agentMeta.islands, pl.island)}</select></div>
+            <div><label>Category</label><select class="a-cat">${agentOpts(agentMeta.categories.poi, pl.category)}</select></div>
+            <div class="full"><label>Description</label><textarea class="a-desc" style="min-height:90px;">${escapeHtml(pl.description)}</textarea></div>
+          </div>${agentLinks(pl.sources)}</div>`;
+      });
+      if(p.notes) h += `<div class="reviewreason" style="margin-top:8px;">Agent notes: ${escapeHtml(p.notes)}</div>`;
+    } else if(d.kind === 'reference'){
+      h += `<div class="placement-name" style="margin-bottom:8px;">Question: ${escapeHtml(d.subject)}</div>
+        <div class="draftfields">
+          <div><label>Category</label><select class="a-rcat">${agentOpts(agentMeta.categories.reference, p.category)}</select></div>
+          <div><label>Title</label><input class="a-rtitle" value="${escapeHtml(p.title)}"></div>
+          <div class="full"><label>Summary</label><textarea class="a-rsum" style="min-height:140px;">${escapeHtml(p.summary)}</textarea></div>
+        </div>${agentLinks(p.sources)}`;
+      if(p.notes) h += `<div class="reviewreason" style="margin-top:8px;">Agent notes: ${escapeHtml(p.notes)}</div>`;
+    } else {
+      h += `<div class="placement-name">${escapeHtml(p.issue || 'Finding')}</div>
+        <div class="placement-blurb">${escapeHtml(d.subject)}</div>
+        <div style="font-size:13.5px; margin-bottom:6px;">${escapeHtml(p.detail)}</div>
+        ${p.suggested_action ? `<div style="font-size:13px; margin-bottom:6px;"><strong>Suggested:</strong> ${escapeHtml(p.suggested_action)}</div>` : ''}${agentLinks(p.sources)}`;
+    }
+    if(agentStatus === 'pending'){
+      h += `<div class="reviewactions" style="margin-top:12px; flex-wrap:wrap;">
+        <button class="btn-publish" data-agent-act="approve">${d.kind === 'finding' ? 'Acknowledge' : 'Approve &amp; publish'}</button>
+        <button class="btn-danger" data-agent-act="reject">${d.kind === 'finding' ? 'Dismiss' : 'Reject'}</button>
+        ${d.kind !== 'finding' ? '<button class="btn-danger" data-agent-act="reject_dismiss">Reject &amp; dismiss question</button>' : ''}
+      </div>`;
+    } else {
+      h += `<div class="gaprow-meta" style="margin-top:8px;">${escapeHtml(d.status)}${d.reviewed_at ? ' ' + escapeHtml(new Date(d.reviewed_at).toLocaleString()) : ''}</div>`;
+    }
+    return h + '</div>';
+  }).join('');
+}
+
+document.getElementById('agentDraftsList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-agent-act]');
+  if(!btn) return;
+  const card = btn.closest('.agentcard');
+  const d = agentDrafts[+card.dataset.i];
+  const act = btn.dataset.agentAct;
+  const body = { id: d.id };
+  if(act === 'approve'){
+    if(d.kind === 'poi'){
+      body.places = []; body.include_only = [];
+      card.querySelectorAll('.agent-place').forEach((el, j) => {
+        body.places.push({
+          name: el.querySelector('.a-name').value, island: el.querySelector('.a-island').value,
+          category: el.querySelector('.a-cat').value, description: el.querySelector('.a-desc').value,
+          sources: ((d.payload.places || [])[j] || {}).sources || [],
+        });
+        if(el.querySelector('.a-inc').checked) body.include_only.push(j);
+      });
+      if(!body.include_only.length){ agentSay('Select at least one place.', true); return; }
+      if(!confirm(`Publish ${body.include_only.length} place(s) to AVA now?`)) return;
+    } else if(d.kind === 'reference'){
+      body.category = card.querySelector('.a-rcat').value;
+      body.title = card.querySelector('.a-rtitle').value;
+      body.summary = card.querySelector('.a-rsum').value;
+      if(!confirm('Publish this overview to AVA now?')) return;
+    }
+  } else {
+    if(!confirm(act === 'reject_dismiss' ? 'Reject and remove this question from the gaps list?' : 'Reject this draft?')) return;
+    body.dismiss_gap = act === 'reject_dismiss';
+  }
+  btn.disabled = true;
+  try{
+    const r = await agentApi(act === 'approve' ? 'approve' : 'reject', 'POST', body);
+    agentSay(act === 'approve' ? (r.published ? `Published ${r.published}.` : 'Acknowledged.') : 'Rejected.', false);
+    loadAgentDrafts();
+    loadGaps();
+  } catch(err){
+    agentSay(err.message, true);
+    btn.disabled = false;
+  }
+});
+
+[['agentTabPending','pending'],['agentTabApproved','approved'],['agentTabRejected','rejected']].forEach(([id, st]) => {
+  document.getElementById(id).addEventListener('click', () => { agentStatus = st; agentSay(''); loadAgentDrafts(); });
+});
+
+async function runAgentNow(agent, btn){
+  btn.disabled = true;
+  try{
+    const r = await agentApi('run', 'POST', { agent });
+    agentSay(r.message || `Data check done: ${r.summary && r.summary.new_findings != null ? r.summary.new_findings + ' new findings.' : 'ok'}`, false);
+    loadAgentDrafts();
+  } catch(err){ agentSay(err.message, true); }
+  btn.disabled = false;
+}
+document.getElementById('agentRunGap').addEventListener('click', e => runAgentNow('gap_research', e.currentTarget));
+document.getElementById('agentRunDq').addEventListener('click', e => runAgentNow('data_quality', e.currentTarget));
+
+// ------------------------------------------------------------- Events ---
+const EVENTS_API = '/.netlify/functions/admin-events';
+let evView = 'pending', evRows = [], evIslands = [], subPick = null;
+
+async function evApi(action, method, body, qs){
+  const res = await fetch(`${EVENTS_API}?action=${action}${qs ? '&' + qs : ''}`, {
+    method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
+  return data;
+}
+function evSay(text, isErr){
+  const el = document.getElementById('evMsg');
+  el.style.display = text ? 'block' : 'none';
+  el.style.color = isErr ? 'var(--danger)' : 'var(--live)';
+  el.textContent = text || '';
+}
+function evLocal(iso){
+  // Date and time as SVG shows them (UTC-4, no daylight saving).
+  const d = new Date(new Date(iso).getTime() - 4 * 3600 * 1000).toISOString();
+  return { date: d.slice(0, 10), time: d.slice(11, 16) };
+}
+
+async function loadEvents(){
+  const listEl = document.getElementById('evList');
+  try{
+    const data = await evApi('list_events', 'GET', null, `view=${evView}`);
+    evRows = data.events || [];
+    evIslands = data.islands || [];
+  } catch(err){
+    listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if(!evRows.length){
+    listEl.innerHTML = `<div class="empty-note">${evView === 'pending' ? 'No events waiting for review.' : 'No live or upcoming events.'}</div>`;
+    return;
+  }
+  listEl.innerHTML = evRows.map((e, i) => {
+    const l = evLocal(e.starts_at);
+    const end = e.ends_at ? evLocal(e.ends_at).time : '';
+    const org = e.directory_listings ? e.directory_listings.name : 'Unknown';
+    const until = e.directory_listings && e.directory_listings.subscribed_until;
+    return `<div class="agentcard" data-i="${i}">
+      <div class="gaprow-meta" style="white-space:normal; margin-bottom:8px;">${escapeHtml(org)}${until ? ' &middot; subscribed until ' + escapeHtml(until) : ' &middot; no active subscription'}</div>
+      ${e.flag_reason ? `<div class="reviewreason">${escapeHtml(e.flag_reason)}</div>` : ''}
+      <div class="draftfields">
+        <div class="full"><label>Title</label><input class="e-title" value="${escapeHtml(e.title)}"></div>
+        <div><label>Date</label><input type="date" class="e-date" value="${escapeHtml(l.date)}"></div>
+        <div><label>Start time${e.time_known ? '' : ' (not listed)'}</label><input type="time" class="e-time" value="${e.time_known ? escapeHtml(l.time) : ''}"></div>
+        <div><label>End time</label><input type="time" class="e-end" value="${escapeHtml(end)}"></div>
+        <div><label>Island</label><select class="e-island"><option value=""></option>${evIslands.map(x => `<option value="${escapeHtml(x)}"${x === e.island ? ' selected' : ''}>${escapeHtml(x)}</option>`).join('')}</select></div>
+        <div class="full"><label>Venue</label><input class="e-venue" value="${escapeHtml(e.venue || '')}"></div>
+        <div><label>Ticket price (EC$)</label><input type="number" step="0.01" class="e-price" value="${e.ticket_price != null ? escapeHtml(e.ticket_price) : ''}"></div>
+        <div><label>Ticket info</label><input class="e-info" value="${escapeHtml(e.ticket_info || '')}"></div>
+        <div class="full"><label>Description</label><textarea class="e-desc" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
+      </div>
+      ${/^https?:\/\//.test(e.flyer_url || '') ? `<div style="margin-bottom:8px;"><a href="${escapeHtml(e.flyer_url)}" target="_blank" rel="noopener noreferrer">View flyer</a></div>` : ''}
+      <div class="reviewactions" style="flex-wrap:wrap;">
+        <button class="btn-publish" data-ev-act="approve_event">${evView === 'pending' ? 'Approve &amp; publish' : 'Save changes'}</button>
+        <button class="btn-danger" data-ev-act="reject_event">${evView === 'pending' ? 'Reject' : 'Remove'}</button>
+      </div></div>`;
+  }).join('');
+}
+
+document.getElementById('evList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-ev-act]');
+  if(!btn) return;
+  const card = btn.closest('.agentcard');
+  const ev = evRows[+card.dataset.i];
+  const act = btn.dataset.evAct;
+  const body = { id: ev.id };
+  if(act === 'approve_event'){
+    body.edits = {
+      title: card.querySelector('.e-title').value, date: card.querySelector('.e-date').value,
+      time: card.querySelector('.e-time').value, end_time: card.querySelector('.e-end').value,
+      island: card.querySelector('.e-island').value, venue: card.querySelector('.e-venue').value,
+      ticket_price: card.querySelector('.e-price').value, ticket_info: card.querySelector('.e-info').value,
+      description: card.querySelector('.e-desc').value,
+    };
+  } else if(!confirm(evView === 'pending' ? 'Reject this event?' : 'Remove this event from AVA?')) return;
+  btn.disabled = true;
+  try{
+    await evApi(act, 'POST', body);
+    evSay(act === 'approve_event' ? 'Saved.' : 'Removed.', false);
+    loadEvents();
+  } catch(err){ evSay(err.message, true); btn.disabled = false; }
+});
+
+document.getElementById('evTabPending').addEventListener('click', () => { evView = 'pending'; evSay(''); loadEvents(); });
+document.getElementById('evTabUpcoming').addEventListener('click', () => { evView = 'upcoming'; evSay(''); loadEvents(); });
+
+async function loadSubscribers(){
+  const el = document.getElementById('subList');
+  try{
+    const data = await evApi('list_subscribers', 'GET');
+    const today = new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10);
+    if(!data.subscribers.length){ el.innerHTML = '<div class="empty-note">No subscribers yet.</div>'; return; }
+    el.innerHTML = data.subscribers.map(s => `<div class="gaprow">
+      <div><div class="gaprow-query">${escapeHtml(s.name)}</div>
+      <div class="gaprow-meta">${escapeHtml(s.category || '')}${s.island ? ' &middot; ' + escapeHtml(s.island) : ''} &middot; ${s.subscribed_until < today ? '<span style="color:var(--danger)">expired ' : 'until '}${escapeHtml(s.subscribed_until)}${s.subscribed_until < today ? '</span>' : ''}</div></div>
+      <button class="btn-secondary" data-sub-pick="${escapeHtml(s.id)}" data-sub-name="${escapeHtml(s.name)}" data-sub-until="${escapeHtml(s.subscribed_until)}">Change</button></div>`).join('');
+  } catch(err){ el.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+}
+
+function pickSubscriber(id, name, until){
+  subPick = { id, name };
+  document.getElementById('subSelected').textContent = name;
+  document.getElementById('subDateInput').value = until || '';
+  document.getElementById('subForm').style.display = 'block';
+  document.getElementById('subSearchResults').innerHTML = '';
+}
+document.getElementById('subList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sub-pick]');
+  if(b) pickSubscriber(b.dataset.subPick, b.dataset.subName, b.dataset.subUntil);
+});
+
+let subTimer = null;
+document.getElementById('subSearchInput').addEventListener('input', (e) => {
+  clearTimeout(subTimer);
+  const q = e.target.value.trim();
+  const box = document.getElementById('subSearchResults');
+  if(q.length < 2){ box.innerHTML = ''; return; }
+  subTimer = setTimeout(async () => {
+    try{
+      const data = await evApi('search_listings', 'GET', null, `q=${encodeURIComponent(q)}`);
+      box.innerHTML = (data.results || []).map(r => `<div class="result" data-sub-pick="${escapeHtml(r.id)}" data-sub-name="${escapeHtml(r.name)}" data-sub-until="${escapeHtml(r.subscribed_until || '')}">${escapeHtml(r.name)} <span style="color:var(--soft)">(${escapeHtml(r.category || '')}${r.island ? ', ' + escapeHtml(r.island) : ''})</span></div>`).join('') || '<div class="empty-note">No match.</div>';
+    } catch(err){ box.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+  }, 300);
+});
+document.getElementById('subSearchResults').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sub-pick]');
+  if(b) pickSubscriber(b.dataset.subPick, b.dataset.subName, b.dataset.subUntil);
+});
+document.getElementById('subCancelBtn').addEventListener('click', () => { subPick = null; document.getElementById('subForm').style.display = 'none'; });
+document.getElementById('subSaveBtn').addEventListener('click', async () => {
+  if(!subPick) return;
+  const until = document.getElementById('subDateInput').value;
+  if(!until && !confirm('No date entered. This switches the subscription off for ' + subPick.name + '. Continue?')) return;
+  try{
+    await evApi('set_subscription', 'POST', { listing_id: subPick.id, subscribed_until: until || null });
+    evSay('Subscription saved for ' + subPick.name + '.', false);
+    subPick = null;
+    document.getElementById('subForm').style.display = 'none';
+    document.getElementById('subSearchInput').value = '';
+    loadSubscribers();
+  } catch(err){ evSay(err.message, true); }
+});
 </script>
 </body>
 </html>
