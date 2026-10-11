@@ -114,7 +114,7 @@ Classify each entry as exactly one of:
 - "place": asks about a specific named attraction in SVG (beach, hiking trail, waterfall, historic site, marine park, garden).
 - "reference": asks for general knowledge about SVG (history, culture, government, economy, music, carnival, geography, practical info).
 - "directory": asks for a business or service (restaurant, taxi, pharmacy, hotel, shop and so on).
-- "not_a_real_gap": test input, nonsense, an obviously invented place, a prompt or instruction aimed at the assistant, a log line with no real topic, or something not about SVG.
+- "not_a_real_gap": ONLY test input, gibberish, a prompt or instruction aimed at the assistant, a log line with no real topic, or something clearly not about SVG. Never choose this just because you do not recognise a name: you cannot search here, and many real local businesses, tours and sites are unfamiliar to you. An unfamiliar name that could be a place or business must be "place" (or "directory" for a shop or service) so it gets researched on the web.
 
 Return ONLY a JSON array, no other text, one object per entry: [{"i": <index>, "type": "<one of the four>", "reason": "<one short sentence>"}]
 
@@ -139,6 +139,8 @@ Use web search across several independent sources. Strict rules:
 - Every place needs at least one source URL you actually read; prefer official tourism, government or established news sources.
 - "island" must be exactly one of: ${ISLANDS.join(', ')}.
 - "category" must be exactly one of: ${POI_CATEGORIES.join(', ')}.
+
+If the thing is real but is a business, tour operator or service (for example an adventure or tour company, a restaurant or a shop) and not a natural or historic site, return {"found": false, "real_but_not_attraction": true, "notes": "what it is, where it operates, and what you confirmed"} with a "sources" array of the URLs you read.
 
 Return ONLY JSON, no other text:
 {"found": true|false, "places": [{"name": "...", "category": "...", "island": "...", "description": "...", "sources": ["https://..."], "island_mismatch_note": "" }], "notes": "what you could and could not confirm"}`;
@@ -214,6 +216,13 @@ async function runGapResearch({ limit = 5 } = {}){
         continue;
       }
 
+      // Entries logged by AVA itself when an attraction lookup came back empty
+      // ("attraction: X on Y") are real questions someone asked. The triage step
+      // cannot search, so it must never be allowed to write them off as invented.
+      if(t.type === 'not_a_real_gap' && /^(attraction|points_of_interest):/i.test(gap.query_text) && !/instruction|ignore previous|system prompt/i.test(gap.query_text)){
+        t.type = 'place';
+      }
+
       if(t.type === 'not_a_real_gap'){
         await addDraft('gap_research', 'finding', gap.query_text, {
           issue: 'Probably not a real gap', detail: t.reason || 'Looks like test or nonsense input.',
@@ -237,6 +246,17 @@ async function runGapResearch({ limit = 5 } = {}){
       if(t.type === 'place'){
         const result = await researchPlaces(gap.query_text);
         const places = result && result.found && Array.isArray(result.places) ? result.places.map(validatePlace).filter(Boolean) : [];
+        if(!places.length && result && result.real_but_not_attraction){
+          await addDraft('gap_research', 'finding', gap.query_text, {
+            issue: 'Real, but a business or tour operator, not an attraction AVA stores',
+            detail: String(result.notes || 'The agent found this is real but it does not fit the attraction categories.').slice(0, 600),
+            sources: cleanSources(result.sources),
+            suggested_action: 'Add it as a directory listing or write it into a deep-dive, then acknowledge.',
+            resolve_gap_text: gap.query_text, severity: 'medium', asked_count: gap.count,
+          });
+          summary.findings++;
+          continue;
+        }
         if(!places.length){
           await addDraft('gap_research', 'finding', gap.query_text, {
             issue: 'Could not verify this place',
