@@ -1144,7 +1144,54 @@ async function searchKnowledgeBase(query){
   }
 }
 
+// Deterministic "own data first" helper for the chat loop. Looks for a point
+// of interest whose name matches what the person typed, tolerant of spacing,
+// hyphens and apostrophes ("moon hole" finds "Moonhole"). Deliberately has no
+// side effects: unlike queryPointsOfInterest it never logs a knowledge gap on
+// a miss, because it is run speculatively on short messages that are often
+// not about a place at all. Refuses to guess when the term is short or
+// matches many places, so it can't hijack generic words like "beach".
+async function findPointOfInterestByName(text){
+  try{
+    const normalize = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const target = normalize(text);
+    if(target.length < 5) return null;
+    const { data, error } = await supabase
+      .from('points_of_interest')
+      .select('name, category, island, description, source_url')
+      .eq('active', true)
+      .limit(500);
+    if(error || !data) return null;
+    const hits = data.filter(row => normalize(row.name).includes(target));
+    if(!hits.length || hits.length > 3) return null;
+    return hits;
+  } catch(err){
+    console.error('findPointOfInterestByName error (non-fatal):', err.message);
+    return null;
+  }
+}
+
+// Which published long-form documents exist for a category — titles and slugs
+// only, never bodies, so it is cheap and safe to call on every reference lookup.
+async function listDeepDives(category){
+  try{
+    if(!category) return [];
+    const { data, error } = await supabase
+      .from('knowledge_deep_dives')
+      .select('slug, title')
+      .eq('category', category)
+      .eq('review_status', 'published')
+      .order('title', { ascending: true });
+    if(error) throw error;
+    return data || [];
+  } catch(err){
+    console.error('listDeepDives error (non-fatal):', err.message);
+    return [];
+  }
+}
+
 module.exports = {
+  findPointOfInterestByName, listDeepDives,
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,

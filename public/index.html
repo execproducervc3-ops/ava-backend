@@ -225,6 +225,13 @@
 
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   .deepdivecard{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--teal-soft);}
+  .deepdivebtn + .deepdivebtn{margin-top:6px;}
+  .deepdivebtn:disabled{opacity:.7;cursor:default;}
+  .deepdivedoc{margin-top:10px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px 14px;max-height:60vh;overflow-y:auto;overscroll-behavior:contain;font-size:14px;line-height:1.55;}
+  .deepdivedoc h4{font-family:'Fraunces',serif;font-size:16px;margin:16px 0 6px;}
+  .deepdivedoc p{margin:0 0 10px;}
+  .deepdivedoc-cap{position:sticky;top:-12px;background:var(--card);display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--soft);padding:6px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line);}
+  .deepdivedoc-close{white-space:nowrap;flex-shrink:0;background:none;border:none;color:var(--flag-blue);cursor:pointer;font-size:12px;font-weight:600;padding:2px 4px;}
   .deepdivecard-lbl{font-size:12px;color:var(--soft);margin-bottom:8px;}
   .deepdivebtn{width:100%;background:var(--flag-blue);color:#fff;border:none;border-radius:10px;padding:11px 14px;font-size:13.5px;font-weight:600;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;}
   .dircard-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);padding:9px 12px 6px;}
@@ -486,6 +493,60 @@ function renderDirectoryResults(results){
     </div>`).join('');
   return `<div class="dircard"><div class="dircard-lbl">From AVA's directory</div>${rows}</div>`;
 }
+
+function renderDeepDiveCard(list){
+  const buttons = list.map(d => `<button type="button" class="deepdivebtn" data-slug="${escapeHtml(d.slug)}"><span>&#128214;</span><span>Read the full text: ${escapeHtml(d.title)}</span></button>`).join('');
+  return `<div class="deepdivecard"><div class="deepdivecard-lbl">Want everything AVA has on this?</div>${buttons}<div class="deepdivehost"></div></div>`;
+}
+
+// Plain-text document body -> safe HTML. Everything is escaped first; only
+// headings, bold and paragraph breaks are then re-introduced.
+function renderDocText(body){
+  return escapeHtml(String(body || '')).split(/\n{2,}/).map(block => {
+    const lines = block.split('\n');
+    let out = '';
+    while(lines.length && /^#{1,4}\s+/.test(lines[0])){
+      out += `<h4>${lines.shift().replace(/^#{1,4}\s+/, '')}</h4>`;
+    }
+    const rest = lines.join('\n').trim();
+    if(rest) out += `<p>${rest.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</p>`;
+    return out;
+  }).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const closeBtn = e.target.closest && e.target.closest('.deepdivedoc-close');
+  if(closeBtn){
+    const card = closeBtn.closest('.deepdivecard');
+    card.querySelector('.deepdivehost').innerHTML = '';
+    card.querySelectorAll('.deepdivebtn').forEach(b => { b.dataset.open = '0'; });
+    return;
+  }
+  const btn = e.target.closest && e.target.closest('.deepdivebtn');
+  if(!btn || btn.disabled) return;
+  const card = btn.closest('.deepdivecard');
+  const host = card.querySelector('.deepdivehost');
+  if(btn.dataset.open === '1'){ host.innerHTML = ''; btn.dataset.open = '0'; return; }
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>Loading&hellip;</span>';
+  try{
+    const res = await fetch('/.netlify/functions/get-deep-dive?slug=' + encodeURIComponent(btn.dataset.slug));
+    if(!res.ok) throw new Error('status ' + res.status);
+    const doc = (await res.json()).document;
+    if(!doc || !doc.body) throw new Error('empty');
+    card.querySelectorAll('.deepdivebtn').forEach(b => { b.dataset.open = '0'; });
+    const verified = doc.last_verified_at ? ' &middot; verified ' + escapeHtml(new Date(doc.last_verified_at).toLocaleDateString()) : '';
+    const src = /^https?:\/\//.test(doc.source_url || '') ? `<p><a class="inlinelink" href="${escapeHtml(doc.source_url)}" target="_blank" rel="noopener noreferrer">Source</a></p>` : '';
+    host.innerHTML = `<div class="deepdivedoc"><div class="deepdivedoc-cap"><span>Source text from AVA's knowledge base${verified}</span><button type="button" class="deepdivedoc-close">Close</button></div>${renderDocText(doc.body)}${src}</div>`;
+    btn.dataset.open = '1';
+  } catch(err){
+    host.innerHTML = '<div class="deepdivecard-lbl" style="margin:8px 0 0">Couldn&rsquo;t load the full text just now &mdash; please try again in a moment.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
 
 function renderLuckyNumbers(lucky){
   let ballsHtml = '';
@@ -818,7 +879,11 @@ async function handleSend(text){
     const data = await res.json();
     thinkingEl.remove();
     const finalText = data.text || "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    appendMessage('ava', finalText, data.linkCard, data.retailResults, data.newsResults, data.ferryResults, data.luckyNumbers, data.directoryResults);
+    const avaWrap = appendMessage('ava', finalText, data.linkCard, data.retailResults, data.newsResults, data.ferryResults, data.luckyNumbers, data.directoryResults);
+    if(data.deepDives && data.deepDives.length){
+      const bubble = avaWrap && avaWrap.querySelector('.bubble');
+      if(bubble) bubble.insertAdjacentHTML('beforeend', renderDeepDiveCard(data.deepDives));
+    }
     history.push({ role: 'assistant', content: finalText });
     await saveHistory();
   } catch(err){

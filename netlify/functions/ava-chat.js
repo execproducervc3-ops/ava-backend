@@ -28,7 +28,7 @@ function buildSystemPrompt(){
 Today's date is ${todayISO} (${todayName}). Use this to resolve relative date references like "tomorrow" or "this Saturday" into the correct day of the week before calling any tool that needs one.
 
 Rules:
-- Use web search for anything current or specific: prices, hours, events, news. Don't guess at facts that could be out of date.
+- AVA's own tools come first: for a named place, business, product, fare, schedule, news item or reference topic, call the matching AVA tool (query_points_of_interest, query_directory, query_retail_price, query_news, query_reference_knowledge, search_knowledge_base and so on) BEFORE any web search. Use web search only for things AVA's tools don't cover, for genuinely live details (current prices, hours, events), or to verify after AVA's own data came back empty. Don't guess at facts that could be out of date.
 - For questions about grocery, retail, or product prices at specific stores/retailers, use the query_retail_price tool first — it checks AVA's own database of prices submitted directly by real retailers. This data is early and limited (only a handful of retailers have submitted so far), so if it returns nothing or very little, say so honestly rather than presenting it as a complete market picture, and you may supplement with web search for general context.
 - This applies just as much to "where can I find/buy X" or "who sells X" phrasing as it does to direct price questions — check query_retail_price for the specific product BEFORE falling back to query_directory or general web suggestions like Facebook Marketplace or generic hardware stores. AVA's own verified data is more useful than a generic pointer, and takes priority when it exists.
 - For a short, product-name-like query (e.g. "rims", "rice", "phone charger"), always attempt a direct search first — query_retail_price and/or query_directory as relevant — rather than presenting a multiple-choice clarifying question. Only ask a clarifying question if the search genuinely comes back empty or too ambiguous to act on; don't ask one as a first response to a query that could just be searched directly.
@@ -150,7 +150,7 @@ const TOOLS = [
   },
   {
     name: 'query_deep_dive',
-    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Call with just a category — this immediately returns one full document's real text, ready to read and summarize from directly. If more than one document exists for that category, the result will name the others; only fetch one of those by its slug if the person specifically asks for that particular one — never fetch more than one full document per request, since only one can ever be returned. Only use this tool at all when real detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
+    description: "Look up genuinely long-form, detailed reference documents AVA has on a topic — full histories, complete year-by-year records, in-depth accounts — for when query_reference_knowledge's short overview genuinely isn't enough and the person wants real depth. Call with just a category — this immediately returns one full document's real text, ready to read and summarize from directly. If more than one document exists for that category, the result will name the others; only fetch one of those by its slug if the person specifically asks for that particular one — never fetch more than one full document per request, since only one can ever be returned. The person automatically gets a button under your reply that opens the COMPLETE document directly, so you only receive an excerpt here: give a brief summary of the highlights and point them to the button — do not try to retell the whole document. Only use this tool at all when real detail is actually wanted; for a quick, casual question, query_reference_knowledge is almost always the better fit.",
     input_schema: {
       type: 'object',
       properties: {
@@ -231,7 +231,7 @@ const TOOLS = [
   },
   {
     name: 'query_points_of_interest',
-    description: "Look up real beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across Saint Vincent and the Grenadines — genuinely researched, named places, not general reference knowledge. If the person names a SPECIFIC place, always pass it as place_name — otherwise this returns an unfiltered list of the whole category, which is rarely what they actually asked for. Use this for 'what beaches should I visit' or 'best hikes on Saint Vincent' type questions. Coverage is a solid first pass, not exhaustive. IMPORTANT: if nothing comes back for a named place, don't just say 'not found' — actively check whether the name is real but attached to the wrong island or category in what the person asked (e.g. a real place that exists elsewhere in SVG, not where they said). If so, name that mismatch directly and offer the correct, factual detail you actually know. If you don't know of any real match at all, say so honestly rather than guessing or inventing one.",
+    description: "Look up real beaches, hiking trails, waterfalls, historic sites, gardens, and marine parks across Saint Vincent and the Grenadines — genuinely researched, named places, not general reference knowledge. Always use this BEFORE any web search when a beach, trail, waterfall, historic site, garden or marine park is named or asked about. If the person names a SPECIFIC place, always pass it as place_name — otherwise this returns an unfiltered list of the whole category, which is rarely what they actually asked for. Use this for 'what beaches should I visit' or 'best hikes on Saint Vincent' type questions. Coverage is a solid first pass, not exhaustive. IMPORTANT: if nothing comes back for a named place, don't just say 'not found' — actively check whether the name is real but attached to the wrong island or category in what the person asked (e.g. a real place that exists elsewhere in SVG, not where they said). If so, name that mismatch directly and offer the correct, factual detail you actually know. If you don't know of any real match at all, say so honestly rather than guessing or inventing one.",
     input_schema: {
       type: 'object',
       properties: {
@@ -419,6 +419,37 @@ exports.handler = async (event) => {
   try{
     let messages = incoming.slice();
     let budgetExceeded = false;
+    let deepDives = null;
+    const addDeepDive = (slug, title) => {
+      if(!slug) return;
+      deepDives = deepDives || [];
+      if(!deepDives.some(d => d.slug === slug)) deepDives.push({ slug, title: title || slug });
+    };
+
+    // "Own data first", enforced in code rather than left to prompt wording.
+    // A short message that names one of AVA's own researched places ("moon
+    // hole") is matched against the places table BEFORE Claude runs, and the
+    // match is handed to Claude as context. That removes the lookup round
+    // trip and the temptation to start a slow web search for something AVA
+    // already has. Request-scoped only: stored history is never altered.
+    try{
+      const lastMsg = messages[messages.length - 1];
+      if(lastMsg && lastMsg.role === 'user' && typeof lastMsg.content === 'string' && lastMsg.content.length <= 60){
+        const cleaned = lastMsg.content.trim()
+          .replace(/^(tell me about|what is|what's|where is|where's|info on|information on|show me|about)\s+/i, '')
+          .replace(/[?!.]+$/, '').trim();
+        if(cleaned && cleaned.split(/\s+/).length <= 5){
+          const hits = await avaCore.findPointOfInterestByName(cleaned);
+          if(hits){
+            const ctx = hits.map(p => `"${p.name}" (${String(p.category || '').replace('_', ' ')}, ${p.island}): ${String(p.description || '').slice(0, 800)}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n');
+            messages = messages.slice(0, -1).concat([{ role: 'user', content: `${lastMsg.content}\n\n[Context from AVA's own verified places database, already looked up for this message — answer from it directly and do not search the web: \n${ctx}]` }]);
+            console.log(`Prefetch matched ${hits.length} place(s) for "${cleaned}"`);
+          }
+        }
+      }
+    } catch(prefetchErr){
+      console.error('place prefetch failed (non-fatal):', prefetchErr.message);
+    }
     let finalText = '';
     let linkCard = null;
     let retailResults = [];
@@ -671,6 +702,10 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
 
           else if(toolUse.name === 'query_reference_knowledge'){
             const refData = await avaCore.queryReferenceKnowledge(toolUse.input.category);
+            if(refData.result){
+              const dds = await avaCore.listDeepDives(toolUse.input.category);
+              dds.forEach(d => addDeepDive(d.slug, d.title));
+            }
             content = refData.result
               ? `${refData.result.title}: ${refData.result.summary} [Source: ${refData.result.source_url || 'unknown'}, last verified ${refData.result.last_verified_at ? new Date(refData.result.last_verified_at).toDateString() : 'unknown'}]`
               : (refData.note || 'No reference content available.');
@@ -703,12 +738,18 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
                 // for both the tool-decision call and the final synthesis —
                 // a combination never exercised by earlier fresh-conversation
                 // testing, which only ever measured the document in isolation.
-                const MAX_DEEP_DIVE_CHARS = 6000;
+                addDeepDive(deepData.result.slug, deepData.result.title);
+                (deepData.others || []).forEach(o => addDeepDive(o.slug, o.title));
+                // Only an excerpt goes to Claude. The complete document is
+                // served by a button that reads it straight from the database
+                // (no Claude involved), so the answer here stays short and
+                // fast instead of a long retelling that risks the timeout.
+                const MAX_DEEP_DIVE_CHARS = 2500;
                 let bodyText = deepData.result.body;
                 let truncationNote = '';
                 if(bodyText.length > MAX_DEEP_DIVE_CHARS){
                   bodyText = bodyText.slice(0, MAX_DEEP_DIVE_CHARS);
-                  truncationNote = `\n\n[Truncated for length — this document continues beyond what's shown here. Say so honestly if summarizing, rather than implying this is the complete document.]`;
+                  truncationNote = `\n\n[This is only an excerpt. The person is being shown a button under your reply that opens the complete document, so write a brief summary (about 150 words) of the highlights and tell them they can tap the button below to read all of it. Do not say or imply this excerpt is the whole document.]`;
                 }
                 content = `=== ${deepData.result.title} ===\n${bodyText}${truncationNote}\n[Source: ${deepData.result.source_url || 'unknown'}]${othersNote}`;
               } else {
@@ -732,15 +773,17 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
               if(hasDeepBudget){
                 deepDiveFullTextCount++;
                 const d = searchData.deepDiveMatch;
-                const MAX_DEEP_DIVE_CHARS = 6000;
+                addDeepDive(d.slug, d.title);
+                const MAX_DEEP_DIVE_CHARS = 2500;
                 let bodyText = d.body;
                 let truncationNote = '';
                 if(bodyText.length > MAX_DEEP_DIVE_CHARS){
                   bodyText = bodyText.slice(0, MAX_DEEP_DIVE_CHARS);
-                  truncationNote = `\n\n[Truncated for length — say so honestly if summarizing, rather than implying this is the complete document.]`;
+                  truncationNote = `\n\n[Excerpt only. The person is being shown a button under your reply that opens the complete document — summarize briefly and point them to it. Do not imply this excerpt is the whole document.]`;
                 }
                 parts.push(`Deep-dive document (${d.category}): === ${d.title} ===\n${bodyText}${truncationNote}\n[Source: ${d.source_url || 'unknown'}]`);
               } else {
+                addDeepDive(searchData.deepDiveMatch.slug, searchData.deepDiveMatch.title);
                 parts.push(`A matching deep-dive document ("${searchData.deepDiveMatch.title}") also exists, but a full document has already been retrieved this request — mention it by name if relevant, don't fetch its full text.`);
               }
             }
@@ -772,6 +815,15 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
         continue;
       }
 
+      if(data.stop_reason === 'pause_turn'){
+        // A server-side web search paused the turn partway. Hand the partial
+        // response straight back so it can finish — previously this fell
+        // through and ended the request, sometimes with no text at all. The
+        // loop cap and the time budget still bound how long this can go on.
+        messages = messages.concat([{ role: 'assistant', content: data.content }]);
+        continue;
+      }
+
       if(data.stop_reason === 'tool_use'){
         // a web_search call resolves within the same response chain server-side (Anthropic-hosted);
         // if we land here it means no further custom tool is pending — stop rather than loop forever.
@@ -789,7 +841,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       finalText = finalText ? `${finalText}\n\n_${slowNote}_` : slowNote;
     }
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives }) };
   } catch(err){
     console.error('ava-chat error:', err);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
