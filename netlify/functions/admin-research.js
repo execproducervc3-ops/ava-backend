@@ -23,9 +23,9 @@ async function callClaudeWithSearch(prompt){
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5-5',
       max_tokens: 2000,
-      tools: [{ type: 'web_search_20260209', name: 'web_search' }, { type: 'code_execution_20260120', name: 'code_execution' }],
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }, { type: 'code_execution_20260120', name: 'code_execution' }],
       messages: [{ role: 'user', content: prompt }],
     }),
   });

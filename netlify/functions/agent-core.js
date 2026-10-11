@@ -19,7 +19,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'claude-sonnet-5-5';
 
 const POI_CATEGORIES = ['beach', 'hiking_trail', 'waterfall', 'historic_site', 'marine_park', 'garden'];
 const REFERENCE_CATEGORIES = ['geography', 'history', 'government', 'culture', 'economy', 'practical', 'indigenous_peoples', 'music', 'motorsports', 'vincy_mas'];
@@ -42,7 +42,7 @@ async function claudeCall(messages, { search }){
   const body = { model: MODEL, max_tokens: 2500, messages };
   if(search){
     // Same tool configuration admin-research.js already runs in production.
-    body.tools = [{ type: 'web_search_20260209', name: 'web_search' }, { type: 'code_execution_20260120', name: 'code_execution' }];
+    body.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }, { type: 'code_execution_20260120', name: 'code_execution' }];
   }
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

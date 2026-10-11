@@ -196,7 +196,7 @@ async function extractWithClaude(base64, mediaType, caption) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5-5',
       max_tokens: 1000,
       messages: [{
         role: 'user',
@@ -383,7 +383,7 @@ async function extractEventWithClaude(base64, mediaType, caption) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5-5',
       max_tokens: 800,
       messages: [{
         role: 'user',
