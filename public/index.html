@@ -356,7 +356,7 @@
   .palm-fade .tier-light{opacity:0; transition-delay:0.5s;}
   .palm-left{left:0;}
   .palm-right{right:0;}
-  body.home .palm-deco{display:block;}
+  /* Side fronds removed from the home screen. To bring them back, restore: body.home .palm-deco{display:block;} */
   @media (max-width:1400px){ .palm-left, .palm-right{display:none !important;} }
   #flyEl{transition:opacity 0.2s ease;}
 
@@ -712,7 +712,7 @@ function refreshPalmDecoration(){
 // Initial render, then the original slower, ambient regeneration cycle.
 // Drawn once and left still (no 14-second redraw). To restore the slow
 // ambient redraw, add back: setInterval(refreshPalmDecoration, 14000);
-refreshPalmDecoration();
+// refreshPalmDecoration(); // fronds disabled
 
 // Dark mode — real toggle with persistence. This is a live, deployed site
 // (not a Claude.ai artifact), so localStorage is the correct, standard way
