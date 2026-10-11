@@ -923,9 +923,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
     console.error('ava-chat error:', err);
     // TEMPORARY DIAGNOSTIC: show Anthropic API rejections in the chat so the
     // exact bad setting is visible. Remove once the cost settings are confirmed.
-    if(/^Anthropic request failed/.test(err.message)){
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: 'DEBUG (temporary): ' + err.message.slice(0, 600) }) };
-    }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: 'DEBUG (temporary): ' + String(err && err.message).slice(0, 500) + ' | ' + String(err && err.stack).split('\n').slice(1, 4).join(' <- ').slice(0, 400) }) };
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
   }
 };
