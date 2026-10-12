@@ -996,7 +996,7 @@ function photoShell(){
   root.innerHTML = `
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center;">
       <input id="photoSearch" type="search" placeholder="Search business name" style="flex:1; min-width:160px;">
-      <label style="display:flex; gap:6px; align-items:center; font-size:14px;"><input type="checkbox" id="photoOnlyNew"> Needs review</label>
+      <span style="display:flex; gap:6px; align-items:center; font-size:14px; white-space:nowrap;"><input type="checkbox" id="photoOnlyNew" style="width:auto;"> <label for="photoOnlyNew" style="text-transform:none; letter-spacing:0; margin:0;">Needs review</label></span>
     </div>
     <div id="photoBizList"></div>
     <div id="photoBizPager" style="display:flex; gap:8px; align-items:center; margin-top:10px;"></div>`;
@@ -1013,7 +1013,11 @@ async function loadPhotoTracker(){
   const pager = document.getElementById('photoBizPager');
   const qs = `action=list_photo_businesses&page=${photoState.page}&q=${encodeURIComponent(photoState.q)}${photoState.onlyNew ? '&only_unreviewed=1' : ''}`;
   const res = await fetch(`${RETAIL_API}?${qs}`, { headers: { 'X-Admin-Secret': secret } });
-  if(!res.ok){ list.innerHTML = '<div class="empty-note">Could not load uploaded photos.</div>'; pager.innerHTML = ''; return; }
+  if(!res.ok){
+    const err = await res.json().catch(() => ({}));
+    list.innerHTML = `<div class="empty-note">Could not load uploaded photos (${res.status}${err.error ? ': ' + escapeHtml(err.error) : ''}). If this mentions a missing function, run migration-042-photo-admin.sql in Supabase.</div>`;
+    pager.innerHTML = ''; return;
+  }
   const data = await res.json();
   const biz = data.businesses || [];
   if(!biz.length){
