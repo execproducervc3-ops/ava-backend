@@ -465,6 +465,12 @@ async function handleEventSubmission(message, fromId, chatId, profile) {
     await sendMessage(chatId, "Event listings are for AVA subscribers, and your subscription isn't active yet. Contact AVA to subscribe, and once it's switched on, send this flyer again.");
     return;
   }
+  // Do not spend a flyer reading on a promoter whose first event is still waiting for review.
+  const evGate = await promoterVettingState(listingId);
+  if (!evGate.vetted && evGate.pending) {
+    await sendMessage(chatId, EVENT_FIRST_PENDING_MSG);
+    return;
+  }
 
   const largest = message.photo[message.photo.length - 1];
   const { base64, mediaType } = await getTelegramFileBase64(largest.file_id);
@@ -498,6 +504,17 @@ function describeEvent(row) {
 }
 
 // YES from an events account: publishes the latest draft, or holds it for review.
+// Same rule for events: nothing goes live until you have approved one from this promoter.
+async function promoterVettingState(listingId) {
+  const { count: approved } = await supabase.from('events').select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId).in('review_status', ['approved', 'auto_published']);
+  if (approved) return { vetted: true, pending: false };
+  const { count: pending } = await supabase.from('events').select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId).eq('review_status', 'pending_review');
+  return { vetted: false, pending: !!pending };
+}
+const EVENT_FIRST_PENDING_MSG = "Your first event is still being reviewed. Once it's approved you can send more, and after that your events go live straight away. No action needed from you.";
+
 async function confirmEventDraft(fromId, chatId, profile) {
   const listingId = profile.directory_listing_id;
   const { data: draft } = listingId ? await supabase.from('events').select('*')
@@ -516,16 +533,54 @@ async function confirmEventDraft(fromId, chatId, profile) {
     await sendMessage(chatId, 'That event date has already passed. Send a new flyer.');
     return;
   }
-  const { count: priorCount } = await supabase.from('events').select('id', { count: 'exact', head: true })
-    .eq('listing_id', listingId).in('review_status', ['auto_published', 'pending_review', 'approved']);
-  const flag = !priorCount ? 'First event from this promoter, not yet vetted. Review once, then future events publish normally.' : draft.flag_reason;
+  const evState = await promoterVettingState(listingId);
+  if (!evState.vetted && evState.pending) {
+    await sendMessage(chatId, EVENT_FIRST_PENDING_MSG);
+    return;
+  }
+  const flag = !evState.vetted ? 'First event from this promoter, not yet vetted. Review once, then future events publish normally.' : draft.flag_reason;
   await supabase.from('events').update({ review_status: flag ? 'pending_review' : 'auto_published', flag_reason: flag || null }).eq('id', draft.id);
   await sendMessage(chatId, flag
     ? 'Thanks, this one is waiting for a quick review before it goes live. You will not need to wait next time unless something is unclear.'
     : 'Done, your event is live. AVA can now tell people about it.');
 }
 
+// Prices are for subscribers. Before spending anything on reading a photo or
+// spreadsheet, check the retailer's listing (if it exists yet) is subscribed.
+// A brand-new business has no listing until its first YES, where the same
+// check runs again after the listing is created.
+// "Vetted" means you have approved something from this business. Until then
+// everything it sends is held, and it cannot pile up more submissions on top
+// of one that is still waiting for review.
+async function retailerVettingState(listingId) {
+  const { count: approved } = await supabase.from('retail_offers').select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId).in('review_status', ['approved', 'auto_published']);
+  if (approved) return { vetted: true, pending: false };
+  const { count: pending } = await supabase.from('retail_offers').select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId).eq('review_status', 'pending_review');
+  return { vetted: false, pending: !!pending };
+}
+const FIRST_PENDING_MSG = "Your first submission is still being reviewed. Once it's approved you can send more, and after that your updates go live straight away. No action needed from you.";
+
+const NOT_SUBSCRIBED_MSG = "Price listings are for AVA subscribers, and your subscription isn't active yet. Contact AVA to subscribe. Once it's switched on, send your prices again.";
+async function retailerSubscribedOrReply(fromId, chatId) {
+  const { data: profile } = await supabase.from('retailer_profile').select('directory_listing_id').eq('telegram_user_id', fromId).maybeSingle();
+  if (!profile || !profile.directory_listing_id) return true; // checked at confirm, once the listing exists
+  const { data: listing } = await supabase.from('directory_listings').select('subscribed_until').eq('id', profile.directory_listing_id).maybeSingle();
+  if (!listing || !listing.subscribed_until || listing.subscribed_until < svgToday()) {
+    await sendMessage(chatId, NOT_SUBSCRIBED_MSG);
+    return false;
+  }
+  const state = await retailerVettingState(profile.directory_listing_id);
+  if (!state.vetted && state.pending) {
+    await sendMessage(chatId, FIRST_PENDING_MSG);
+    return false;
+  }
+  return true;
+}
+
 async function handlePhotoSubmission(message, fromId, chatId) {
+  if (!(await retailerSubscribedOrReply(fromId, chatId))) return;
   const largest = message.photo[message.photo.length - 1];
   const { base64, mediaType } = await getTelegramFileBase64(largest.file_id);
   const caption = message.caption || '';
@@ -559,6 +614,7 @@ async function handlePhotoSubmission(message, fromId, chatId) {
 }
 
 async function handleXlsSubmission(message, fromId, chatId) {
+  if (!(await retailerSubscribedOrReply(fromId, chatId))) return;
   const { base64 } = await getTelegramFileBase64(message.document.file_id);
   const caption = message.caption || '';
   const tags = extractHashtags(caption);
@@ -757,7 +813,13 @@ async function confirmLatestDraft(fromId, chatId) {
   // listingId is fully resolved — works correctly whether this was a
   // returning retailer, a claimed existing match, or a brand new listing,
   // without threading the value through three separate branches above.
-  const { data: listingRow } = await supabase.from('directory_listings').select('category').eq('id', listingId).maybeSingle();
+  const { data: listingRow } = await supabase.from('directory_listings').select('category, subscribed_until').eq('id', listingId).maybeSingle();
+  if (!listingRow || !listingRow.subscribed_until || listingRow.subscribed_until < svgToday()) {
+    // The draft stays pending, so once the subscription is switched on the
+    // retailer only has to reply YES again.
+    await sendMessage(chatId, NOT_SUBSCRIBED_MSG.replace('send your prices again', 'reply YES again to publish what you sent'));
+    return;
+  }
   const listingType = listingTypeForCategory(listingRow ? listingRow.category : null);
 
   // Bulk operations instead of N sequential round-trips per item — a photo
@@ -804,12 +866,14 @@ async function confirmLatestDraft(fromId, chatId) {
   // Checked once per confirmation, not per item — this must run before the
   // current batch inserts, or it would just see its own rows and never
   // correctly detect a genuinely new retailer's first submission.
-  const { data: priorOffers } = await supabase
-    .from('retail_offers')
-    .select('id')
-    .eq('listing_id', listingId)
-    .limit(1);
-  const isFirstEverSubmission = !priorOffers || !priorOffers.length;
+  const vetting = await retailerVettingState(listingId);
+  if (!vetting.vetted && vetting.pending) {
+    // A first submission is already waiting for review. Do not stack another
+    // one on top; the draft stays pending.
+    await sendMessage(chatId, FIRST_PENDING_MSG);
+    return;
+  }
+  const isFirstEverSubmission = !vetting.vetted;
   const flaggedItems = [];
 
   const offersToInsert = items.map((item, idx) => {
@@ -832,7 +896,7 @@ async function confirmLatestDraft(fromId, chatId) {
       unit: item.unit,
       standard_unit_type: normalized.standard_unit_type,
       price_per_standard_unit: normalized.price_per_standard_unit,
-      review_status: flagReason ? 'pending_review' : 'auto_published',
+      review_status: (flagReason || isFirstEverSubmission) ? 'pending_review' : 'auto_published',
       source_type: draft.source_type || 'caption',
       source_submission_id: draft.id,
       photo_url: draft.photo_url,
@@ -873,9 +937,11 @@ async function confirmLatestDraft(fromId, chatId) {
 
   await supabase.from('submission_draft').update({ status: 'confirmed' }).eq('id', draft.id);
 
-  const publishedCount = draft.items.length - flaggedItems.length;
+  const publishedCount = isFirstEverSubmission ? 0 : draft.items.length - flaggedItems.length;
   let message;
-  if(flaggedItems.length === 0){
+  if(isFirstEverSubmission){
+    message = `Got it. ${draft.items.length} item${draft.items.length === 1 ? '' : 's'} received. As a new business, your first submission gets a quick review before it's visible to customers. Once it's approved, your updates will go live straight away.`;
+  } else if(flaggedItems.length === 0){
     message = `Published ${draft.items.length} item${draft.items.length === 1 ? '' : 's'}. Thanks!`;
   } else if(publishedCount === 0){
     message = `Got it — ${draft.items.length} item${draft.items.length === 1 ? '' : 's'} received, but this is your first submission so it needs a quick review before it's visible to customers. You'll be all set once that's done — no action needed from you.`;
@@ -890,3 +956,4 @@ exports.listingTypeForCategory = listingTypeForCategory;
 exports.confirmLatestDraft = confirmLatestDraft;
 exports.computeNormalization = computeNormalization;
 exports.handlePhotoSubmission = handlePhotoSubmission;
+exports.confirmEventDraft = confirmEventDraft;

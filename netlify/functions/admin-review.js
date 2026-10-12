@@ -8,6 +8,27 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+// A new business's first submission is held in full but shows you ONE review
+// card (on its first item). Approving or rejecting that card decides the whole
+// batch. Items that were flagged on their own merits have their own cards and
+// are left alone.
+async function resolveFirstBatchSiblings(queueId, offerId, outcome) {
+  const { data: q } = await supabase.from('review_queue').select('reason').eq('id', queueId).maybeSingle();
+  if (!q || !/^First submission from a new retailer/.test(q.reason || '')) return;
+  const { data: offer } = await supabase.from('retail_offers').select('listing_id, source_submission_id').eq('id', offerId).maybeSingle();
+  if (!offer || !offer.source_submission_id) return;
+  const { data: siblings } = await supabase.from('retail_offers').select('id')
+    .eq('listing_id', offer.listing_id).eq('source_submission_id', offer.source_submission_id)
+    .eq('review_status', 'pending_review').neq('id', offerId);
+  const ids = (siblings || []).map(s => s.id);
+  if (!ids.length) return;
+  const { data: ownCards } = await supabase.from('review_queue').select('reference_id')
+    .eq('item_type', 'submission').eq('status', 'pending').in('reference_id', ids);
+  const hasOwnCard = new Set((ownCards || []).map(c => c.reference_id));
+  const releasable = ids.filter(id => !hasOwnCard.has(id));
+  if (releasable.length) await supabase.from('retail_offers').update({ review_status: outcome }).in('id', releasable);
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
@@ -81,6 +102,7 @@ exports.handler = async (event) => {
 
       const { error: updateErr } = await supabase.from('retail_offers').update(updates).eq('id', body.offer_id);
       if (updateErr) throw updateErr;
+      await resolveFirstBatchSiblings(body.queue_id, body.offer_id, 'approved');
 
       await supabase.from('review_queue').update({ status: 'approved', resolved_at: new Date().toISOString() }).eq('id', body.queue_id);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
@@ -92,6 +114,7 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'queue_id and offer_id are required' }) };
       }
       await supabase.from('retail_offers').update({ review_status: 'rejected' }).eq('id', body.offer_id);
+      await resolveFirstBatchSiblings(body.queue_id, body.offer_id, 'rejected');
       await supabase.from('review_queue').update({ status: 'rejected', resolved_at: new Date().toISOString() }).eq('id', body.queue_id);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
     }
