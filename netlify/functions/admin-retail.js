@@ -32,6 +32,22 @@ function computeNormalization(price, unitText){
   return { standard_unit_type: parsed.type, price_per_standard_unit: +(price / parsed.qtyInStandardUnit).toFixed(4) };
 }
 
+// Removes a stored photo file, but only if no price row or sponsored placement
+// still points at it. Returns true if the file was removed.
+async function removePhotoFileIfUnused(url, ignoreOfferIds){
+  if(!url) return false;
+  const match = String(url).match(/submission-photos\/([^?#]+)/);
+  if(!match) return false;
+  const { data: others } = await supabase.from('retail_offers').select('id').eq('photo_url', url).limit(20);
+  const stillUsed = (others || []).some(o => !(ignoreOfferIds || []).includes(o.id));
+  if(stillUsed) return false;
+  const { data: sp } = await supabase.from('sponsored_placements').select('id').eq('photo_url', url).limit(1);
+  if(sp && sp.length) return false;
+  const { error } = await supabase.storage.from('submission-photos').remove([decodeURIComponent(match[1])]);
+  if(error){ console.error('photo file removal failed:', error.message); return false; }
+  return true;
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
@@ -54,7 +70,7 @@ exports.handler = async (event) => {
       // recent first, so admins can see what's actually been coming in.
       const { data, error } = await supabase
         .from('retail_offers')
-        .select('id, item_name, price, unit, photo_url, created_at, valid_until, directory_listings(name, island)')
+        .select('id, listing_id, item_name, price, unit, photo_url, created_at, valid_until, directory_listings(name, island)')
         .not('photo_url', 'is', null)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -62,6 +78,7 @@ exports.handler = async (event) => {
 
       const results = (data || []).map(r => ({
         id: r.id,
+        listing_id: r.listing_id,
         item_name: r.item_name,
         price: r.price,
         unit: r.unit,
@@ -73,6 +90,70 @@ exports.handler = async (event) => {
       }));
 
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ results }) };
+    }
+
+    if (event.httpMethod === 'GET' && action === 'list_photo_businesses') {
+      const page = Math.max(0, parseInt(params.page, 10) || 0);
+      const size = 25;
+      const { data, error } = await supabase.rpc('photo_business_summary', {
+        p_q: (params.q || '').trim(), p_only_unreviewed: params.only_unreviewed === '1', p_limit: size, p_offset: page * size,
+      });
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ...data, page, page_size: size }) };
+    }
+
+    if (event.httpMethod === 'GET' && action === 'list_photo_cards') {
+      if (!params.listing_id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id is required' }) };
+      const page = Math.max(0, parseInt(params.page, 10) || 0);
+      const size = 12;
+      const { data, error } = await supabase.rpc('photo_cards', {
+        p_listing: params.listing_id, p_only_unreviewed: params.only_unreviewed === '1', p_limit: size, p_offset: page * size,
+      });
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ...data, page, page_size: size }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'mark_photos_reviewed') {
+      const body = JSON.parse(event.body || '{}');
+      const now = new Date().toISOString();
+      let q = supabase.from('retail_offers').update({ photo_reviewed_at: now }).not('photo_url', 'is', null).is('photo_reviewed_at', null);
+      if (body.photo_url) q = q.eq('photo_url', body.photo_url);
+      else if (body.listing_id) q = q.eq('listing_id', body.listing_id);
+      else return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'photo_url or listing_id is required' }) };
+      const { error } = await q;
+      if (error) throw error;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (event.httpMethod === 'POST' && action === 'delete_photo') {
+      // Deletes the photo FILE and clears the picture link. The price stays.
+      // One photo can be attached to several items (everything read from the
+      // same upload), so every row pointing at this file loses the link.
+      const body = JSON.parse(event.body || '{}');
+      if (!body.id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'id is required' }) };
+      }
+      const { data: offer, error: offerErr } = await supabase.from('retail_offers').select('photo_url').eq('id', body.id).maybeSingle();
+      if (offerErr) throw offerErr;
+      if (!offer || !offer.photo_url) {
+        return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'That item has no photo.' }) };
+      }
+      const url = offer.photo_url;
+
+      // Never delete a file something else still shows.
+      const { data: inUse } = await supabase.from('sponsored_placements').select('id').eq('photo_url', url).limit(1);
+      if (inUse && inUse.length) {
+        return { statusCode: 409, headers: CORS, body: JSON.stringify({ error: 'This photo is also used by a sponsored placement, so it was not deleted.' }) };
+      }
+
+      const match = url.match(/submission-photos\/([^?#]+)/);
+      if (match) {
+        const { error: rmErr } = await supabase.storage.from('submission-photos').remove([decodeURIComponent(match[1])]);
+        if (rmErr) throw rmErr;
+      }
+      const { data: cleared, error: clrErr } = await supabase.from('retail_offers').update({ photo_url: null }).eq('photo_url', url).select('id');
+      if (clrErr) throw clrErr;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, items_updated: (cleared || []).length }) };
     }
 
     if (event.httpMethod === 'GET' && action === 'search') {
@@ -145,9 +226,11 @@ exports.handler = async (event) => {
       if (!body.id) {
         return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'id is required' }) };
       }
+      const { data: gone } = await supabase.from('retail_offers').select('photo_url').eq('id', body.id).maybeSingle();
       const { error } = await supabase.from('retail_offers').delete().eq('id', body.id);
       if (error) throw error;
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+      const photoRemoved = gone && gone.photo_url ? await removePhotoFileIfUnused(gone.photo_url, [body.id]) : false;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, photo_removed: photoRemoved }) };
     }
 
     if (event.httpMethod === 'POST' && action === 'delete_retailer') {
@@ -155,6 +238,11 @@ exports.handler = async (event) => {
       if (!body.listing_id) {
         return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id is required' }) };
       }
+
+      // Collect this business's photo files first; the rows cascade away below.
+      const { data: bizOffers } = await supabase.from('retail_offers').select('id, photo_url').eq('listing_id', body.listing_id);
+      const bizOfferIds = (bizOffers || []).map(o => o.id);
+      const bizPhotoUrls = [...new Set((bizOffers || []).map(o => o.photo_url).filter(Boolean))];
 
       // Full real dependency chain, none of it cascading automatically:
       // submission_draft -> retailer_profile -> directory_listings.
@@ -180,7 +268,9 @@ exports.handler = async (event) => {
       // showings, item_listings) cascades automatically on this delete.
       const { error } = await supabase.from('directory_listings').delete().eq('id', body.listing_id);
       if (error) throw error;
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+      let photosRemoved = 0;
+      for (const u of bizPhotoUrls) { if (await removePhotoFileIfUnused(u, bizOfferIds)) photosRemoved++; }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, photos_removed: photosRemoved }) };
     }
 
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Unknown action' }) };

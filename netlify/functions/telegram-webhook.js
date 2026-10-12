@@ -224,53 +224,35 @@ If several items are visible (e.g. a shelf of tags), return all of them. If a pr
 // "Submission" means one submission event, not one item — a single photo
 // with several items still only counts as one slot.
 async function enforcePhotoSubmissionCap(listingId){
+  // Safety valve on storage: once a business has more than 100 photo
+  // submissions, the OLDEST submission's photo file is removed and its link
+  // cleared. The prices themselves are kept: they are live prices, and losing
+  // a photo must never delete a price. (The daily photo-retention job normally
+  // keeps things well under this limit.)
   const { data: rows } = await supabase
     .from('retail_offers')
-    .select('id, source_submission_id, created_at')
+    .select('id, source_submission_id, photo_url, photo_added_at, created_at')
     .eq('listing_id', listingId)
     .not('photo_url', 'is', null)
     .not('source_submission_id', 'is', null);
   if(!rows || !rows.length) return;
 
-  // Group by submission event, keep the earliest created_at per group.
   const bySubmission = new Map();
   for(const row of rows){
-    const existing = bySubmission.get(row.source_submission_id);
-    if(!existing || row.created_at < existing.earliest){
-      bySubmission.set(row.source_submission_id, { earliest: row.created_at, ids: existing ? [...existing.ids, row.id] : [row.id] });
-    } else {
-      existing.ids.push(row.id);
-    }
+    const when = row.photo_added_at || row.created_at;
+    const g = bySubmission.get(row.source_submission_id);
+    if(!g) bySubmission.set(row.source_submission_id, { earliest: when, ids: [row.id], photoUrl: row.photo_url });
+    else { g.ids.push(row.id); if(when < g.earliest) g.earliest = when; }
   }
+  if(bySubmission.size <= 100) return;
 
-  if(bySubmission.size < 100) return;
+  let oldest = null;
+  for(const g of bySubmission.values()){ if(!oldest || g.earliest < oldest.earliest) oldest = g; }
+  if(!oldest) return;
 
-  let oldestId = null, oldestTime = null;
-  for(const [submissionId, info] of bySubmission){
-    if(!oldestTime || info.earliest < oldestTime){
-      oldestTime = info.earliest;
-      oldestId = submissionId;
-    }
-  }
-  if(!oldestId) return;
-
-  const oldestGroup = bySubmission.get(oldestId);
-
-  // Delete the actual storage file(s) too, not just the DB rows — otherwise
-  // the orphaned image keeps consuming real storage space regardless of
-  // whether anything still references it.
-  const { data: photoRows } = await supabase
-    .from('retail_offers')
-    .select('photo_url')
-    .in('id', oldestGroup.ids)
-    .limit(1);
-  const photoUrl = photoRows && photoRows[0] ? photoRows[0].photo_url : null;
-  if(photoUrl){
-    const match = photoUrl.match(/submission-photos\/(.+)$/);
-    if(match) await supabase.storage.from('submission-photos').remove([match[1]]);
-  }
-
-  await supabase.from('retail_offers').delete().in('id', oldestGroup.ids);
+  const match = oldest.photoUrl && oldest.photoUrl.match(/submission-photos\/([^?#]+)/);
+  if(match) await supabase.storage.from('submission-photos').remove([decodeURIComponent(match[1])]);
+  await supabase.from('retail_offers').update({ photo_url: null }).in('id', oldest.ids);
 }
 
 // Maps a business's established category to the listing_type its
@@ -900,6 +882,8 @@ async function confirmLatestDraft(fromId, chatId) {
       source_type: draft.source_type || 'caption',
       source_submission_id: draft.id,
       photo_url: draft.photo_url,
+      photo_added_at: draft.photo_url ? new Date().toISOString() : null,
+      photo_reviewed_at: null,
       tags: draft.tags || [],
       listing_type: listingType,
     };
