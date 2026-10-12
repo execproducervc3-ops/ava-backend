@@ -121,6 +121,60 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
     }
 
+    // ---- Business-level approval: one card per business with held items ----
+    if (event.httpMethod === 'GET' && action === 'list_businesses') {
+      const { data: held, error: hErr } = await supabase.from('retail_offers')
+        .select('id, listing_id, item_name, price, unit, photo_url, created_at')
+        .eq('review_status', 'pending_review').order('created_at', { ascending: true }).limit(2000);
+      if (hErr) throw hErr;
+      const byListing = new Map();
+      for (const o of held || []) {
+        if (!byListing.has(o.listing_id)) byListing.set(o.listing_id, []);
+        byListing.get(o.listing_id).push(o);
+      }
+      const ids = [...byListing.keys()];
+      if (!ids.length) return { statusCode: 200, headers: CORS, body: JSON.stringify({ results: [] }) };
+      const { data: listings } = await supabase.from('directory_listings')
+        .select('id, name, category, island, subscribed_until').in('id', ids);
+      const lmap = Object.fromEntries((listings || []).map(l => [l.id, l]));
+      const { data: vetted } = await supabase.from('retail_offers').select('listing_id')
+        .in('listing_id', ids).in('review_status', ['approved', 'auto_published']);
+      const vettedSet = new Set((vetted || []).map(v => v.listing_id));
+      const results = ids.map(id => {
+        const items = byListing.get(id);
+        const l = lmap[id] || {};
+        const photos = [...new Set(items.map(i => i.photo_url).filter(Boolean))];
+        return {
+          listing_id: id, name: l.name || 'Unknown business', category: l.category || null, island: l.island || null,
+          subscribed_until: l.subscribed_until || null, is_new: !vettedSet.has(id),
+          item_count: items.length, submitted: items[0].created_at, photos: photos.slice(0, 6), photo_count: photos.length,
+          items: items.slice(0, 50).map(i => ({ id: i.id, item_name: i.item_name, price: i.price, unit: i.unit })),
+        };
+      }).sort((a, b) => (b.is_new - a.is_new) || String(a.submitted).localeCompare(String(b.submitted)));
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ results }) };
+    }
+
+    if (event.httpMethod === 'POST' && (action === 'approve_business' || action === 'reject_business')) {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.listing_id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'listing_id is required' }) };
+      const approve = action === 'approve_business';
+      if (approve && body.subscribed_until) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(body.subscribed_until)) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'subscribed_until must be a date like 2026-12-31' }) };
+        const { error: sErr } = await supabase.from('directory_listings').update({ subscribed_until: body.subscribed_until }).eq('id', body.listing_id);
+        if (sErr) throw sErr;
+      }
+      const { data: changed, error: uErr } = await supabase.from('retail_offers')
+        .update({ review_status: approve ? 'approved' : 'rejected' })
+        .eq('listing_id', body.listing_id).eq('review_status', 'pending_review').select('id');
+      if (uErr) throw uErr;
+      const idsDone = (changed || []).map(c => c.id);
+      if (idsDone.length) {
+        await supabase.from('review_queue').update({ status: approve ? 'approved' : 'rejected', resolved_at: new Date().toISOString() })
+          .eq('item_type', 'submission').eq('status', 'pending').in('reference_id', idsDone);
+      }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, items: idsDone.length }) };
+    }
+
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Unknown action' }) };
   } catch (err) {
     console.error('admin-review error:', err);

@@ -301,6 +301,12 @@
   </div>
 
   <div class="panel">
+    <h2>Businesses awaiting approval</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Businesses whose submissions are held. A new business's first submission stays hidden from AVA until you approve it here. Set how long they've paid for, then approve.</div>
+    <div id="bizApprovalList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Pending review</h2>
     <div id="reviewList"></div>
   </div>
@@ -474,6 +480,7 @@ async function tryLogin(password, showErrors){
   document.getElementById('adminPanel').style.display = 'block';
   loadPlacements();
   loadReviewQueue();
+  loadBizApprovals();
   loadTopPicks();
   loadGaps();
   loadAgentDrafts();
@@ -1401,6 +1408,50 @@ function wireDraftButtons(){
 }
 
 const REVIEW_API = '/.netlify/functions/admin-review';
+
+async function loadBizApprovals(){
+  const el = document.getElementById('bizApprovalList');
+  if(!el) return;
+  const res = await fetch(`${REVIEW_API}?action=list_businesses`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ const e = await res.json().catch(() => ({})); el.innerHTML = `<div class="empty-note">Could not load (${res.status}${e.error ? ': ' + escapeHtml(e.error) : ''}).</div>`; return; }
+  const data = await res.json();
+  if(!data.results || !data.results.length){ el.innerHTML = '<div class="empty-note">No businesses waiting.</div>'; return; }
+  const defUntil = new Date(Date.now() + 31*86400000).toISOString().slice(0,10);
+  el.innerHTML = data.results.map(b => `
+    <div class="reviewitem" data-biz="${escapeHtml(b.listing_id)}" data-name="${escapeHtml(b.name)}">
+      <div class="reviewretailer">${escapeHtml(b.name)} ${b.is_new ? '<span style="background:var(--accent,#0a7);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;">first submission</span>' : ''}</div>
+      <div class="reviewreason">${escapeHtml(b.category || '')}${b.island ? ' · ' + escapeHtml(b.island) : ''} · ${b.item_count} item${b.item_count === 1 ? '' : 's'} held · submitted ${new Date(b.submitted).toLocaleDateString()}${b.subscribed_until ? ' · subscribed until ' + escapeHtml(b.subscribed_until) : ' · no subscription date set'}</div>
+      ${b.photos.length ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">${b.photos.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img loading="lazy" src="${escapeHtml(u)}" alt="" style="height:110px; border-radius:8px; border:1px solid var(--line);"></a>`).join('')}${b.photo_count > b.photos.length ? `<span style="align-self:center; color:var(--soft);">+${b.photo_count - b.photos.length} more</span>` : ''}</div>` : ''}
+      <details style="margin-bottom:10px;"><summary style="cursor:pointer;">See the ${b.item_count} item${b.item_count === 1 ? '' : 's'}</summary>
+        <div style="margin-top:6px; font-size:14px;">${b.items.map(i => `<div>${escapeHtml(i.item_name)} — $${escapeHtml(i.price)}${i.unit ? '/' + escapeHtml(i.unit) : ''}</div>`).join('')}${b.item_count > b.items.length ? `<div style="color:var(--soft);">…and ${b.item_count - b.items.length} more</div>` : ''}</div>
+      </details>
+      <div style="margin-bottom:10px;"><label>Subscribed until</label><input type="date" data-until value="${escapeHtml(b.subscribed_until || defUntil)}"></div>
+      <div class="reviewactions">
+        <button class="btn-publish" data-biz-approve>Approve business</button>
+        <button class="btn-danger" data-biz-reject>Reject</button>
+      </div>
+    </div>`).join('');
+  const call = async (action, body) => {
+    const r = await fetch(`${REVIEW_API}?action=${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+    return d;
+  };
+  el.querySelectorAll('[data-biz-approve]').forEach(btn => btn.addEventListener('click', async () => {
+    const card = btn.closest('[data-biz]');
+    const until = card.querySelector('[data-until]').value;
+    if(!until){ alert('Set the "Subscribed until" date first.'); return; }
+    if(!confirm(`Approve ${card.dataset.name}? Its held items go live, and it is subscribed until ${until}.`)) return;
+    btn.disabled = true;
+    try{ await call('approve_business', { listing_id: card.dataset.biz, subscribed_until: until }); loadBizApprovals(); loadReviewQueue(); } catch(err){ alert(err.message); btn.disabled = false; }
+  }));
+  el.querySelectorAll('[data-biz-reject]').forEach(btn => btn.addEventListener('click', async () => {
+    const card = btn.closest('[data-biz]');
+    if(!confirm(`Reject all held items from ${card.dataset.name}? They will not go live. The business stays on file.`)) return;
+    btn.disabled = true;
+    try{ await call('reject_business', { listing_id: card.dataset.biz }); loadBizApprovals(); loadReviewQueue(); } catch(err){ alert(err.message); btn.disabled = false; }
+  }));
+}
 
 async function loadReviewQueue(){
   const res = await fetch(`${REVIEW_API}?action=list`, { headers: { 'X-Admin-Secret': secret } });
