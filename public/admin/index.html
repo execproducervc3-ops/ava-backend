@@ -87,6 +87,13 @@
   .btn-publish:hover{background:#166B44;}
   label{font-size:11.5px; font-weight:600; color:var(--soft); display:block; margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
   input, select, textarea{background:var(--panel); color:var(--ink); border:1px solid var(--line);}
+  .stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
+  .stat{border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--bg); text-align:center;}
+  .stat .n{font-size:20px; font-weight:600;} .stat .l{font-size:11px; color:var(--soft); margin-top:2px;}
+  .usagetable{width:100%; border-collapse:collapse; font-size:13px; margin-bottom:14px;}
+  .usagetable th, .usagetable td{padding:6px 4px; border-bottom:1px solid var(--line); text-align:right;}
+  .usagetable th:first-child, .usagetable td:first-child{text-align:left;}
+  .usagetable th{color:var(--soft); font-weight:500; font-size:12px;}
   .agentcard{border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:12px; background:var(--bg);}
   .agentcard select{width:100%; border-radius:6px; padding:9px 11px; font-size:14px; font-family:inherit; margin-bottom:0;}
   .agentcard .draftfields input{margin-bottom:0;}
@@ -240,6 +247,30 @@
     </div>
     <div class="empty-note" id="agentMsg" style="display:none;"></div>
     <div id="agentDraftsList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Usage</h2>
+    <div class="empty-note" style="margin-bottom:10px;">How much AVA chat is used. Visitors are anonymous device ids; no message text is stored. Cost is an estimate for chat only; the Anthropic Console has the real bill.</div>
+    <div style="display:flex; gap:8px; margin-bottom:12px;"><button class="btn-secondary" id="usageRefresh">Refresh</button></div>
+    <div class="empty-note" id="usageMsg" style="display:none;"></div>
+    <div id="usageBody"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Direction landmarks</h2>
+    <div class="empty-note" style="margin-bottom:10px;">The places people give directions by: banks, churches, gas stations, junctions. AVA uses these first when she tells someone how to get somewhere, and falls back on Google only where you have none. Type the name and AVA finds it on the map.</div>
+    <label>Name</label>
+    <input type="text" id="lmName" placeholder="e.g. RBC Bank, Layou" autocomplete="off">
+    <label>Kind</label>
+    <select id="lmKind"></select>
+    <label>Island</label>
+    <select id="lmIsland"></select>
+    <label>Near (optional, helps the map find it)</label>
+    <input type="text" id="lmNear" placeholder="e.g. Layou, or Leeward Highway" autocomplete="off">
+    <div style="display:flex; gap:8px; margin-top:8px;"><button id="lmAddBtn">Add landmark</button></div>
+    <div class="empty-note" id="lmMsg" style="display:none; margin-top:8px;"></div>
+    <div id="lmList" style="margin-top:14px;"></div>
   </div>
 
   <div class="panel">
@@ -447,6 +478,8 @@ async function tryLogin(password, showErrors){
   loadGaps();
   loadAgentDrafts();
   loadEvents();
+  loadLandmarks();
+  loadUsage();
   loadSubscribers();
   loadInterest();
   loadPhotoTracker();
@@ -1694,6 +1727,89 @@ document.getElementById('subSaveBtn').addEventListener('click', async () => {
     loadSubscribers();
   } catch(err){ evSay(err.message, true); }
 });
+// ---------------------------------------------------------- Landmarks ---
+const LM_API = '/.netlify/functions/admin-landmarks';
+async function lmApi(action, method, body){
+  const res = await fetch(`${LM_API}?action=${action}`, {
+    method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
+  return data;
+}
+function lmSay(text, isErr){
+  const el = document.getElementById('lmMsg');
+  el.style.display = text ? 'block' : 'none';
+  el.style.color = isErr ? 'var(--danger)' : 'var(--live)';
+  el.textContent = text || '';
+}
+async function loadLandmarks(){
+  const listEl = document.getElementById('lmList');
+  try{
+    const data = await lmApi('list', 'GET');
+    const kindSel = document.getElementById('lmKind'), isleSel = document.getElementById('lmIsland');
+    if(!kindSel.options.length){
+      kindSel.innerHTML = data.kinds.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k.replace(/_/g, ' '))}</option>`).join('');
+      isleSel.innerHTML = data.islands.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
+    }
+    if(!data.landmarks.length){ listEl.innerHTML = '<div class="empty-note">No landmarks added yet.</div>'; return; }
+    listEl.innerHTML = data.landmarks.map(l => `
+      <div class="gaprow">
+        <div><div class="gaprow-query">${escapeHtml(l.name)}</div>
+        <div class="gaprow-meta">${escapeHtml(l.kind.replace(/_/g, ' '))} &middot; ${escapeHtml(l.island || '')} &middot; ${Number(l.lat).toFixed(4)}, ${Number(l.lng).toFixed(4)}</div></div>
+        <button class="btn-secondary" data-lm-del="${l.id}">Remove</button>
+      </div>`).join('');
+    listEl.querySelectorAll('[data-lm-del]').forEach(b => b.addEventListener('click', async () => {
+      try{ await lmApi('delete', 'POST', { id: Number(b.dataset.lmDel) }); loadLandmarks(); } catch(err){ lmSay(err.message, true); }
+    }));
+  } catch(err){ listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+}
+document.getElementById('lmAddBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('lmAddBtn');
+  btn.disabled = true; lmSay('');
+  try{
+    const r = await lmApi('add', 'POST', {
+      name: document.getElementById('lmName').value, kind: document.getElementById('lmKind').value,
+      island: document.getElementById('lmIsland').value, near: document.getElementById('lmNear').value,
+    });
+    lmSay(`Saved. Map matched it to: ${r.found_as || 'the coordinates you gave'}. Check that is the right place.`, false);
+    document.getElementById('lmName').value = ''; document.getElementById('lmNear').value = '';
+    loadLandmarks();
+  } catch(err){ lmSay(err.message, true); }
+  btn.disabled = false;
+});
+
+// -------------------------------------------------------------- Usage ---
+const USAGE_API = '/.netlify/functions/admin-usage';
+function fmtUsd(n){ return '$' + Number(n || 0).toFixed(2); }
+async function loadUsage(){
+  const body = document.getElementById('usageBody'), msg = document.getElementById('usageMsg');
+  msg.style.display = 'none';
+  try{
+    const res = await fetch(USAGE_API, { headers: { 'X-Admin-Secret': secret } });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error || ('Error ' + res.status));
+    const tile = (n, l) => `<div class="stat"><div class="n">${escapeHtml(String(n))}</div><div class="l">${escapeHtml(l)}</div></div>`;
+    let h = '<div class="stat-grid">'
+      + tile(d.questions.today, 'questions today') + tile(d.questions.week, 'this week') + tile(d.questions.month, 'last 30 days')
+      + tile(d.visitors.today, 'visitors today') + tile(d.visitors.week, 'this week') + tile(d.visitors.month, 'last 30 days')
+      + tile(d.failure_rate_pct.today + '%', 'failed today') + tile(d.failure_rate_pct.week + '%', 'failed this week') + tile(d.failure_rate_pct.month + '%', 'failed 30 days')
+      + tile(fmtUsd(d.est_cost_usd.today), 'est. cost today') + tile(fmtUsd(d.est_cost_usd.week), 'this week') + tile(fmtUsd(d.est_cost_usd.month), 'last 30 days')
+      + '</div>';
+    h += '<h3 style="font-size:14px; margin:14px 0 6px;">Most used features (30 days)</h3>';
+    h += d.tools.length ? `<table class="usagetable"><tbody>${d.tools.map(t => `<tr><td>${escapeHtml(t.tool.replace(/^query_/, '').replace(/_/g, ' '))}</td><td>${t.uses}</td></tr>`).join('')}</tbody></table>` : '<div class="empty-note">No usage recorded yet.</div>';
+    h += '<h3 style="font-size:14px; margin:14px 0 6px;">Last 14 days</h3>';
+    h += d.daily.length ? `<table class="usagetable"><thead><tr><th>Day</th><th>Questions</th><th>Visitors</th><th>Failed</th><th>Est. cost</th></tr></thead><tbody>${d.daily.map(x => `<tr><td>${escapeHtml(x.day)}</td><td>${x.questions}</td><td>${x.visitors}</td><td>${x.failures}</td><td>${fmtUsd(x.est_cost)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty-note">Nothing yet.</div>';
+    h += '<h3 style="font-size:14px; margin:14px 0 6px;">Times each business was shown to visitors</h3>';
+    h += d.businesses.length ? `<table class="usagetable"><thead><tr><th>Business</th><th>Type</th><th>7 days</th><th>30 days</th><th>Visitors</th></tr></thead><tbody>${d.businesses.map(b => `<tr><td>${escapeHtml(b.name)}${b.island ? ' <span style="color:var(--soft)">(' + escapeHtml(b.island) + ')</span>' : ''}</td><td>${escapeHtml(b.kind)}</td><td>${b.shown_7d}</td><td>${b.shown_30d}</td><td>${b.visitors_30d}</td></tr>`).join('')}</tbody></table>` : '<div class="empty-note">No business has been shown to a visitor yet.</div>';
+    body.innerHTML = h;
+  } catch(err){
+    msg.style.display = 'block'; msg.style.color = 'var(--danger)'; msg.textContent = err.message;
+  }
+}
+document.getElementById('usageRefresh').addEventListener('click', loadUsage);
+
 </script>
 </body>
 </html>

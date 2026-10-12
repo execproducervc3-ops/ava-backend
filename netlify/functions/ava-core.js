@@ -203,12 +203,19 @@ async function queryRetailPriceDB(productName){
     const listingIds = [...new Set(offers.map(o => o.listing_id))];
     const { data: listings, error: listErr } = await supabase
       .from('directory_listings')
-      .select('id, name, island, parish, address, phone')
+      .select('id, name, island, parish, address, phone, subscribed_until')
       .in('id', listingIds);
     if(listErr) throw listErr;
-    const listingMap = Object.fromEntries((listings || []).map(l => [l.id, l]));
+    // Only subscribed retailers appear. A lapsed subscription hides the prices
+    // (they are kept, not deleted) until it is renewed.
+    const today = svgTodayCore();
+    const listingMap = Object.fromEntries((listings || []).filter(l => l.subscribed_until && l.subscribed_until >= today).map(l => [l.id, l]));
+    const visibleOffers = offers.filter(o => listingMap[o.listing_id]);
+    if(!visibleOffers.length){
+      return { results: [], note: 'No subscribed retailer currently lists that product.' };
+    }
 
-    const results = offers.map(o => ({
+    const results = visibleOffers.map(o => ({
       offer_id: o.id,
       listing_id: o.listing_id,
       retailer: (listingMap[o.listing_id] && listingMap[o.listing_id].name) || 'Unknown retailer',
@@ -234,6 +241,8 @@ async function queryRetailPriceDB(productName){
 // same proven single-product lookup for each item in parallel, rather
 // than requiring Claude to generate a separate tool call per item, which
 // measurably added both generation and execution time to the request.
+const svgTodayCore = () => new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10); // SVG is UTC-4, no daylight saving
+
 async function queryMultipleRetailPrices(productNames){
   if(!Array.isArray(productNames) || !productNames.length){
     return { items: [] };
@@ -598,7 +607,7 @@ async function queryEvents(island, keyword){
     const today = new Date(now.getTime() - 4 * 3600 * 1000).toISOString().slice(0, 10); // SVG local date (UTC-4)
     const { data, error } = await supabase
       .from('events')
-      .select('title, description, starts_at, ends_at, time_known, venue, island, ticket_price, ticket_info, flyer_url, directory_listings!inner(name, island, subscribed_until, website)')
+      .select('listing_id, title, description, starts_at, ends_at, time_known, venue, island, ticket_price, ticket_info, flyer_url, directory_listings!inner(name, island, subscribed_until, website)')
       .in('review_status', ['auto_published', 'approved'])
       .gte('starts_at', new Date(now.getTime() - 24 * 3600 * 1000).toISOString())
       .order('starts_at', { ascending: true })
@@ -627,6 +636,7 @@ async function queryEvents(island, keyword){
     }
     return {
       results: rows.map(r => ({
+        listing_id: r.listing_id,
         title: r.title,
         when: formatEventWhen(r.starts_at, r.ends_at, r.time_known),
         venue: r.venue || null,
@@ -649,7 +659,7 @@ async function queryPricedListings(listingType, island){
   try{
     let query = supabase
       .from('retail_offers')
-      .select('item_name, price, unit, photo_url, listing_id, directory_listings!inner(name, island)')
+      .select('item_name, price, unit, photo_url, listing_id, directory_listings!inner(name, island, subscribed_until)')
       .eq('listing_type', listingType)
       .in('review_status', ['auto_published', 'approved']);
 
@@ -657,8 +667,10 @@ async function queryPricedListings(listingType, island){
       query = query.ilike('directory_listings.island', `%${island.trim()}%`);
     }
 
-    const { data, error } = await query.order('price', { ascending: true }).limit(10);
+    const { data: rawData, error } = await query.order('price', { ascending: true }).limit(40);
     if(error) throw error;
+    const todayP = svgTodayCore();
+    const data = (rawData || []).filter(r => r.directory_listings && r.directory_listings.subscribed_until && r.directory_listings.subscribed_until >= todayP).slice(0, 10);
 
     if(!data || !data.length){
       return { results: [], note: `No priced ${listingType === 'accommodation_rate' ? 'accommodation' : 'vehicle rental'} listings yet${island ? ' for ' + island : ''}.` };
@@ -1267,12 +1279,24 @@ async function listDeepDives(category){
 // step says so and the model uses distance or the road name instead.
 // ---------------------------------------------------------------------------
 const LANDMARK_LABEL = {
-  bank: 'the bank', place_of_worship: 'the church', school: 'the school', fuel: 'the gas station',
-  restaurant: 'the restaurant', fast_food: 'the fast food spot', bar: 'the bar', pharmacy: 'the pharmacy',
-  police: 'the police station', marketplace: 'the market', supermarket: 'the supermarket',
-  convenience: 'the shop', clinic: 'the clinic', hospital: 'the hospital', post_office: 'the post office',
-  townhall: 'the town hall', library: 'the library', cafe: 'the cafe', bakery: 'the bakery',
+  bank: 'the bank', church: 'the church', school: 'the school', gas_station: 'the gas station',
+  restaurant: 'the restaurant', bar: 'the bar', pharmacy: 'the pharmacy', police: 'the police station',
+  market: 'the market', supermarket: 'the supermarket', shop: 'the shop', clinic: 'the clinic',
+  hospital: 'the hospital', post_office: 'the post office', bakery: 'the bakery', cafe: 'the cafe',
+  hotel: 'the hotel', junction: 'the junction', bridge: 'the bridge', roundabout: 'the roundabout',
+  other: '',
 };
+// Google place types we accept as landmarks, mapped to our kinds.
+const GOOGLE_TYPE_TO_KIND = {
+  bank: 'bank', church: 'church', place_of_worship: 'church', mosque: 'church', hindu_temple: 'church',
+  gas_station: 'gas_station', school: 'school', primary_school: 'school', secondary_school: 'school',
+  supermarket: 'supermarket', grocery_or_supermarket: 'supermarket', convenience_store: 'shop',
+  restaurant: 'restaurant', bar: 'bar', pharmacy: 'pharmacy', police: 'police', hospital: 'hospital',
+  doctor: 'clinic', post_office: 'post_office', bakery: 'bakery', cafe: 'cafe', lodging: 'hotel',
+};
+const LANDMARK_PRIORITY = { bank: 1, church: 1, gas_station: 1, hospital: 1, police: 1, junction: 1, roundabout: 1, bridge: 1, school: 2, supermarket: 2, market: 2, hotel: 2, post_office: 2 };
+const LANDMARK_RADIUS_M = 120;
+const MAX_GOOGLE_LOOKUPS = 5; // per route, cost cap; results are cached forever
 const MANEUVER_WORDS = {
   TURN_LEFT: 'turn left', TURN_RIGHT: 'turn right', TURN_SLIGHT_LEFT: 'bear left', TURN_SLIGHT_RIGHT: 'bear right',
   TURN_SHARP_LEFT: 'sharp left', TURN_SHARP_RIGHT: 'sharp right', UTURN_LEFT: 'u-turn', UTURN_RIGHT: 'u-turn',
@@ -1288,29 +1312,63 @@ function metersBetween(a, b){
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+const cellKey = p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
+const landmarkSay = l => (l.kind && LANDMARK_LABEL[l.kind]) ? `${LANDMARK_LABEL[l.kind]} (${l.name})` : l.name;
+
+// Landmarks near the given turn points, from three sources in order of trust:
+// 1) the hand-curated "landmarks" table, 2) the cache of earlier Google lookups,
+// 3) a capped number of fresh Google Places lookups (then cached).
 async function fetchLandmarks(points){
-  if(!points.length) return [];
-  const around = points.map(p => `nwr(around:70,${p.lat},${p.lng})["name"]["amenity"~"^(bank|place_of_worship|school|fuel|restaurant|fast_food|bar|pharmacy|police|marketplace|clinic|hospital|post_office|townhall|library|cafe)$"];nwr(around:70,${p.lat},${p.lng})["name"]["shop"~"^(supermarket|convenience|bakery)$"];`).join('');
-  const body = `[out:json][timeout:8];(${around});out center 200;`;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 9000);
+  const out = [];
+  if(!points.length) return out;
   try{
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST', body: 'data=' + encodeURIComponent(body),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctrl.signal,
-    });
-    if(!res.ok) return [];
-    const data = await res.json();
-    return (data.elements || []).map(e => {
-      const tags = e.tags || {};
-      const c = e.center || { lat: e.lat, lon: e.lon };
-      const kind = tags.amenity || tags.shop;
-      return { name: tags.name, kind, label: LANDMARK_LABEL[kind] || 'a ' + kind, lat: c.lat, lng: c.lon };
-    }).filter(l => l.name && l.lat != null);
+    const { data: curated } = await supabase.from('landmarks').select('name, kind, lat, lng').eq('active', true).limit(3000);
+    const curatedList = curated || [];
+    curatedList.forEach(l => out.push({ name: l.name, kind: l.kind, lat: l.lat, lng: l.lng, source: 'curated' }));
+
+    const uncovered = points.filter(p => !curatedList.some(l => metersBetween(p, l) <= LANDMARK_RADIUS_M));
+    if(!uncovered.length) return out;
+
+    const keys = [...new Set(uncovered.map(cellKey))];
+    const cached = new Map();
+    const { data: cacheRows } = await supabase.from('landmark_cache').select('cell_key, landmarks').in('cell_key', keys);
+    (cacheRows || []).forEach(r => cached.set(r.cell_key, r.landmarks || []));
+    cached.forEach(list => list.forEach(l => out.push({ ...l, source: 'cache' })));
+
+    if(!GOOGLE_KEY) return out;
+    const todo = [];
+    const seen = new Set();
+    for(const p of uncovered){
+      const k = cellKey(p);
+      if(cached.has(k) || seen.has(k)) continue;
+      seen.add(k);
+      todo.push({ k, p });
+      if(todo.length >= MAX_GOOGLE_LOOKUPS) break;
+    }
+    await Promise.all(todo.map(async ({ k, p }) => {
+      try{
+        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${p.lat},${p.lng}&radius=90&key=${GOOGLE_KEY}`;
+        const res = await fetch(url);
+        if(!res.ok) return;
+        const data = await res.json();
+        if(data.status !== 'OK' && data.status !== 'ZERO_RESULTS'){
+          console.error('Landmark nearby search status:', data.status, data.error_message || '');
+          return;
+        }
+        const found = (data.results || [])
+          .filter(r => r.name && r.geometry && r.business_status !== 'CLOSED_PERMANENTLY')
+          .map(r => {
+            const type = (r.types || []).find(t => GOOGLE_TYPE_TO_KIND[t]);
+            return type ? { name: r.name, kind: GOOGLE_TYPE_TO_KIND[type], lat: r.geometry.location.lat, lng: r.geometry.location.lng } : null;
+          }).filter(Boolean).slice(0, 12);
+        found.forEach(l => out.push({ ...l, source: 'google' }));
+        await supabase.from('landmark_cache').upsert({ cell_key: k, landmarks: found, fetched_at: new Date().toISOString() }, { onConflict: 'cell_key' });
+      }catch(e){ console.error('Landmark lookup failed:', e.message); }
+    }));
   }catch(e){
-    console.error('Overpass landmark lookup failed:', e.message);
-    return [];
-  }finally{ clearTimeout(t); }
+    console.error('fetchLandmarks error:', e.message);
+  }
+  return out;
 }
 
 async function queryDirections(origin, destination){
@@ -1352,8 +1410,11 @@ async function queryDirections(origin, destination){
     const lines = steps.map((s, i) => {
       const near = s.lat == null ? [] : landmarks
         .map(l => ({ l, dist: metersBetween({ lat: s.lat, lng: s.lng }, l) }))
-        .filter(x => x.dist <= 70).sort((a, b) => a.dist - b.dist).slice(0, 2);
-      const lm = near.length ? ` | landmarks right at this turn: ${near.map(x => `${x.l.label} (${x.l.name})`).join(', ')}` : ' | no mapped landmark at this turn';
+        .filter(x => x.dist <= LANDMARK_RADIUS_M)
+        .sort((a, b) => ((LANDMARK_PRIORITY[a.l.kind] || 3) - (LANDMARK_PRIORITY[b.l.kind] || 3)) || (a.dist - b.dist))
+        .filter((x, idx, arr) => arr.findIndex(y => y.l.name === x.l.name) === idx)
+        .slice(0, 2);
+      const lm = near.length ? ` | landmarks right at this turn: ${near.map(x => landmarkSay(x.l)).join(', ')}` : ' | no mapped landmark at this turn';
       const dist = s.meters >= 1000 ? `${(s.meters / 1000).toFixed(1)} km` : `${Math.round(s.meters)} m`;
       const word = s.maneuver === 'DEPART' ? 'start' : (MANEUVER_WORDS[s.maneuver] || (s.maneuver || 'continue').toLowerCase());
       return `${i + 1}. ${word}: ${s.instruction || ''} | then ${dist} to the next step${lm}`;

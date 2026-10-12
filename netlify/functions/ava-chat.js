@@ -344,6 +344,31 @@ const SOFT_MS = 8000;      // after this much elapsed, no more tool use / web se
 const RESERVE_MS = 6000;   // kept back so a no-tools answer is always possible
 const MIN_CALL_MS = 4000;  // not worth starting a Claude call with less than this
 
+// ---- usage tracking (one request at a time per function instance) ----
+let REQ = null;
+const newReq = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, tools: new Set(), shown: [] });
+function noteShown(kind, ids){
+  if(!REQ) return;
+  [...new Set((ids || []).filter(Boolean))].forEach(id => REQ.shown.push({ kind, id }));
+}
+async function recordUsage(ok, errorText, startTime, deviceId){
+  const r = REQ; REQ = null;
+  if(!r) return;
+  try{
+    const device = hashDeviceId(deviceId);
+    if(r.webSearches > 0) r.tools.add('web_search');
+    const rows = [supabase.from('usage_log').insert({
+      device_hash: device, tools: [...r.tools], ok, error_text: errorText ? String(errorText).slice(0, 300) : null,
+      duration_ms: Date.now() - startTime, model: CHAT_MODEL,
+      input_tokens: r.input, output_tokens: r.output, cache_read_tokens: r.cacheRead, cache_write_tokens: r.cacheWrite, web_searches: r.webSearches,
+    })];
+    if(r.shown.length){
+      rows.push(supabase.from('impression_log').insert(r.shown.map(s => ({ listing_id: s.id, kind: s.kind, device_hash: device }))));
+    }
+    await Promise.allSettled(rows);
+  }catch(e){ console.error('recordUsage failed (non-fatal):', e.message); }
+}
+
 async function callClaude(messages, opts){
   opts = opts || {};
   const controller = new AbortController();
@@ -384,6 +409,13 @@ async function callClaude(messages, opts){
     throw new Error(`Anthropic request failed: ${res.status} ${errBody}`.trim());
   }
   const data = await res.json();
+  if(data.usage && REQ){
+    REQ.input += data.usage.input_tokens || 0;
+    REQ.output += data.usage.output_tokens || 0;
+    REQ.cacheRead += data.usage.cache_read_input_tokens || 0;
+    REQ.cacheWrite += data.usage.cache_creation_input_tokens || 0;
+    REQ.webSearches += (data.usage.server_tool_use && data.usage.server_tool_use.web_search_requests) || 0;
+  }
   if(data.usage){
     console.log(`Anthropic usage — input: ${data.usage.input_tokens}, output: ${data.usage.output_tokens}` +
       (data.usage.cache_read_input_tokens ? `, cache_read: ${data.usage.cache_read_input_tokens}` : '') +
@@ -452,6 +484,7 @@ exports.handler = async (event) => {
   }
 
   const startTime = Date.now();
+  REQ = newReq();
   try{
     // Cost control: only the last few turns go to Claude. Older turns are
     // re-billed on every request, and rarely matter for a concierge chat.
@@ -524,6 +557,7 @@ exports.handler = async (event) => {
           let content = 'Unknown tool.';
           let retailResultEntry = null;
           const toolStartTime = Date.now();
+          if(REQ) REQ.tools.add(toolUse.name);
 
           if(toolUse.name === 'get_deep_link'){
             const link = avaCore.buildDeepLink(toolUse.input.service_type, toolUse.input);
@@ -541,6 +575,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_retail_price'){
             const priceData = await avaCore.queryRetailPriceDB(toolUse.input.product_name);
+            noteShown('price', (priceData.results || []).map(r => r.listing_id));
             await avaCore.logProductInterest(toolUse.input.product_name, deviceId);
             // Returned rather than pushed directly — multiple price lookups
             // now run in parallel, and pushing here would let whichever one
@@ -562,6 +597,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_multiple_retail_prices'){
             const multiData = await avaCore.queryMultipleRetailPrices(toolUse.input.product_names);
+            noteShown('price', (multiData.items || []).flatMap(i => (i.results || []).map(r => r.listing_id)));
             await Promise.all((toolUse.input.product_names || []).map(name => avaCore.logProductInterest(name, deviceId)));
             // An array here rather than a single object — handled in the
             // post-processing step below alongside the single-item case.
@@ -614,6 +650,7 @@ exports.handler = async (event) => {
           else if(toolUse.name === 'query_directory'){
             const dirData = await avaCore.queryDirectory(toolUse.input.category, toolUse.input.island, toolUse.input.business_name);
             if(dirData.results && dirData.results.length) directoryResults = dirData.results;
+            noteShown('directory', (dirData.results || []).slice(0, 10).map(d => d.id));
             content = dirData.results && dirData.results.length
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}${d.is_top_pick ? ` [REAL ADMIN-CURATED TOP PICK: ${d.top_pick_note || 'no reason given'}]` : ''}`).join('; ') +
                 (dirData.results.length >= 50 ? '\n\nNote: this hit the 50-result display limit — there may be more not shown. If relevant, tell the person you can narrow by island.' : '')
@@ -634,6 +671,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_events'){
             const evData = await avaCore.queryEvents(toolUse.input.island, toolUse.input.keyword);
+            noteShown('event', (evData.results || []).map(e => e.listing_id));
             content = evData.results && evData.results.length
               ? evData.results.map(e => `${e.title} — ${e.when}${e.venue ? ' at ' + e.venue : ''}${e.island ? ' (' + e.island + ')' : ''}. Organiser: ${e.organiser || 'unknown'}.${e.description ? ' ' + e.description : ''}${e.ticket_price != null ? ' Ticket: EC$' + e.ticket_price + '.' : ''}${e.ticket_info ? ' ' + e.ticket_info : ''}${e.flyer_url ? ' [flyer: ' + e.flyer_url + ']' : ''}`).join('\n\n')
               : (evData.note || 'No upcoming events listed.');
@@ -918,13 +956,12 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       finalText = finalText ? `${finalText}\n\n_${slowNote}_` : slowNote;
     }
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
+    await recordUsage(true, null, startTime, deviceId);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives }) };
   } catch(err){
     console.error('ava-chat error:', err);
-    // TEMPORARY DIAGNOSTIC: show Anthropic API rejections in the chat so the
-    // exact bad setting is visible. Remove once the cost settings are confirmed.
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: 'DEBUG (temporary): ' + String(err && err.message).slice(0, 500) + ' | ' + String(err && err.stack).split('\n').slice(1, 4).join(' <- ').slice(0, 400) }) };
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Internal error: ' + err.message }) };
+    await recordUsage(false, err && err.message, startTime, deviceId);
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Something went wrong. Please try again in a moment.' }) };
   }
 };
 
