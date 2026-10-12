@@ -59,7 +59,7 @@ exports.handler = async (event) => {
       const offerIds = queueRows.map(q => q.reference_id);
       const { data: offers } = await supabase
         .from('retail_offers')
-        .select('id, item_name, price, unit, standard_unit_type, price_per_standard_unit, listing_id, review_status')
+        .select('id, item_name, price, unit, standard_unit_type, price_per_standard_unit, listing_id, review_status, photo_url, source_submission_id')
         .in('id', offerIds);
       const offerMap = Object.fromEntries((offers || []).map(o => [o.id, o]));
 
@@ -83,6 +83,8 @@ exports.handler = async (event) => {
             item_name: offer.item_name,
             price: offer.price,
             unit: offer.unit,
+            photo_url: offer.photo_url || null,
+            batch_pending: offer.source_submission_id ? (offers || []).filter(o => o.source_submission_id === offer.source_submission_id).length : 1,
           };
         });
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ results }) };

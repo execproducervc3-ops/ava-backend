@@ -224,7 +224,7 @@
 
   <div class="panel">
     <h2>Uploaded photos</h2>
-    <div class="empty-note" style="margin-bottom:10px;">Retailer-submitted photos, most recent first — mainly promotional uploads (sales, back-to-school, etc.), not a full product catalog.</div>
+    <div class="empty-note" style="margin-bottom:10px;">Grouped by business. Open one to see its photos (one card per photo). “Needs review” shows only uploads you haven’t looked at yet.</div>
     <div id="photoTrackerList"></div>
   </div>
 
@@ -977,24 +977,140 @@ document.getElementById('addBizBtn').addEventListener('click', async () => {
 
 const RETAIL_API = '/.netlify/functions/admin-retail';
 
+const photoState = { q: '', onlyNew: false, page: 0 };
+let photoSearchTimer = null;
+
+async function photoApi(action, body){
+  const r = await fetch(`${RETAIL_API}?action=${action}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+  return d;
+}
+
+function photoShell(){
+  const root = document.getElementById('photoTrackerList');
+  if(root.dataset.ready) return;
+  root.dataset.ready = '1';
+  root.innerHTML = `
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center;">
+      <input id="photoSearch" type="search" placeholder="Search business name" style="flex:1; min-width:160px;">
+      <label style="display:flex; gap:6px; align-items:center; font-size:14px;"><input type="checkbox" id="photoOnlyNew"> Needs review</label>
+    </div>
+    <div id="photoBizList"></div>
+    <div id="photoBizPager" style="display:flex; gap:8px; align-items:center; margin-top:10px;"></div>`;
+  document.getElementById('photoSearch').addEventListener('input', e => {
+    clearTimeout(photoSearchTimer);
+    photoSearchTimer = setTimeout(() => { photoState.q = e.target.value.trim(); photoState.page = 0; loadPhotoTracker(); }, 300);
+  });
+  document.getElementById('photoOnlyNew').addEventListener('change', e => { photoState.onlyNew = e.target.checked; photoState.page = 0; loadPhotoTracker(); });
+}
+
 async function loadPhotoTracker(){
-  const el = document.getElementById('photoTrackerList');
-  const res = await fetch(`${RETAIL_API}?action=list_photos`, { headers: { 'X-Admin-Secret': secret } });
-  if(!res.ok){ el.innerHTML = '<div class="empty-note">Could not load uploaded photos.</div>'; return; }
+  photoShell();
+  const list = document.getElementById('photoBizList');
+  const pager = document.getElementById('photoBizPager');
+  const qs = `action=list_photo_businesses&page=${photoState.page}&q=${encodeURIComponent(photoState.q)}${photoState.onlyNew ? '&only_unreviewed=1' : ''}`;
+  const res = await fetch(`${RETAIL_API}?${qs}`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ list.innerHTML = '<div class="empty-note">Could not load uploaded photos.</div>'; pager.innerHTML = ''; return; }
   const data = await res.json();
-  if(!data.results || !data.results.length){
-    el.innerHTML = '<div class="empty-note">No photos uploaded yet.</div>';
+  const biz = data.businesses || [];
+  if(!biz.length){
+    list.innerHTML = `<div class="empty-note">${photoState.onlyNew ? 'Nothing needs review.' : (photoState.q ? 'No business matches that search.' : 'No photos uploaded yet.')}</div>`;
+    pager.innerHTML = '';
     return;
   }
-  el.innerHTML = data.results.map(r => `
-    <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); align-items:center;">
-      <img src="${r.photo_url}" alt="" style="width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid var(--line); flex:0 0 auto;">
-      <div style="flex:1; min-width:0;">
-        <div style="font-weight:600;">${r.item_name} — $${r.price}${r.unit ? '/' + r.unit : ''}</div>
-        <div style="color:var(--soft); font-size:13px;">${r.retailer_name || 'Unknown retailer'}${r.island ? ', ' + r.island : ''} · ${new Date(r.created_at).toLocaleDateString()}${r.valid_until ? ' · valid until ' + r.valid_until : ''}</div>
+  list.innerHTML = biz.map(b => `
+    <details class="photo-biz" data-listing="${escapeHtml(b.listing_id)}" data-name="${escapeHtml(b.name || 'this business')}" style="border-bottom:1px solid var(--line); padding:8px 0;">
+      <summary style="cursor:pointer; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <strong>${escapeHtml(b.name || 'Unknown business')}</strong>
+        <span style="color:var(--soft); font-size:13px;">${escapeHtml(b.island || '')} · ${b.photos} photo${b.photos === 1 ? '' : 's'}${b.last_added ? ' · last ' + new Date(b.last_added).toLocaleDateString() : ''}</span>
+        ${b.unreviewed > 0 ? `<span style="background:var(--accent,#0a7);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;">${b.unreviewed} new</span>` : ''}
+      </summary>
+      <div class="photo-biz-body" style="padding-top:10px;"></div>
+    </details>`).join('');
+
+  const pages = Math.max(1, Math.ceil((data.total || 0) / (data.page_size || 25)));
+  pager.innerHTML = `
+    <button class="btn-secondary" id="photoPrev" ${photoState.page <= 0 ? 'disabled' : ''}>Previous</button>
+    <span style="color:var(--soft); font-size:13px;">Page ${photoState.page + 1} of ${pages} · ${data.total} business${data.total === 1 ? '' : 'es'}</span>
+    <button class="btn-secondary" id="photoNext" ${photoState.page + 1 >= pages ? 'disabled' : ''}>Next</button>`;
+  document.getElementById('photoPrev').onclick = () => { photoState.page--; loadPhotoTracker(); };
+  document.getElementById('photoNext').onclick = () => { photoState.page++; loadPhotoTracker(); };
+
+  list.querySelectorAll('details.photo-biz').forEach(d => d.addEventListener('toggle', () => {
+    if(d.open && !d.dataset.loaded){ d.dataset.loaded = '1'; renderBizBody(d, 0); }
+  }));
+}
+
+async function renderBizBody(d, page){
+  const body = d.querySelector('.photo-biz-body');
+  const listing = d.dataset.listing, name = d.dataset.name;
+  if(page === 0) body.innerHTML = '<div class="empty-note">Loading…</div>';
+  const res = await fetch(`${RETAIL_API}?action=list_photo_cards&listing_id=${encodeURIComponent(listing)}&page=${page}${photoState.onlyNew ? '&only_unreviewed=1' : ''}`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){ body.innerHTML = '<div class="empty-note">Could not load this business’s photos.</div>'; return; }
+  const data = await res.json();
+  const cards = data.cards || [];
+  if(page === 0){
+    body.innerHTML = `
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn-secondary" data-act="mark-all">Mark all reviewed</button>
+        <button class="btn-secondary" data-act="del-biz" style="color:var(--danger);">Delete business</button>
       </div>
-    </div>
-  `).join('');
+      <div class="photo-cards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;"></div>
+      <div class="photo-more" style="margin-top:10px;"></div>`;
+    body.querySelector('[data-act="mark-all"]').onclick = async e => {
+      e.target.disabled = true;
+      try{ await photoApi('mark_photos_reviewed', { listing_id: listing }); loadPhotoTracker(); } catch(err){ alert(err.message); e.target.disabled = false; }
+    };
+    body.querySelector('[data-act="del-biz"]').onclick = async e => {
+      const typed = prompt(`This permanently deletes "${name}": its listing, every price and photo, any events and sponsored placements, and its Telegram registration. It cannot be undone.\n\nType the business name exactly to confirm:`);
+      if(typed === null) return;
+      if(typed.trim().toLowerCase() !== name.trim().toLowerCase()){ alert('That did not match, so nothing was deleted.'); return; }
+      e.target.disabled = true;
+      try{ await photoApi('delete_retailer', { listing_id: listing }); loadPhotoTracker(); } catch(err){ alert(err.message); e.target.disabled = false; }
+    };
+  }
+  const grid = body.querySelector('.photo-cards');
+  if(!cards.length && page === 0){ grid.innerHTML = '<div class="empty-note">No photos to show.</div>'; }
+  cards.forEach(c => {
+    const el = document.createElement('div');
+    el.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px;';
+    const shown = c.items.slice(0, 3);
+    el.innerHTML = `
+      <a href="${escapeHtml(c.photo_url)}" target="_blank" rel="noopener"><img loading="lazy" decoding="async" src="${escapeHtml(c.photo_url)}" alt="" style="width:100%; height:140px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#eee;"></a>
+      <div style="font-size:13px; color:var(--soft);">${c.added ? new Date(c.added).toLocaleDateString() : ''} · ${c.item_count} item${c.item_count === 1 ? '' : 's'}${c.reviewed ? '' : ' · <strong>new</strong>'}</div>
+      <details><summary style="cursor:pointer; font-size:13px;">${shown.map(i => escapeHtml(i.item_name)).join(', ')}${c.item_count > 3 ? ` +${c.item_count - 3} more` : ''}</summary>
+        <div class="card-items" style="margin-top:6px;">${c.items.map(i => `
+          <div style="display:flex; justify-content:space-between; gap:6px; align-items:center; font-size:13px; padding:3px 0;">
+            <span>${escapeHtml(i.item_name)} — $${i.price}${i.unit ? '/' + escapeHtml(i.unit) : ''}${i.review_status === 'pending_review' ? ' (pending)' : ''}</span>
+            <button class="btn-secondary" data-del-price="${escapeHtml(i.id)}" data-nm="${escapeHtml(i.item_name)}">Delete</button>
+          </div>`).join('')}</div>
+      </details>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${c.reviewed ? '' : '<button class="btn-secondary" data-act="reviewed">Mark reviewed</button>'}
+        <button class="btn-secondary" data-act="del-photo">Delete photo</button>
+      </div>`;
+    const rv = el.querySelector('[data-act="reviewed"]');
+    if(rv) rv.onclick = async () => { rv.disabled = true; try{ await photoApi('mark_photos_reviewed', { photo_url: c.photo_url }); loadPhotoTracker(); } catch(err){ alert(err.message); rv.disabled = false; } };
+    el.querySelector('[data-act="del-photo"]').onclick = async e => {
+      if(!confirm('Delete this photo? The file is removed for good. The prices read from it stay on AVA without a picture.')) return;
+      e.target.disabled = true;
+      try{ await photoApi('delete_photo', { id: c.items[0].id }); loadPhotoTracker(); } catch(err){ alert(err.message); e.target.disabled = false; }
+    };
+    el.querySelectorAll('[data-del-price]').forEach(btn => btn.onclick = async () => {
+      if(!confirm(`Delete the price for "${btn.dataset.nm}" and its photo if no other item uses it? This can't be undone. The business stays.`)) return;
+      btn.disabled = true;
+      try{ await photoApi('delete', { id: btn.dataset.delPrice }); loadPhotoTracker(); } catch(err){ alert(err.message); btn.disabled = false; }
+    });
+    grid.appendChild(el);
+  });
+  const more = body.querySelector('.photo-more');
+  const loaded = (page + 1) * (data.page_size || 12);
+  more.innerHTML = loaded < (data.total || 0) ? `<button class="btn-secondary">Show more (${data.total - loaded} left)</button>` : '';
+  const mb = more.querySelector('button');
+  if(mb) mb.onclick = () => { mb.disabled = true; renderBizBody(d, page + 1); };
 }
 
 let allEmptyBusinesses = [];
@@ -1294,6 +1410,7 @@ async function loadReviewQueue(){
     <div class="reviewitem">
       <div class="reviewretailer">${escapeHtml(item.retailer)}</div>
       <div class="reviewreason">${escapeHtml(item.reason)}</div>
+      ${item.photo_url ? `<a href="${escapeHtml(item.photo_url)}" target="_blank" rel="noopener"><img loading="lazy" src="${escapeHtml(item.photo_url)}" alt="" style="max-width:100%; max-height:260px; border-radius:8px; border:1px solid var(--line); margin-bottom:10px;"></a>` : ''}
       <div style="margin-bottom:10px;">
         <label>Business category</label>
         <select data-category-select data-listing-id="${escapeHtml(item.listing_id)}" data-offer-id="${escapeHtml(item.offer_id)}">
