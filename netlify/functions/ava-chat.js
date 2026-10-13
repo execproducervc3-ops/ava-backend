@@ -152,11 +152,11 @@ const TOOLS = [
   },
   {
     name: 'query_reference_knowledge',
-    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, cryptocurrency (what it is and how Vincentians can get started), or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive. IMPORTANT: answer from this alone for a plain topic question — do not also call query_deep_dive automatically, since chaining tool calls adds real, noticeable latency. Only reach for query_deep_dive separately if the person explicitly asks for more detail, the full story, or a complete history after seeing this overview. For anything current or not covered here, supplement with web search instead of guessing.",
+    description: "Look up AVA's general reference knowledge about SVG — geography, history, government structure, culture, economy, practical travel information, music, motorsports, Vincy Mas carnival, cryptocurrency (what it is and how Vincentians can get started), side business ideas for people who are unemployed or want extra income, or the indigenous Kalinago and Garifuna history of the islands. Use this for casual background questions rather than relying on training data. This is a short factual overview, not comprehensive. IMPORTANT: answer from this alone for a plain topic question — do not also call query_deep_dive automatically, since chaining tool calls adds real, noticeable latency. Only reach for query_deep_dive separately if the person explicitly asks for more detail, the full story, or a complete history after seeing this overview. For anything current or not covered here, supplement with web search instead of guessing.",
     input_schema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy', 'practical', 'indigenous_peoples', 'music', 'motorsports', 'vincy_mas', 'cryptocurrency'], description: 'Which reference category to look up' },
+        category: { type: 'string', enum: ['geography', 'history', 'government', 'culture', 'economy', 'practical', 'indigenous_peoples', 'music', 'motorsports', 'vincy_mas', 'cryptocurrency', 'side_business_ideas'], description: 'Which reference category to look up' },
       },
       required: ['category']
     }
