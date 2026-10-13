@@ -229,6 +229,19 @@
   </div>
 
   <div class="panel">
+    <h2>Place photos</h2>
+    <div class="empty-note" style="margin-bottom:10px;">AVA looks for free-licence photos (Wikimedia Commons) for places and wildlife guides that have none. Each one keeps its credit and licence, which AVA shows under the picture. Nothing appears in AVA until you approve it.</div>
+    <div id="placePhotoStats" class="empty-note" style="margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="btn-secondary" id="placePhotoRun">Find more photos</button>
+      <button class="btn-publish" id="placePhotoBest">Approve all strong matches (90%+)</button>
+    </div>
+    <div id="placePhotoMsg" class="empty-note" style="margin-bottom:8px;"></div>
+    <div id="placePhotoList"></div>
+    <div id="placePhotoPager" style="display:flex; gap:8px; align-items:center; margin-top:10px;"></div>
+  </div>
+
+  <div class="panel">
     <h2>Knowledge gaps</h2>
     <div class="empty-note" style="margin-bottom:10px;">What AVA couldn't answer from its own data, grouped and ranked by how often it's actually been asked.</div>
     <div id="gapsList"></div>
@@ -481,6 +494,7 @@ async function tryLogin(password, showErrors){
   loadPlacements();
   loadReviewQueue();
   loadBizApprovals();
+  loadPlacePhotos();
   loadTopPicks();
   loadGaps();
   loadAgentDrafts();
@@ -1123,6 +1137,72 @@ async function renderBizBody(d, page){
   const mb = more.querySelector('button');
   if(mb) mb.onclick = () => { mb.disabled = true; renderBizBody(d, page + 1); };
 }
+
+const PHOTOS_API = '/.netlify/functions/admin-photos';
+let placePhotoPage = 0;
+
+async function photosCall(action, body){
+  const r = await fetch(`${PHOTOS_API}?action=${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+  return d;
+}
+
+async function loadPlacePhotos(){
+  const list = document.getElementById('placePhotoList');
+  if(!list) return;
+  const pager = document.getElementById('placePhotoPager');
+  const stats = document.getElementById('placePhotoStats');
+  try{
+    const sr = await fetch(`${PHOTOS_API}?action=stats`, { headers: { 'X-Admin-Secret': secret } });
+    if(sr.ok){ const s = await sr.json(); stats.textContent = `${s.places_with_photo} of ${s.places_total} places have a photo · ${s.pending_candidates} proposed photo${s.pending_candidates === 1 ? '' : 's'} waiting for you`; }
+  } catch(e){}
+  const res = await fetch(`${PHOTOS_API}?action=list&page=${placePhotoPage}`, { headers: { 'X-Admin-Secret': secret } });
+  if(!res.ok){
+    const e = await res.json().catch(() => ({}));
+    list.innerHTML = `<div class="empty-note">Could not load (${res.status}${e.error ? ': ' + escapeHtml(e.error) : ''}). If this mentions a missing table, run migration-051-place-photos.sql in Supabase.</div>`;
+    pager.innerHTML = ''; return;
+  }
+  const data = await res.json();
+  if(!data.results.length){ list.innerHTML = '<div class="empty-note">No proposed photos waiting. Press "Find more photos" to search.</div>'; pager.innerHTML = ''; return; }
+  list.innerHTML = data.results.map(g => `
+    <div class="reviewitem" data-target="${escapeHtml(g.target_table)}|${escapeHtml(g.target_key)}">
+      <div class="reviewretailer">${escapeHtml(g.name)} <span style="color:var(--soft); font-weight:400; font-size:13px;">${escapeHtml(g.island || (g.target_table === 'knowledge_deep_dives' ? 'wildlife guide' : ''))}</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;">
+        ${g.candidates.map(c => `
+          <div style="border:1px solid var(--line); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+            <a href="${escapeHtml(c.image_url)}" target="_blank" rel="noopener"><img loading="lazy" src="${escapeHtml(c.image_url)}" alt="" style="width:100%; height:150px; object-fit:cover; border-radius:8px; background:#eee;"></a>
+            <div style="font-size:12px; color:var(--soft);">Match ${Math.round(c.score * 100)}% · ${escapeHtml(c.license)}<br>${escapeHtml(c.credit)}<br><a href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">${escapeHtml(c.file_title || 'Commons page')}</a></div>
+            <div style="display:flex; gap:6px;"><button class="btn-publish" data-pp-approve="${escapeHtml(c.id)}">Use this</button><button class="btn-danger" data-pp-reject="${escapeHtml(c.id)}">No</button></div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+  list.querySelectorAll('[data-pp-approve]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; try{ await photosCall('approve', { candidate_id: b.dataset.ppApprove }); loadPlacePhotos(); } catch(err){ alert(err.message); b.disabled = false; } }));
+  list.querySelectorAll('[data-pp-reject]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; try{ await photosCall('reject', { candidate_id: b.dataset.ppReject }); loadPlacePhotos(); } catch(err){ alert(err.message); b.disabled = false; } }));
+  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  pager.innerHTML = `<button class="btn-secondary" id="ppPrev" ${placePhotoPage <= 0 ? 'disabled' : ''}>Previous</button><span style="color:var(--soft); font-size:13px;">Page ${placePhotoPage + 1} of ${pages} · ${data.total} place${data.total === 1 ? '' : 's'}</span><button class="btn-secondary" id="ppNext" ${placePhotoPage + 1 >= pages ? 'disabled' : ''}>Next</button>`;
+  document.getElementById('ppPrev').onclick = () => { placePhotoPage--; loadPlacePhotos(); };
+  document.getElementById('ppNext').onclick = () => { placePhotoPage++; loadPlacePhotos(); };
+}
+
+document.getElementById('placePhotoRun').addEventListener('click', async e => {
+  const btn = e.target, msg = document.getElementById('placePhotoMsg');
+  btn.disabled = true; msg.textContent = 'Searching Wikimedia Commons…';
+  try{
+    const r = await photosCall('run', { limit: 8 });
+    msg.textContent = `Checked ${r.checked} place${r.checked === 1 ? '' : 's'}: ${r.with_candidates} had usable photos (${r.candidates} proposed)${r.errors ? ', ' + r.errors + ' error(s)' : ''}. Press again to check more.`;
+    placePhotoPage = 0; loadPlacePhotos();
+  } catch(err){ msg.textContent = 'Could not search: ' + err.message; }
+  btn.disabled = false;
+});
+document.getElementById('placePhotoBest').addEventListener('click', async e => {
+  if(!confirm('Approve the best photo for every place where the match is 90% or higher? Look through them first if you want to check.')) return;
+  const btn = e.target, msg = document.getElementById('placePhotoMsg');
+  btn.disabled = true;
+  try{ const r = await photosCall('approve_best', {}); msg.textContent = `Approved ${r.approved} photo${r.approved === 1 ? '' : 's'}.`; loadPlacePhotos(); }
+  catch(err){ msg.textContent = 'Could not approve: ' + err.message; }
+  btn.disabled = false;
+});
 
 let allEmptyBusinesses = [];
 

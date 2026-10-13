@@ -525,7 +525,7 @@ async function queryPointsOfInterest(category, island, placeName){
   try{
     let query = supabase
       .from('points_of_interest')
-      .select('name, category, island, description, source_url')
+      .select('name, category, island, description, source_url, photo_url, photo_credit, photo_source_url')
       .eq('active', true);
 
     if(category && category.trim()){
@@ -552,7 +552,7 @@ async function queryPointsOfInterest(category, island, placeName){
     if((!data || !data.length) && placeName && placeName.trim()){
       let broadQuery = supabase
         .from('points_of_interest')
-        .select('name, category, island, description, source_url')
+        .select('name, category, island, description, source_url, photo_url, photo_credit, photo_source_url')
         .eq('active', true);
       if(category && category.trim()) broadQuery = broadQuery.eq('category', category.trim());
       if(island && island.trim()) broadQuery = broadQuery.ilike('island', `%${island.trim()}%`);
@@ -1137,7 +1137,7 @@ async function queryDeepDive(category, slug){
       // document for the category combined.
       const { data, error } = await supabase
         .from('knowledge_deep_dives')
-        .select('slug, title, body, source_url, last_verified_at')
+        .select('slug, title, body, source_url, last_verified_at, photo_url, photo_credit, photo_source_url')
         .eq('slug', slug)
         .eq('review_status', 'published')
         .maybeSingle();
@@ -1171,7 +1171,7 @@ async function queryDeepDive(category, slug){
     const [first, ...rest] = listData;
     const { data: fullDoc, error: fullErr } = await supabase
       .from('knowledge_deep_dives')
-      .select('slug, title, body, source_url, last_verified_at')
+      .select('slug, title, body, source_url, last_verified_at, photo_url, photo_credit, photo_source_url')
       .eq('slug', first.slug)
       .maybeSingle();
     if(fullErr) throw fullErr;
@@ -1238,7 +1238,7 @@ async function findPointOfInterestByName(text){
     if(target.length < 5) return null;
     const { data, error } = await supabase
       .from('points_of_interest')
-      .select('name, category, island, description, source_url')
+      .select('name, category, island, description, source_url, photo_url, photo_credit, photo_source_url')
       .eq('active', true)
       .limit(500);
     if(error || !data) return null;

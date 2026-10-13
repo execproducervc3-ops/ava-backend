@@ -492,6 +492,13 @@ exports.handler = async (event) => {
     while(messages.length > 1 && messages[0].role !== 'user') messages.shift();
     let budgetExceeded = false;
     let deepDives = null;
+    let placeCards = null;
+    // Photo cards (free-licence photos only; the credit is always shown with the picture).
+    const addPlaceCard = (name, sub, url, credit, source) => {
+      if(!url || !credit) return;
+      placeCards = placeCards || [];
+      if(placeCards.length < 3 && !placeCards.some(c => c.photo_url === url)) placeCards.push({ name, sub: sub || '', photo_url: url, credit, source: source || '' });
+    };
     const addDeepDive = (slug, title) => {
       if(!slug) return;
       deepDives = deepDives || [];
@@ -662,6 +669,10 @@ exports.handler = async (event) => {
             content = poiData.results && poiData.results.length
               ? poiData.results.map(p => `"${p.name}" (${p.category.replace('_', ' ')}, ${p.island}): ${p.description}${p.source_url ? ` [source: ${p.source_url}]` : ''}`).join('\n\n')
               : (poiData.note || 'No attractions found.');
+            // Cards only when the answer is about a few specific places, never a long list.
+            if(poiData.results && poiData.results.length && poiData.results.length <= 3){
+              poiData.results.forEach(p => addPlaceCard(p.name, p.island, p.photo_url, p.photo_credit, p.photo_source_url));
+            }
           }
 
           else if(toolUse.name === 'get_directions'){
@@ -828,6 +839,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
                 // a combination never exercised by earlier fresh-conversation
                 // testing, which only ever measured the document in isolation.
                 addDeepDive(deepData.result.slug, deepData.result.title);
+                addPlaceCard(deepData.result.title, '', deepData.result.photo_url, deepData.result.photo_credit, deepData.result.photo_source_url);
                 (deepData.others || []).forEach(o => addDeepDive(o.slug, o.title));
                 // Only an excerpt goes to Claude. The complete document is
                 // served by a button that reads it straight from the database
@@ -957,7 +969,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
     }
     if(!finalText) finalText = "I couldn't quite work that one out — could you rephrase, or ask something more specific?";
     await recordUsage(true, null, startTime, deviceId);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards }) };
   } catch(err){
     console.error('ava-chat error:', err);
     await recordUsage(false, err && err.message, startTime, deviceId);

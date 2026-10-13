@@ -43,3 +43,8 @@
 
 [functions."agent-data-quality"]
   schedule = "@weekly"
+
+[functions."photo-finder"]
+  schedule = "@daily"
+
+
