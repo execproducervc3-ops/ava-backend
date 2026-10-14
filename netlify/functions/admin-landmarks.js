@@ -12,6 +12,7 @@ const CORS = {
 const json = (statusCode, obj) => ({ statusCode, headers: CORS, body: JSON.stringify(obj) });
 const KINDS = ['bank', 'church', 'gas_station', 'school', 'supermarket', 'shop', 'restaurant', 'bar', 'pharmacy', 'police', 'clinic', 'hospital', 'market', 'post_office', 'hotel', 'junction', 'bridge', 'roundabout', 'other'];
 const ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent', 'Tobago Cays'];
+const osm = require('./osm-core');
 const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 async function checkAuth(pw){
@@ -77,6 +78,62 @@ exports.handler = async (event) => {
         throw error;
       }
       return json(200, { ok: true, landmark: data, found_as: found ? `${found.found_as} (${found.address})` : null });
+    }
+
+    if (event.httpMethod === 'POST' && action === 'osm_import') {
+      const body = JSON.parse(event.body || '{}');
+      const island = body.island, group = body.group;
+      if (!osm.ISLAND_BOXES[island]) return json(400, { error: 'Pick an island that can be imported.' });
+      if (!osm.GROUPS[group]) return json(400, { error: 'Unknown group.' });
+      const data = await osm.fetchOverpass(osm.buildQuery(island, group));
+      const rows = osm.parseElements(data, island);
+      // Leave out what is already saved, and what was decided before.
+      const { data: have } = await supabase.from('landmarks').select('name').eq('island', island);
+      const haveSet = new Set((have || []).map(r => String(r.name).toLowerCase()));
+      const fresh = rows.filter(r => !haveSet.has(r.name.toLowerCase()));
+      let added = 0;
+      if (fresh.length) {
+        const { data: ins, error } = await supabase.from('landmark_candidates')
+          .upsert(fresh, { onConflict: 'osm_ref', ignoreDuplicates: true }).select('id');
+        if (error) throw error;
+        added = (ins || []).length;
+      }
+      return json(200, { ok: true, found: rows.length, already_saved: rows.length - fresh.length, new_candidates: added });
+    }
+
+    if (event.httpMethod === 'GET' && action === 'osm_list') {
+      let q = supabase.from('landmark_candidates').select('id, osm_ref, name, kind, island, lat, lng')
+        .eq('status', 'pending').order('island').order('kind').order('name').limit(300);
+      if (params.island) q = q.eq('island', params.island);
+      if (params.kind) q = q.eq('kind', params.kind);
+      const { data, error } = await q;
+      if (error) throw error;
+      const { count } = await supabase.from('landmark_candidates').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+      return json(200, { candidates: (data || []).map(c => ({ ...c, source_url: osm.osmUrl(c.osm_ref) })), pending_total: count || 0, import_islands: osm.IMPORT_ISLANDS, groups: osm.GROUP_NAMES });
+    }
+
+    if (event.httpMethod === 'POST' && (action === 'osm_approve' || action === 'osm_reject')) {
+      const body = JSON.parse(event.body || '{}');
+      const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Number.isFinite).slice(0, 300);
+      if (!ids.length) return json(400, { error: 'Nothing selected.' });
+      if (action === 'osm_reject') {
+        const { error } = await supabase.from('landmark_candidates').update({ status: 'rejected' }).in('id', ids);
+        if (error) throw error;
+        return json(200, { ok: true, rejected: ids.length });
+      }
+      const { data: cands, error: ce } = await supabase.from('landmark_candidates').select('*').in('id', ids).eq('status', 'pending');
+      if (ce) throw ce;
+      let approved = 0, skipped = 0;
+      for (const c of cands || []) {
+        const { error } = await supabase.from('landmarks').insert({
+          name: c.name, kind: c.kind, island: c.island, lat: c.lat, lng: c.lng,
+          notes: `Source: (c) OpenStreetMap contributors (ODbL), ${osm.osmUrl(c.osm_ref)}`,
+        });
+        if (error && !/duplicate|unique/i.test(error.message)) throw error;
+        if (error) skipped++; else approved++;
+        await supabase.from('landmark_candidates').update({ status: 'approved' }).eq('id', c.id);
+      }
+      return json(200, { ok: true, approved, already_saved: skipped });
     }
 
     if (event.httpMethod === 'POST' && action === 'delete') {

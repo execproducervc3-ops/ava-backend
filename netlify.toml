@@ -50,6 +50,8 @@
 [functions."source-watch"]
   schedule = "0 */3 * * *"
 
+[functions."admin-landmarks"]
+  timeout = 26
 
 
 

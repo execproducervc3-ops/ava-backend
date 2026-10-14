@@ -348,6 +348,17 @@
     <input type="text" id="lmNear" placeholder="e.g. Layou, or Leeward Highway" autocomplete="off">
     <div style="display:flex; gap:8px; margin-top:8px;"><button id="lmAddBtn">Add landmark</button></div>
     <div class="empty-note" id="lmMsg" style="display:none; margin-top:8px;"></div>
+    <div style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
+      <h3 style="font-size:14px; margin:0 0 6px;">Import from OpenStreetMap</h3>
+      <div class="empty-note" style="margin-bottom:8px;">Pulls named banks, churches, fuel stations, schools, shops, pharmacies, police stations, clinics, hotels, bars, restaurants, bridges and roundabouts for an island. They wait below until you approve them. Map data &copy; OpenStreetMap contributors (ODbL); AVA keeps the source link with each one.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select id="osmIsland"></select>
+        <button class="btn-secondary" id="osmImportBtn">Import this island</button>
+        <button class="btn-secondary" id="osmRefreshBtn">Show waiting list</button>
+      </div>
+      <div class="empty-note" id="osmMsg" style="display:none; margin-top:8px;"></div>
+      <div id="osmList" style="margin-top:10px;"></div>
+    </div>
     <div id="lmList" style="margin-top:14px;"></div>
   </div>
 
@@ -2270,10 +2281,25 @@ async function lmApi(action, method, body){
     method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
     body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
   });
-  const data = await res.json();
+  const raw = await res.text();
+  let data = null;
+  try{ data = JSON.parse(raw); } catch(e){}
+  if(!data){
+    throw new Error(res.status === 404
+      ? 'The landmarks service was not found (404). Check that netlify/functions/admin-landmarks.js is in your repo and deployed.'
+      : 'The landmarks service returned an unexpected reply (HTTP ' + res.status + '). Check the Netlify function logs for admin-landmarks.');
+  }
   if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
   return data;
 }
+const LM_KINDS = ['bank','church','gas_station','school','supermarket','shop','restaurant','bar','pharmacy','police','clinic','hospital','market','post_office','hotel','junction','bridge','roundabout','other'];
+const LM_ISLANDS = ['Saint Vincent','Bequia','Mustique','Canouan','Mayreau','Union Island','Palm Island','Petit Saint Vincent','Tobago Cays'];
+function lmFillSelects(kinds, islands){
+  const kindSel = document.getElementById('lmKind'), isleSel = document.getElementById('lmIsland');
+  if(!kindSel.options.length) kindSel.innerHTML = kinds.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k.replace(/_/g, ' '))}</option>`).join('');
+  if(!isleSel.options.length) isleSel.innerHTML = islands.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
+}
+lmFillSelects(LM_KINDS, LM_ISLANDS);
 function lmSay(text, isErr){
   const el = document.getElementById('lmMsg');
   el.style.display = text ? 'block' : 'none';
@@ -2284,11 +2310,7 @@ async function loadLandmarks(){
   const listEl = document.getElementById('lmList');
   try{
     const data = await lmApi('list', 'GET');
-    const kindSel = document.getElementById('lmKind'), isleSel = document.getElementById('lmIsland');
-    if(!kindSel.options.length){
-      kindSel.innerHTML = data.kinds.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k.replace(/_/g, ' '))}</option>`).join('');
-      isleSel.innerHTML = data.islands.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
-    }
+    lmFillSelects(data.kinds || LM_KINDS, data.islands || LM_ISLANDS);
     if(!data.landmarks.length){ listEl.innerHTML = '<div class="empty-note">No landmarks added yet.</div>'; return; }
     listEl.innerHTML = data.landmarks.map(l => `
       <div class="gaprow">
@@ -2345,6 +2367,74 @@ async function loadUsage(){
   }
 }
 document.getElementById('usageRefresh').addEventListener('click', loadUsage);
+
+// ------------------------------------------- OpenStreetMap import ---
+const OSM_ISLANDS = ['Saint Vincent','Bequia','Mustique','Canouan','Mayreau','Union Island','Palm Island','Petit Saint Vincent'];
+const OSM_GROUPS = ['services','community','visitor'];
+document.getElementById('osmIsland').innerHTML = OSM_ISLANDS.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
+function osmSay(text, isErr){
+  const el = document.getElementById('osmMsg');
+  el.style.display = text ? 'block' : 'none';
+  el.style.color = isErr ? 'var(--danger)' : 'var(--live)';
+  el.textContent = text || '';
+}
+async function osmLoad(){
+  const el = document.getElementById('osmList');
+  try{
+    const isl = document.getElementById('osmIsland').value;
+    const data = await lmApi('osm_list&island=' + encodeURIComponent(isl), 'GET');
+    if(!data.candidates.length){
+      el.innerHTML = `<div class="empty-note">Nothing waiting for ${escapeHtml(isl)}. ${data.pending_total ? data.pending_total + ' waiting on other islands.' : ''}</div>`;
+      return;
+    }
+    el.innerHTML = `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <button class="btn-secondary" id="osmAll">Tick all</button>
+        <button id="osmApprove">Add ticked to landmarks</button>
+        <button class="btn-secondary" id="osmSkip">Skip ticked</button>
+        <span class="empty-note" style="align-self:center;">${data.candidates.length} shown${data.pending_total > data.candidates.length ? ' of ' + data.pending_total + ' waiting' : ''}</span>
+      </div>` + data.candidates.map(c => `<label class="gaprow" style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+        <input type="checkbox" class="osmChk" value="${c.id}" style="margin-top:4px;">
+        <div><div class="gaprow-query">${escapeHtml(c.name)}</div>
+        <div class="gaprow-meta">${escapeHtml(c.kind.replace(/_/g, ' '))} &middot; ${Number(c.lat).toFixed(4)}, ${Number(c.lng).toFixed(4)} &middot; <a href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">OpenStreetMap</a></div></div></label>`).join('');
+  } catch(err){ el.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+}
+document.getElementById('osmRefreshBtn').addEventListener('click', osmLoad);
+document.getElementById('osmIsland').addEventListener('change', osmLoad);
+document.getElementById('osmImportBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('osmImportBtn');
+  const island = document.getElementById('osmIsland').value;
+  btn.disabled = true; osmSay('');
+  let found = 0, added = 0, saved = 0;
+  try{
+    for(let i = 0; i < OSM_GROUPS.length; i++){
+      osmSay(`Asking OpenStreetMap about ${island} (${i + 1} of ${OSM_GROUPS.length})...`);
+      const r = await lmApi('osm_import', 'POST', { island, group: OSM_GROUPS[i] });
+      found += r.found; added += r.new_candidates; saved += r.already_saved;
+    }
+    osmSay(`${island}: OpenStreetMap has ${found} named places. ${added} new ones are waiting for your approval${saved ? '; ' + saved + ' were already in your landmarks' : ''}.`);
+    osmLoad();
+  } catch(err){ osmSay(err.message + (found || added ? ` (so far ${added} new)` : ''), true); osmLoad(); }
+  btn.disabled = false;
+});
+document.getElementById('osmList').addEventListener('click', async (e) => {
+  const id = e.target.id;
+  if(id === 'osmAll'){
+    const boxes = [...document.querySelectorAll('.osmChk')];
+    const all = boxes.every(b => b.checked);
+    boxes.forEach(b => { b.checked = !all; });
+    return;
+  }
+  if(id !== 'osmApprove' && id !== 'osmSkip') return;
+  const ids = [...document.querySelectorAll('.osmChk:checked')].map(b => Number(b.value));
+  if(!ids.length){ osmSay('Tick at least one place first.', true); return; }
+  e.target.disabled = true;
+  try{
+    const r = await lmApi(id === 'osmApprove' ? 'osm_approve' : 'osm_reject', 'POST', { ids });
+    osmSay(id === 'osmApprove' ? `Added ${r.approved} landmark${r.approved === 1 ? '' : 's'}${r.already_saved ? ' (' + r.already_saved + ' were already saved)' : ''}.` : `Skipped ${r.rejected}.`);
+    osmLoad(); if(id === 'osmApprove') loadLandmarks();
+  } catch(err){ osmSay(err.message, true); e.target.disabled = false; }
+});
+
 
 </script>
 </body>

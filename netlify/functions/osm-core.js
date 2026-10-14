@@ -1,0 +1,100 @@
+// OpenStreetMap landmark import helpers. Data (c) OpenStreetMap contributors, ODbL.
+// Pure functions + one fetch wrapper, so they can be tested without a network.
+
+const ISLAND_BOXES = {
+  'Saint Vincent':       { s: 13.12, w: -61.30, n: 13.40, e: -61.09 },
+  'Bequia':              { s: 12.96, w: -61.29, n: 13.05, e: -61.19 },
+  'Mustique':            { s: 12.85, w: -61.21, n: 12.90, e: -61.15 },
+  'Canouan':             { s: 12.68, w: -61.37, n: 12.74, e: -61.30 },
+  'Mayreau':             { s: 12.62, w: -61.42, n: 12.66, e: -61.37 },
+  'Union Island':        { s: 12.57, w: -61.48, n: 12.62, e: -61.42 },
+  'Palm Island':         { s: 12.565, w: -61.405, n: 12.59, e: -61.375 },
+  'Petit Saint Vincent': { s: 12.515, w: -61.40, n: 12.545, e: -61.365 },
+};
+const IMPORT_ISLANDS = Object.keys(ISLAND_BOXES);
+
+// Each group is one Overpass request, so a request stays small and quick.
+const GROUPS = {
+  services: [['amenity', 'bank'], ['amenity', 'fuel'], ['amenity', 'school'], ['amenity', 'pharmacy'], ['amenity', 'police'], ['amenity', 'clinic'], ['amenity', 'hospital'], ['amenity', 'post_office']],
+  community: [['amenity', 'place_of_worship'], ['shop', 'supermarket'], ['shop', 'convenience'], ['amenity', 'marketplace']],
+  visitor: [['amenity', 'restaurant'], ['amenity', 'bar'], ['amenity', 'pub'], ['tourism', 'hotel'], ['tourism', 'guest_house'], ['man_made', 'bridge'], ['junction', 'roundabout']],
+};
+const GROUP_NAMES = Object.keys(GROUPS);
+
+function buildQuery(island, group){
+  const b = ISLAND_BOXES[island];
+  const list = GROUPS[group];
+  if(!b || !list) throw new Error('Unknown island or group');
+  const box = `${b.s},${b.w},${b.n},${b.e}`;
+  const lines = list.map(([k, v]) => `nwr["${k}"="${v}"]["name"](${box});`).join('\n');
+  return `[out:json][timeout:20];\n(\n${lines}\n);\nout center tags 400;`;
+}
+
+function classify(tags){
+  tags = tags || {};
+  if(tags.amenity === 'bank') return 'bank';
+  if(tags.amenity === 'place_of_worship') return 'church';
+  if(tags.amenity === 'fuel') return 'gas_station';
+  if(tags.amenity === 'school') return 'school';
+  if(tags.shop === 'supermarket') return 'supermarket';
+  if(tags.shop === 'convenience') return 'shop';
+  if(tags.amenity === 'restaurant') return 'restaurant';
+  if(tags.amenity === 'bar' || tags.amenity === 'pub') return 'bar';
+  if(tags.amenity === 'pharmacy') return 'pharmacy';
+  if(tags.amenity === 'police') return 'police';
+  if(tags.amenity === 'clinic') return 'clinic';
+  if(tags.amenity === 'hospital') return 'hospital';
+  if(tags.amenity === 'marketplace') return 'market';
+  if(tags.amenity === 'post_office') return 'post_office';
+  if(tags.tourism === 'hotel' || tags.tourism === 'guest_house') return 'hotel';
+  if(tags.man_made === 'bridge') return 'bridge';
+  if(tags.junction === 'roundabout') return 'roundabout';
+  return null;
+}
+
+// Turns an Overpass reply into candidate rows. Drops anything without a name,
+// a recognised kind, coordinates inside the island box, or a repeated name.
+function parseElements(data, island){
+  const b = ISLAND_BOXES[island];
+  const out = [], seen = new Set();
+  for(const el of (data && data.elements) || []){
+    const tags = el.tags || {};
+    const name = String(tags.name || '').trim();
+    const kind = classify(tags);
+    const lat = el.lat != null ? el.lat : el.center && el.center.lat;
+    const lng = el.lon != null ? el.lon : el.center && el.center.lon;
+    if(!name || name.length > 120 || !kind || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if(!b || lat < b.s || lat > b.n || lng < b.w || lng > b.e) continue;
+    const key = name.toLowerCase();
+    if(seen.has(key)) continue;
+    seen.add(key);
+    out.push({ osm_ref: `${el.type}/${el.id}`, name, kind, island, lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) });
+  }
+  return out;
+}
+
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
+async function fetchOverpass(query, fetchImpl){
+  const f = fetchImpl || fetch;
+  let lastErr;
+  for(const url of OVERPASS){
+    try{
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 12000);
+      const res = await f(url, {
+        method: 'POST', signal: ctl.signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AskVincy-AVA/1.0 (askvincy.com)' },
+        body: 'data=' + encodeURIComponent(query),
+      });
+      clearTimeout(t);
+      if(!res.ok) throw new Error('OpenStreetMap server replied ' + res.status);
+      return await res.json();
+    } catch(e){ lastErr = e; }
+  }
+  throw new Error('Could not reach OpenStreetMap right now (' + (lastErr && lastErr.message) + '). Try again in a minute.');
+}
+
+const osmUrl = (ref) => `https://www.openstreetmap.org/${ref}`;
+
+module.exports = { ISLAND_BOXES, IMPORT_ISLANDS, GROUPS, GROUP_NAMES, buildQuery, classify, parseElements, fetchOverpass, osmUrl };
