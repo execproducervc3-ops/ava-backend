@@ -2370,7 +2370,7 @@ document.getElementById('usageRefresh').addEventListener('click', loadUsage);
 
 // ------------------------------------------- OpenStreetMap import ---
 const OSM_ISLANDS = ['Saint Vincent','Bequia','Mustique','Canouan','Mayreau','Union Island','Palm Island','Petit Saint Vincent'];
-const OSM_GROUPS = ['services','community','visitor'];
+const OSM_GROUPS = ['money_fuel','schools_health','churches','shops','food_stay','roads'];
 document.getElementById('osmIsland').innerHTML = OSM_ISLANDS.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
 function osmSay(text, isErr){
   const el = document.getElementById('osmMsg');

@@ -15,9 +15,12 @@ const IMPORT_ISLANDS = Object.keys(ISLAND_BOXES);
 
 // Each group is one Overpass request, so a request stays small and quick.
 const GROUPS = {
-  services: [['amenity', 'bank'], ['amenity', 'fuel'], ['amenity', 'school'], ['amenity', 'pharmacy'], ['amenity', 'police'], ['amenity', 'clinic'], ['amenity', 'hospital'], ['amenity', 'post_office']],
-  community: [['amenity', 'place_of_worship'], ['shop', 'supermarket'], ['shop', 'convenience'], ['amenity', 'marketplace']],
-  visitor: [['amenity', 'restaurant'], ['amenity', 'bar'], ['amenity', 'pub'], ['tourism', 'hotel'], ['tourism', 'guest_house'], ['man_made', 'bridge'], ['junction', 'roundabout']],
+  money_fuel: [['amenity', 'bank'], ['amenity', 'fuel'], ['amenity', 'post_office']],
+  schools_health: [['amenity', 'school'], ['amenity', 'pharmacy'], ['amenity', 'clinic'], ['amenity', 'hospital'], ['amenity', 'police']],
+  churches: [['amenity', 'place_of_worship']],
+  shops: [['shop', 'supermarket'], ['shop', 'convenience'], ['amenity', 'marketplace']],
+  food_stay: [['amenity', 'restaurant'], ['amenity', 'bar'], ['amenity', 'pub'], ['tourism', 'hotel'], ['tourism', 'guest_house']],
+  roads: [['man_made', 'bridge'], ['junction', 'roundabout']],
 };
 const GROUP_NAMES = Object.keys(GROUPS);
 
@@ -73,15 +76,19 @@ function parseElements(data, island){
   return out;
 }
 
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 
 async function fetchOverpass(query, fetchImpl){
   const f = fetchImpl || fetch;
-  let lastErr;
+  const errs = [];
   for(const url of OVERPASS){
     try{
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 12000);
+      const t = setTimeout(() => ctl.abort(), 7000);
       const res = await f(url, {
         method: 'POST', signal: ctl.signal,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AskVincy-AVA/1.0 (askvincy.com)' },
@@ -90,9 +97,9 @@ async function fetchOverpass(query, fetchImpl){
       clearTimeout(t);
       if(!res.ok) throw new Error('OpenStreetMap server replied ' + res.status);
       return await res.json();
-    } catch(e){ lastErr = e; }
+    } catch(e){ errs.push(new URL(url).hostname + ': ' + (e.name === 'AbortError' ? 'no answer in 7s' : e.message)); }
   }
-  throw new Error('Could not reach OpenStreetMap right now (' + (lastErr && lastErr.message) + '). Try again in a minute.');
+  throw new Error('Could not reach OpenStreetMap right now (' + errs.join('; ') + '). Try again in a minute.');
 }
 
 const osmUrl = (ref) => `https://www.openstreetmap.org/${ref}`;
