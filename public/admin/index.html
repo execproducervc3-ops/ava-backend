@@ -2312,27 +2312,60 @@ function lmSay(text, isErr){
   el.style.color = isErr ? 'var(--danger)' : 'var(--live)';
   el.textContent = text || '';
 }
+let lmRows = [];
 async function loadLandmarks(){
   const listEl = document.getElementById('lmList');
   try{
     const data = await lmApi('list', 'GET');
     lmFillSelects(data.kinds || LM_KINDS, data.islands || LM_ISLANDS);
+    lmRows = data.landmarks;
     document.getElementById('lmSummary').textContent = `Saved landmarks (${data.landmarks.length})`;
     if(!data.landmarks.length){ listEl.innerHTML = '<div class="empty-note">No landmarks added yet.</div>'; return; }
     listEl.innerHTML = data.landmarks.map(l => `
-      <div class="gaprow" data-lm-text="${escapeHtml((l.name + ' ' + l.kind.replace(/_/g, ' ') + ' ' + (l.island || '')).toLowerCase())}">
-        <div><div class="gaprow-query">${escapeHtml(l.name)}</div>
+      <div class="gaprow" data-lm-text="${escapeHtml((l.name + ' ' + l.kind.replace(/_/g, ' ') + ' ' + (l.island || '')).toLowerCase())}" data-lm-row="${l.id}">
+        <div><div class="gaprow-query"${l.active === false ? ' style="opacity:.5"' : ''}>${escapeHtml(l.name)}${l.active === false ? ' (hidden from directions)' : ''}</div>
         <div class="gaprow-meta">${escapeHtml(l.kind.replace(/_/g, ' '))} &middot; ${escapeHtml(l.island || '')} &middot; ${Number(l.lat).toFixed(4)}, ${Number(l.lng).toFixed(4)}</div></div>
-        <button class="btn-secondary" data-lm-del="${l.id}">Remove</button>
+        <div style="display:flex; gap:6px;"><button class="btn-secondary" data-lm-edit="${l.id}">Edit</button><button class="btn-secondary" data-lm-del="${l.id}">Remove</button></div>
       </div>`).join('');
     listEl.querySelectorAll('[data-lm-del]').forEach(b => b.addEventListener('click', async () => {
       try{ await lmApi('delete', 'POST', { id: Number(b.dataset.lmDel) }); loadLandmarks(); } catch(err){ lmSay(err.message, true); }
     }));
+    listEl.querySelectorAll('[data-lm-edit]').forEach(b => b.addEventListener('click', () => lmOpenEdit(Number(b.dataset.lmEdit))));
     lmApplyFilter();
   } catch(err){
     listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`;
     document.getElementById('lmDetails').open = true;
   }
+}
+
+function lmOpenEdit(id){
+  const l = lmRows.find(x => x.id === id);
+  const row = document.querySelector(`[data-lm-row="${id}"]`);
+  if(!l || !row) return;
+  const opts = (arr, cur) => arr.map(v => `<option value="${escapeHtml(v)}"${v === cur ? ' selected' : ''}>${escapeHtml(v.replace(/_/g, ' '))}</option>`).join('');
+  row.style.display = 'block';
+  row.innerHTML = `<div style="width:100%;">
+    <label>Name</label><input type="text" class="lmeName" value="${escapeHtml(l.name)}">
+    <label>Kind</label><select class="lmeKind">${opts(LM_KINDS, l.kind)}</select>
+    <label>Island</label><select class="lmeIsland">${opts(LM_ISLANDS, l.island)}</select>
+    <label>Latitude</label><input type="text" class="lmeLat" value="${Number(l.lat)}">
+    <label>Longitude</label><input type="text" class="lmeLng" value="${Number(l.lng)}">
+    <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" class="lmeActive"${l.active === false ? '' : ' checked'}> Use in directions</label>
+    <div style="display:flex; gap:8px; margin-top:8px;"><button class="lmeSave">Save</button><button class="btn-secondary lmeCancel">Cancel</button></div>
+    <div class="empty-note lmeMsg" style="display:none; margin-top:6px;"></div></div>`;
+  row.querySelector('.lmeCancel').addEventListener('click', loadLandmarks);
+  row.querySelector('.lmeSave').addEventListener('click', async (e) => {
+    const msg = row.querySelector('.lmeMsg');
+    e.target.disabled = true;
+    try{
+      await lmApi('update', 'POST', {
+        id, name: row.querySelector('.lmeName').value, kind: row.querySelector('.lmeKind').value,
+        island: row.querySelector('.lmeIsland').value, lat: row.querySelector('.lmeLat').value,
+        lng: row.querySelector('.lmeLng').value, active: row.querySelector('.lmeActive').checked,
+      });
+      lmSay('Saved.', false); loadLandmarks();
+    } catch(err){ msg.style.display = 'block'; msg.style.color = 'var(--danger)'; msg.textContent = err.message; e.target.disabled = false; }
+  });
 }
 function lmApplyFilter(){
   const q = document.getElementById('lmFilter').value.trim().toLowerCase();

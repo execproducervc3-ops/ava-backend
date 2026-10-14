@@ -145,6 +145,37 @@ exports.handler = async (event) => {
       return json(200, { ok: true, approved, already_saved: skipped });
     }
 
+    if (event.httpMethod === 'POST' && action === 'update') {
+      const body = JSON.parse(event.body || '{}');
+      if (!body.id) return json(400, { error: 'id is required' });
+      const patch = {};
+      if (body.name !== undefined) {
+        const name = String(body.name).trim();
+        if (!name || name.length > 120) return json(400, { error: 'A name is required.' });
+        patch.name = name;
+      }
+      if (body.kind !== undefined) { if (!KINDS.includes(body.kind)) return json(400, { error: 'Unknown kind.' }); patch.kind = body.kind; }
+      if (body.island !== undefined) { if (!ISLANDS.includes(body.island)) return json(400, { error: 'Unknown island.' }); patch.island = body.island; }
+      if (body.lat !== undefined || body.lng !== undefined) {
+        const lat = Number(body.lat), lng = Number(body.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 12.5 || lat > 13.5 || lng < -61.6 || lng > -60.9) {
+          return json(400, { error: 'Latitude and longitude must both be numbers inside Saint Vincent and the Grenadines.' });
+        }
+        patch.lat = lat; patch.lng = lng;
+      }
+      if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).slice(0, 300) : null;
+      if (body.active !== undefined) patch.active = !!body.active;
+      if (!Object.keys(patch).length) return json(400, { error: 'Nothing to change.' });
+      const { data, error } = await supabase.from('landmarks').update(patch).eq('id', body.id)
+        .select('id, name, kind, island, lat, lng, notes, active').maybeSingle();
+      if (error) {
+        if (/duplicate|unique/i.test(error.message)) return json(409, { error: 'Another landmark on that island already has that name.' });
+        throw error;
+      }
+      if (!data) return json(404, { error: 'That landmark no longer exists.' });
+      return json(200, { ok: true, landmark: data });
+    }
+
     if (event.httpMethod === 'POST' && action === 'delete') {
       const body = JSON.parse(event.body || '{}');
       if (!body.id) return json(400, { error: 'id is required' });
