@@ -348,8 +348,9 @@
     <input type="text" id="lmNear" placeholder="e.g. Layou, or Leeward Highway" autocomplete="off">
     <div style="display:flex; gap:8px; margin-top:8px;"><button id="lmAddBtn">Add landmark</button></div>
     <div class="empty-note" id="lmMsg" style="display:none; margin-top:8px;"></div>
-    <div style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
-      <h3 style="font-size:14px; margin:0 0 6px;">Import from OpenStreetMap</h3>
+    <details id="osmDetails" style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
+      <summary style="cursor:pointer; font-size:14px; font-weight:600;">Import from OpenStreetMap</summary>
+      <div style="margin-top:8px;">
       <div class="empty-note" style="margin-bottom:8px;">Pulls named banks, churches, fuel stations, schools, shops, pharmacies, police stations, clinics, hotels, bars, restaurants, bridges and roundabouts for an island. They wait below until you approve them. Map data &copy; OpenStreetMap contributors (ODbL); AVA keeps the source link with each one.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <select id="osmIsland"></select>
@@ -358,8 +359,13 @@
       </div>
       <div class="empty-note" id="osmMsg" style="display:none; margin-top:8px;"></div>
       <div id="osmList" style="margin-top:10px;"></div>
-    </div>
-    <div id="lmList" style="margin-top:14px;"></div>
+      </div>
+    </details>
+    <details id="lmDetails" style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
+      <summary id="lmSummary" style="cursor:pointer; font-size:14px; font-weight:600;">Saved landmarks</summary>
+      <input type="text" id="lmFilter" placeholder="Filter by name, kind or island" autocomplete="off" style="margin-top:8px;">
+      <div id="lmList" style="margin-top:10px; max-height:480px; overflow:auto;"></div>
+    </details>
   </div>
 
   <div class="panel">
@@ -2311,9 +2317,10 @@ async function loadLandmarks(){
   try{
     const data = await lmApi('list', 'GET');
     lmFillSelects(data.kinds || LM_KINDS, data.islands || LM_ISLANDS);
+    document.getElementById('lmSummary').textContent = `Saved landmarks (${data.landmarks.length})`;
     if(!data.landmarks.length){ listEl.innerHTML = '<div class="empty-note">No landmarks added yet.</div>'; return; }
     listEl.innerHTML = data.landmarks.map(l => `
-      <div class="gaprow">
+      <div class="gaprow" data-lm-text="${escapeHtml((l.name + ' ' + l.kind.replace(/_/g, ' ') + ' ' + (l.island || '')).toLowerCase())}">
         <div><div class="gaprow-query">${escapeHtml(l.name)}</div>
         <div class="gaprow-meta">${escapeHtml(l.kind.replace(/_/g, ' '))} &middot; ${escapeHtml(l.island || '')} &middot; ${Number(l.lat).toFixed(4)}, ${Number(l.lng).toFixed(4)}</div></div>
         <button class="btn-secondary" data-lm-del="${l.id}">Remove</button>
@@ -2321,8 +2328,17 @@ async function loadLandmarks(){
     listEl.querySelectorAll('[data-lm-del]').forEach(b => b.addEventListener('click', async () => {
       try{ await lmApi('delete', 'POST', { id: Number(b.dataset.lmDel) }); loadLandmarks(); } catch(err){ lmSay(err.message, true); }
     }));
-  } catch(err){ listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+    lmApplyFilter();
+  } catch(err){
+    listEl.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`;
+    document.getElementById('lmDetails').open = true;
+  }
 }
+function lmApplyFilter(){
+  const q = document.getElementById('lmFilter').value.trim().toLowerCase();
+  document.querySelectorAll('#lmList [data-lm-text]').forEach(r => { r.style.display = !q || r.dataset.lmText.includes(q) ? '' : 'none'; });
+}
+document.getElementById('lmFilter').addEventListener('input', lmApplyFilter);
 document.getElementById('lmAddBtn').addEventListener('click', async () => {
   const btn = document.getElementById('lmAddBtn');
   btn.disabled = true; lmSay('');
@@ -2424,6 +2440,7 @@ document.getElementById('osmImportBtn').addEventListener('click', async () => {
   const btn = document.getElementById('osmImportBtn');
   const island = document.getElementById('osmIsland').value;
   btn.disabled = true; osmSay('');
+  document.getElementById('osmDetails').open = true;
   let found = 0, added = 0, saved = 0;
   try{
     for(let i = 0; i < OSM_GROUPS.length; i++){
