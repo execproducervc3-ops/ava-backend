@@ -493,6 +493,7 @@ exports.handler = async (event) => {
     let budgetExceeded = false;
     let deepDives = null;
     let placeCards = null;
+    let routeMap = null;
     // Photo cards (free-licence photos only; the credit is always shown with the picture).
     const addPlaceCard = (name, sub, url, credit, source) => {
       if(!url || !credit) return;
@@ -677,6 +678,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'get_directions'){
             const dir = await avaCore.queryDirections(toolUse.input.origin, toolUse.input.destination);
+            if(dir.map) routeMap = dir.map;
             content = dir.steps ? `${dir.summary}\n\n${dir.steps.join('\n')}\n\nUse ONLY these landmarks. Where it says no mapped landmark, do not invent one.` : (dir.note || 'No directions available.');
           }
 
@@ -978,7 +980,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       } catch(e){ console.error('species photo match failed (non-fatal):', e.message); }
     }
     await recordUsage(true, null, startTime, deviceId);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards, routeMap }) };
   } catch(err){
     console.error('ava-chat error:', err);
     await recordUsage(false, err && err.message, startTime, deviceId);

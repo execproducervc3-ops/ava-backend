@@ -1431,7 +1431,7 @@ async function queryDirections(origin, destination){
       method: 'POST',
       headers: {
         'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_KEY,
-        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.legs.steps.distanceMeters,routes.legs.steps.navigationInstruction,routes.legs.steps.startLocation',
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.distanceMeters,routes.legs.steps.navigationInstruction,routes.legs.steps.startLocation',
       },
       body: JSON.stringify({
         origin: { location: { latLng: { latitude: o.location.lat, longitude: o.location.lng } } },
@@ -1456,6 +1456,7 @@ async function queryDirections(origin, destination){
     const turnPoints = steps.filter(s => s.maneuver && s.maneuver !== 'DEPART' && s.lat != null).slice(0, 25);
     const landmarks = await fetchLandmarks(turnPoints);
 
+    const mapLandmarks = [];
     const lines = steps.map((s, i) => {
       const near = s.lat == null ? [] : landmarks
         .map(l => ({ l, dist: metersBetween({ lat: s.lat, lng: s.lng }, l) }))
@@ -1463,6 +1464,7 @@ async function queryDirections(origin, destination){
         .sort((a, b) => ((LANDMARK_PRIORITY[a.l.kind] || 3) - (LANDMARK_PRIORITY[b.l.kind] || 3)) || (a.dist - b.dist))
         .filter((x, idx, arr) => arr.findIndex(y => y.l.name === x.l.name) === idx)
         .slice(0, 2);
+      near.forEach(x => { if(mapLandmarks.length < 12 && !mapLandmarks.some(m => m.name === x.l.name)) mapLandmarks.push({ name: x.l.name, kind: x.l.kind || 'other', lat: x.l.lat, lng: x.l.lng }); });
       const lm = near.length ? ` | landmarks right at this turn: ${near.map(x => landmarkSay(x.l)).join(', ')}` : ' | no mapped landmark at this turn';
       const dist = s.meters >= 1000 ? `${(s.meters / 1000).toFixed(1)} km` : `${Math.round(s.meters)} m`;
       const word = s.maneuver === 'DEPART' ? 'start' : (MANEUVER_WORDS[s.maneuver] || (s.maneuver || 'continue').toLowerCase());
@@ -1470,7 +1472,14 @@ async function queryDirections(origin, destination){
     });
     const km = (route.distanceMeters / 1000).toFixed(1);
     const mins = Math.round(parseInt(route.duration, 10) / 60);
-    return { summary: `${origin} to ${destination}: about ${km} km, roughly ${mins} minutes by road.`, steps: lines };
+    const poly = route.polyline && route.polyline.encodedPolyline;
+    const map = poly && poly.length < 20000 ? {
+      polyline: poly,
+      origin: { name: String(origin).slice(0, 80), lat: o.location.lat, lng: o.location.lng },
+      destination: { name: String(destination).slice(0, 80), lat: d.location.lat, lng: d.location.lng },
+      landmarks: mapLandmarks,
+    } : null;
+    return { summary: `${origin} to ${destination}: about ${km} km, roughly ${mins} minutes by road.`, steps: lines, map };
   }catch(e){
     console.error('queryDirections error:', e.message);
     return { note: 'Could not work out directions right now.' };
