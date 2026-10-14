@@ -1420,6 +1420,60 @@ async function fetchLandmarks(points){
   return out;
 }
 
+// ---- route line helpers: shrink Google's very detailed line before sending it
+function decodePoly(str){
+  const pts = []; let i = 0, lat = 0, lng = 0;
+  while(i < str.length){
+    for(let axis = 0; axis < 2; axis++){
+      let b, shift = 0, result = 0;
+      do{ b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20 && i < str.length + 1);
+      const d = (result & 1) ? ~(result >> 1) : (result >> 1);
+      if(axis === 0) lat += d; else lng += d;
+    }
+    pts.push([lat / 1e5, lng / 1e5]);
+  }
+  return pts;
+}
+function encodePoly(pts){
+  let out = '', pl = 0, pg = 0;
+  const enc = (v) => { v = v < 0 ? ~(v << 1) : (v << 1); let s = ''; while(v >= 0x20){ s += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; } return s + String.fromCharCode(v + 63); };
+  for(const [la, lo] of pts){
+    const a = Math.round(la * 1e5), b = Math.round(lo * 1e5);
+    out += enc(a - pl) + enc(b - pg); pl = a; pg = b;
+  }
+  return out;
+}
+// Douglas-Peucker on a flat-earth approximation (fine at island scale).
+function simplifyLine(pts, tolM){
+  if(pts.length < 3) return pts;
+  const k = 111320, cos = Math.cos(pts[0][0] * Math.PI / 180);
+  const xy = pts.map(p => [p[1] * k * cos, p[0] * k]);
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while(stack.length){
+    const [a, b] = stack.pop();
+    let max = 0, idx = -1;
+    const [ax, ay] = xy[a], [bx, by] = xy[b];
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+    for(let i = a + 1; i < b; i++){
+      let t = len2 ? ((xy[i][0] - ax) * dx + (xy[i][1] - ay) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(xy[i][0] - (ax + t * dx), xy[i][1] - (ay + t * dy));
+      if(d > max){ max = d; idx = i; }
+    }
+    if(max > tolM && idx > 0){ keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+function shrinkPolyline(encoded){
+  let pts = decodePoly(encoded);
+  for(const tol of [6, 15, 40, 100]){
+    const enc = encodePoly(simplifyLine(pts, tol));
+    if(enc.length <= 12000) return enc;
+  }
+  return null;
+}
+
 async function queryDirections(origin, destination){
   if(!GOOGLE_KEY) return { note: 'Directions are not configured.' };
   try{
@@ -1473,8 +1527,10 @@ async function queryDirections(origin, destination){
     const km = (route.distanceMeters / 1000).toFixed(1);
     const mins = Math.round(parseInt(route.duration, 10) / 60);
     const poly = route.polyline && route.polyline.encodedPolyline;
-    const map = poly && poly.length < 20000 ? {
-      polyline: poly,
+    const smallPoly = poly ? shrinkPolyline(poly) : null;
+    if(poly && !smallPoly) console.error('Route line too long to send', poly.length);
+    const map = smallPoly ? {
+      polyline: smallPoly,
       origin: { name: String(origin).slice(0, 80), lat: o.location.lat, lng: o.location.lng },
       destination: { name: String(destination).slice(0, 80), lat: d.location.lat, lng: d.location.lng },
       landmarks: mapLandmarks,
