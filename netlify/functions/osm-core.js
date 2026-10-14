@@ -24,11 +24,18 @@ const GROUPS = {
 };
 const GROUP_NAMES = Object.keys(GROUPS);
 
-function buildQuery(island, group){
-  const b = ISLAND_BOXES[island];
+// Big islands are asked for in horizontal bands so each request stays small.
+const TILES = { 'Saint Vincent': 4, 'Bequia': 1 };
+const tileCount = (island) => TILES[island] || 1;
+
+function buildQuery(island, group, tile){
+  const full = ISLAND_BOXES[island];
+  const n = tileCount(island), t = Math.min(Math.max(Number(tile) || 0, 0), n - 1);
+  const b = full && n > 1 ? { s: full.s + (full.n - full.s) * t / n, n: full.s + (full.n - full.s) * (t + 1) / n, w: full.w, e: full.e } : full;
   const list = GROUPS[group];
   if(!b || !list) throw new Error('Unknown island or group');
-  const box = `${b.s},${b.w},${b.n},${b.e}`;
+  const r6 = (x) => Number(x.toFixed(5));
+  const box = `${r6(b.s)},${r6(b.w)},${r6(b.n)},${r6(b.e)}`;
   const lines = list.map(([k, v]) => `nwr["${k}"="${v}"]["name"](${box});`).join('\n');
   return `[out:json][timeout:20];\n(\n${lines}\n);\nout center tags 400;`;
 }
@@ -104,4 +111,4 @@ async function fetchOverpass(query, fetchImpl){
 
 const osmUrl = (ref) => `https://www.openstreetmap.org/${ref}`;
 
-module.exports = { OVERPASS, ISLAND_BOXES, IMPORT_ISLANDS, GROUPS, GROUP_NAMES, buildQuery, classify, parseElements, fetchOverpass, osmUrl };
+module.exports = { tileCount, OVERPASS, ISLAND_BOXES, IMPORT_ISLANDS, GROUPS, GROUP_NAMES, buildQuery, classify, parseElements, fetchOverpass, osmUrl };

@@ -2441,18 +2441,29 @@ document.getElementById('osmImportBtn').addEventListener('click', async () => {
   const island = document.getElementById('osmIsland').value;
   btn.disabled = true; osmSay('');
   document.getElementById('osmDetails').open = true;
-  let found = 0, added = 0, saved = 0;
+  let found = 0, added = 0, saved = 0, failed = 0, lastErr = '';
   try{
-    for(let i = 0; i < OSM_GROUPS.length; i++){
-      osmSay(`Asking OpenStreetMap about ${island} (${i + 1} of ${OSM_GROUPS.length})...`);
-      const q = await lmApi('osm_query&island=' + encodeURIComponent(island) + '&group=' + OSM_GROUPS[i], 'GET');
-      const elements = await osmFetchFromBrowser(q.query, q.endpoints);
-      const r = await lmApi('osm_import', 'POST', { island, group: OSM_GROUPS[i], elements });
-      found += r.found; added += r.new_candidates; saved += r.already_saved;
+    // Saint Vincent is asked for in bands; the first reply says how many.
+    let tiles = 1;
+    const total = () => OSM_GROUPS.length * tiles;
+    let done = 0;
+    for(let t = 0; t < tiles; t++){
+      for(let i = 0; i < OSM_GROUPS.length; i++){
+        osmSay(`Asking OpenStreetMap about ${island} (${done + 1} of ${total()})...`);
+        try{
+          const q = await lmApi('osm_query&island=' + encodeURIComponent(island) + '&group=' + OSM_GROUPS[i] + '&tile=' + t, 'GET');
+          if(q.tiles && q.tiles > tiles) tiles = q.tiles;
+          const elements = await osmFetchFromBrowser(q.query, q.endpoints);
+          const r = await lmApi('osm_import', 'POST', { island, group: OSM_GROUPS[i], tile: t, elements });
+          found += r.found; added += r.new_candidates; saved += r.already_saved;
+        } catch(err){ failed++; lastErr = err.message; }
+        done++;
+      }
     }
-    osmSay(`${island}: OpenStreetMap has ${found} named places. ${added} new ones are waiting for your approval${saved ? '; ' + saved + ' were already in your landmarks' : ''}.`);
+    osmSay(`${island}: OpenStreetMap has ${found} named places. ${added} new ones are waiting for your approval${saved ? '; ' + saved + ' were already in your landmarks' : ''}.`
+      + (failed ? ` ${failed} of ${done} requests failed (${lastErr}). Press Import again to fill the gaps; nothing is duplicated.` : ''), !!failed && !added);
     osmLoad();
-  } catch(err){ osmSay(err.message + (found || added ? ` (so far ${added} new)` : ''), true); osmLoad(); }
+  } catch(err){ osmSay(err.message, true); osmLoad(); }
   btn.disabled = false;
 });
 document.getElementById('osmList').addEventListener('click', async (e) => {
