@@ -224,6 +224,12 @@
   .luckyballlbl{font-size:8px;text-transform:uppercase;opacity:.85;line-height:1;margin-bottom:1px;}
 
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .routemap{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);}
+  .routemap-map{height:260px;width:100%;background:#e8eef0;}
+  .routemap-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:7px 10px;font-size:12px;color:var(--muted, #666);}
+  .routemap-foot a{color:var(--teal);}
+  .routemap-note{padding:18px 10px;font-size:13px;text-align:center;}
+  .rm-dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
   .placecards{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;}
   .placecard{flex:1 1 180px;max-width:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);}
   .placecard img{display:block;width:100%;height:150px;object-fit:cover;background:#e8e8e8;}
@@ -512,6 +518,64 @@ function renderPlaceCards(list){
     </div>
   </div>`).join('');
   return `<div class="placecards">${cards}</div>`;
+}
+
+
+// ---- Route map (directions) -------------------------------------------
+// Leaflet is loaded only when a route comes back. Tiles are OpenStreetMap's;
+// swap ROUTE_TILE_URL for another provider if traffic ever outgrows their policy.
+const ROUTE_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+let leafletPromise = null;
+function loadLeaflet(){
+  if(window.L) return Promise.resolve(window.L);
+  if(leafletPromise) return leafletPromise;
+  leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    document.head.appendChild(css);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    s.onload = () => window.L ? resolve(window.L) : reject(new Error('map library missing'));
+    s.onerror = () => { leafletPromise = null; reject(new Error('map library did not load')); };
+    document.head.appendChild(s);
+  });
+  return leafletPromise;
+}
+// Google's encoded polyline (precision 5) -> [[lat, lng], ...]
+function decodePolyline(str){
+  const pts = []; let i = 0, lat = 0, lng = 0;
+  while(i < str.length){
+    for(const axis of [0, 1]){
+      let b, shift = 0, result = 0;
+      do{ b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20 && i <= str.length);
+      const d = (result & 1) ? ~(result >> 1) : (result >> 1);
+      if(axis === 0) lat += d; else lng += d;
+    }
+    pts.push([lat / 1e5, lng / 1e5]);
+  }
+  return pts;
+}
+function renderRouteMap(bubble, rm){
+  if(!bubble || !rm || !rm.polyline) return;
+  const id = 'rm' + Math.random().toString(36).slice(2, 9);
+  const gm = `https://www.google.com/maps/dir/?api=1&origin=${rm.origin.lat},${rm.origin.lng}&destination=${rm.destination.lat},${rm.destination.lng}&travelmode=driving`;
+  bubble.insertAdjacentHTML('beforeend', `<div class="routemap"><div class="routemap-map" id="${id}"></div>
+    <div class="routemap-foot"><span>Map &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</span><a href="${escapeHtml(gm)}" target="_blank" rel="noopener">Open in Google Maps</a></div></div>`);
+  const el = document.getElementById(id);
+  loadLeaflet().then(L => {
+    const pts = decodePolyline(rm.polyline);
+    if(!pts.length) throw new Error('empty route');
+    const map = L.map(el, { scrollWheelZoom: false, attributionControl: false });
+    L.tileLayer(ROUTE_TILE_URL, { maxZoom: 18 }).addTo(map);
+    const line = L.polyline(pts, { color: '#1B5E5E', weight: 5, opacity: 0.9 }).addTo(map);
+    const dot = (color) => L.divIcon({ className: '', html: `<div class="rm-dot" style="background:${color}"></div>`, iconSize: [12, 12], iconAnchor: [6, 6] });
+    const tip = (text) => { const s = document.createElement('span'); s.textContent = text; return s; };
+    (rm.landmarks || []).forEach(l => L.marker([l.lat, l.lng], { icon: dot('#E8A317') }).addTo(map).bindTooltip(tip(l.name), { direction: 'top' }));
+    L.marker([rm.origin.lat, rm.origin.lng], { icon: dot('#2E9E5B') }).addTo(map).bindTooltip(tip('Start: ' + rm.origin.name), { direction: 'top' });
+    L.marker([rm.destination.lat, rm.destination.lng], { icon: dot('#D9541F') }).addTo(map).bindTooltip(tip('End: ' + rm.destination.name), { direction: 'top' });
+    map.fitBounds(line.getBounds(), { padding: [24, 24] });
+    setTimeout(() => map.invalidateSize(), 50);
+  }).catch((err) => { console.error('Route map failed:', err); el.outerHTML = `<div class="routemap-note">The map could not load (${escapeHtml(err && err.message || 'unknown reason')}). The directions above still work.</div>`; });
 }
 
 function renderDeepDiveCard(list){
@@ -903,6 +967,9 @@ async function handleSend(text){
     if(data.placeCards && data.placeCards.length){
       const bubble = avaWrap && avaWrap.querySelector('.bubble');
       if(bubble) bubble.insertAdjacentHTML('beforeend', renderPlaceCards(data.placeCards));
+    }
+    if(data.routeMap){
+      renderRouteMap(avaWrap && avaWrap.querySelector('.bubble'), data.routeMap);
     }
     if(data.deepDives && data.deepDives.length){
       const bubble = avaWrap && avaWrap.querySelector('.bubble');
