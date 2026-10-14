@@ -229,6 +229,15 @@
   .routemap-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:7px 10px;font-size:12px;color:var(--muted, #666);}
   .routemap-foot a{color:var(--teal);}
   .routemap-note{padding:18px 10px;font-size:13px;text-align:center;}
+  .routemap-live{padding:9px 12px;font-size:14px;background:var(--teal-soft);border-bottom:1px solid var(--line);}
+  .routemap-live.warn{background:var(--coral-soft);}
+  .routemap-sub{font-size:12px;opacity:.75;margin-top:2px;}
+  .routemap-nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px 0;}
+  .routemap-navlbl{font-size:12px;opacity:.75;}
+  .routemap-btn{font:inherit;font-size:13px;padding:6px 11px;border-radius:999px;border:1px solid var(--teal);background:var(--card);color:var(--teal);text-decoration:none;cursor:pointer;}
+  .routemap-btn:hover{background:var(--teal-soft);}
+  .routemap-voice{display:inline-flex;gap:5px;align-items:center;font-size:12px;}
+  .rm-me{width:18px;height:18px;border-radius:50%;background:#2D7DD2;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);}
   .rm-dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
   .placecards{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;}
   .placecard{flex:1 1 180px;max-width:260px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);}
@@ -555,12 +564,55 @@ function decodePolyline(str){
   }
   return pts;
 }
+// ---- geometry helpers for following a route -----------------------------
+function rmMeters(a, b){
+  const R = 6371000, rad = x => x * Math.PI / 180;
+  const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+// Where along the route a point sits: nearest segment, distance off the line, distance from the start.
+function rmBuild(pts){
+  const cum = [0];
+  for(let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + rmMeters(pts[i - 1], pts[i]));
+  return cum;
+}
+function rmProject(pts, cum, p){
+  const k = 111320, cos = Math.cos(p[0] * Math.PI / 180);
+  let best = { dist: Infinity, along: 0 };
+  for(let i = 0; i < pts.length - 1; i++){
+    const ax = (pts[i][1] - p[1]) * k * cos, ay = (pts[i][0] - p[0]) * k;
+    const bx = (pts[i + 1][1] - p[1]) * k * cos, by = (pts[i + 1][0] - p[0]) * k;
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+    let t = len2 ? (-(ax * dx + ay * dy)) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if(d < best.dist) best = { dist: d, along: cum[i] + t * (cum[i + 1] - cum[i]) };
+  }
+  return best;
+}
+const rmFmtDist = (m) => m >= 1000 ? (m / 1000).toFixed(1) + ' km' : (Math.round(m / 10) * 10) + ' m';
+
 function renderRouteMap(bubble, rm){
   if(!bubble || !rm || !rm.polyline) return;
   const id = 'rm' + Math.random().toString(36).slice(2, 9);
-  const gm = `https://www.google.com/maps/dir/?api=1&origin=${rm.origin.lat},${rm.origin.lng}&destination=${rm.destination.lat},${rm.destination.lng}&travelmode=driving`;
-  bubble.insertAdjacentHTML('beforeend', `<div class="routemap"><div class="routemap-map" id="${id}"></div>
-    <div class="routemap-foot"><span>Map &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</span><a href="${escapeHtml(gm)}" target="_blank" rel="noopener">Open in Google Maps</a></div></div>`);
+  const o = rm.origin, d = rm.destination;
+  const dll = `${d.lat},${d.lng}`;
+  // Navigation starts from wherever the phone is, in the person's own maps app.
+  const gNav = `https://www.google.com/maps/dir/?api=1&destination=${dll}&travelmode=driving&dir_action=navigate`;
+  const aNav = `https://maps.apple.com/?daddr=${dll}&dirflg=d`;
+  const wNav = `https://waze.com/ul?ll=${dll}&navigate=yes`;
+  bubble.insertAdjacentHTML('beforeend', `<div class="routemap"><div class="routemap-live" id="${id}live" style="display:none"></div><div class="routemap-map" id="${id}"></div>
+    <div class="routemap-nav">
+      <span class="routemap-navlbl">Start navigation in:</span>
+      <a class="routemap-btn" href="${escapeHtml(gNav)}" target="_blank" rel="noopener">Google Maps</a>
+      <a class="routemap-btn" href="${escapeHtml(aNav)}" target="_blank" rel="noopener">Apple Maps</a>
+      <a class="routemap-btn" href="${escapeHtml(wNav)}" target="_blank" rel="noopener">Waze</a>
+    </div>
+    <div class="routemap-nav"><button type="button" class="routemap-btn" id="${id}follow">Follow me on this map</button>
+      <label class="routemap-voice" id="${id}voicelbl" style="display:none"><input type="checkbox" id="${id}voice"> Speak turns</label></div>
+    <div class="routemap-foot"><span>Follow-me uses your phone's location on your device only; it is never sent to AVA. Keep the screen on and AVA open. Please do not use it while driving; use a navigation app, or have a passenger follow along.</span></div>
+    <div class="routemap-foot"><span>Map &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</span></div></div>`);
   const el = document.getElementById(id);
   loadLeaflet().then(L => {
     const pts = decodePolyline(rm.polyline);
@@ -571,10 +623,63 @@ function renderRouteMap(bubble, rm){
     const dot = (color) => L.divIcon({ className: '', html: `<div class="rm-dot" style="background:${color}"></div>`, iconSize: [12, 12], iconAnchor: [6, 6] });
     const tip = (text) => { const s = document.createElement('span'); s.textContent = text; return s; };
     (rm.landmarks || []).forEach(l => L.marker([l.lat, l.lng], { icon: dot('#E8A317') }).addTo(map).bindTooltip(tip(l.name), { direction: 'top' }));
-    L.marker([rm.origin.lat, rm.origin.lng], { icon: dot('#2E9E5B') }).addTo(map).bindTooltip(tip('Start: ' + rm.origin.name), { direction: 'top' });
-    L.marker([rm.destination.lat, rm.destination.lng], { icon: dot('#D9541F') }).addTo(map).bindTooltip(tip('End: ' + rm.destination.name), { direction: 'top' });
+    L.marker([o.lat, o.lng], { icon: dot('#2E9E5B') }).addTo(map).bindTooltip(tip('Start: ' + o.name), { direction: 'top' });
+    L.marker([d.lat, d.lng], { icon: dot('#D9541F') }).addTo(map).bindTooltip(tip('End: ' + d.name), { direction: 'top' });
     map.fitBounds(line.getBounds(), { padding: [24, 24] });
     setTimeout(() => map.invalidateSize(), 50);
+
+    // ---- follow-me ----
+    const cum = rmBuild(pts), total = cum[cum.length - 1];
+    const steps = (rm.steps || []).map(s => ({ ...s, along: rmProject(pts, cum, [s.lat, s.lng]).along })).sort((a, b) => a.along - b.along);
+    const liveEl = document.getElementById(id + 'live'), btn = document.getElementById(id + 'follow');
+    const voiceLbl = document.getElementById(id + 'voicelbl'), voiceBox = document.getElementById(id + 'voice');
+    let watchId = null, me = null, ring = null, wake = null, offCount = 0, lastSpoken = '';
+    const say = (html, warn) => { liveEl.style.display = 'block'; liveEl.className = 'routemap-live' + (warn ? ' warn' : ''); liveEl.innerHTML = html; };
+    const speak = (text) => { try{ if(voiceBox.checked && text !== lastSpoken && window.speechSynthesis){ lastSpoken = text; speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } }catch(e){} };
+    function stop(msg){
+      if(watchId != null) navigator.geolocation.clearWatch(watchId);
+      watchId = null; offCount = 0;
+      if(me){ map.removeLayer(me); me = null; } if(ring){ map.removeLayer(ring); ring = null; }
+      try{ if(wake){ wake.release(); wake = null; } }catch(e){}
+      btn.textContent = 'Follow me on this map'; voiceLbl.style.display = 'none';
+      if(msg) say(msg); else liveEl.style.display = 'none';
+    }
+    function onFix(pos){
+      const p = [pos.coords.latitude, pos.coords.longitude], acc = pos.coords.accuracy || 0;
+      if(!me){
+        me = L.marker(p, { icon: L.divIcon({ className: '', html: '<div class="rm-me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 }).addTo(map);
+        ring = L.circle(p, { radius: acc, color: '#2D7DD2', weight: 1, fillOpacity: 0.1 }).addTo(map);
+      } else { me.setLatLng(p); ring.setLatLng(p); ring.setRadius(acc); }
+      map.setView(p, Math.max(map.getZoom(), 16));
+      const pr = rmProject(pts, cum, p);
+      const toEnd = rmMeters(p, [d.lat, d.lng]);
+      if(toEnd < 40){ speak('You have arrived'); stop(`<strong>You have arrived</strong> at ${escapeHtml(d.name)}.`); return; }
+      if(pr.dist > Math.max(80, acc * 1.5)){
+        offCount++;
+        if(offCount >= 3){
+          say(`<strong>You seem to be off the route.</strong> Open it in <a href="${escapeHtml(gNav)}" target="_blank" rel="noopener">Google Maps</a> to get a new route from where you are.`, true);
+          speak('You seem to be off the route');
+          return;
+        }
+      } else offCount = 0;
+      const next = steps.find(s => s.along > pr.along + 15);
+      const left = Math.max(0, total - pr.along);
+      if(!next){ say(`Head to <strong>${escapeHtml(d.name)}</strong> &middot; ${rmFmtDist(left)} to go`); return; }
+      const dist = next.along - pr.along;
+      const lm = next.lm ? ` near ${escapeHtml(next.lm)}` : '';
+      say(`<strong>In ${rmFmtDist(dist)}:</strong> ${escapeHtml(next.text)}${lm}<div class="routemap-sub">${rmFmtDist(left)} to go</div>`);
+      if(dist < 250) speak(`In ${rmFmtDist(dist)}, ${next.text}`);
+    }
+    btn.addEventListener('click', async () => {
+      if(watchId != null){ stop(); return; }
+      if(!navigator.geolocation){ say('This browser cannot share your location.', true); return; }
+      btn.textContent = 'Stop following'; say('Finding your location...');
+      voiceLbl.style.display = window.speechSynthesis ? 'inline-flex' : 'none';
+      try{ if(navigator.wakeLock) wake = await navigator.wakeLock.request('screen'); }catch(e){}
+      watchId = navigator.geolocation.watchPosition(onFix, (err) => {
+        stop(err && err.code === 1 ? 'Location is switched off for this site. Allow it in your browser settings to follow the route.' : 'Could not get your location right now. Try again outside or near a window.');
+      }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    });
   }).catch((err) => { console.error('Route map failed:', err); el.outerHTML = `<div class="routemap-note">The map could not load (${escapeHtml(err && err.message || 'unknown reason')}). The directions above still work.</div>`; });
 }
 

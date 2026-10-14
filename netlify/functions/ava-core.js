@@ -1511,6 +1511,7 @@ async function queryDirections(origin, destination){
     const landmarks = await fetchLandmarks(turnPoints);
 
     const mapLandmarks = [];
+    const stepLm = {};
     const lines = steps.map((s, i) => {
       const near = s.lat == null ? [] : landmarks
         .map(l => ({ l, dist: metersBetween({ lat: s.lat, lng: s.lng }, l) }))
@@ -1518,6 +1519,7 @@ async function queryDirections(origin, destination){
         .sort((a, b) => ((LANDMARK_PRIORITY[a.l.kind] || 3) - (LANDMARK_PRIORITY[b.l.kind] || 3)) || (a.dist - b.dist))
         .filter((x, idx, arr) => arr.findIndex(y => y.l.name === x.l.name) === idx)
         .slice(0, 2);
+      if(near.length) stepLm[i] = landmarkSay(near[0].l);
       near.forEach(x => { if(mapLandmarks.length < 12 && !mapLandmarks.some(m => m.name === x.l.name)) mapLandmarks.push({ name: x.l.name, kind: x.l.kind || 'other', lat: x.l.lat, lng: x.l.lng }); });
       const lm = near.length ? ` | landmarks right at this turn: ${near.map(x => landmarkSay(x.l)).join(', ')}` : ' | no mapped landmark at this turn';
       const dist = s.meters >= 1000 ? `${(s.meters / 1000).toFixed(1)} km` : `${Math.round(s.meters)} m`;
@@ -1534,6 +1536,8 @@ async function queryDirections(origin, destination){
       origin: { name: String(origin).slice(0, 80), lat: o.location.lat, lng: o.location.lng },
       destination: { name: String(destination).slice(0, 80), lat: d.location.lat, lng: d.location.lng },
       landmarks: mapLandmarks,
+      steps: steps.map((s, i) => ({ s, i })).filter(({ s }) => s.maneuver && s.maneuver !== 'DEPART' && s.lat != null).slice(0, 40)
+        .map(({ s, i }) => ({ lat: s.lat, lng: s.lng, text: String(s.instruction || MANEUVER_WORDS[s.maneuver] || 'continue').slice(0, 120), lm: stepLm[i] || '' })),
     } : null;
     return { summary: `${origin} to ${destination}: about ${km} km, roughly ${mins} minutes by road.`, steps: lines, map };
   }catch(e){
