@@ -2398,6 +2398,26 @@ async function osmLoad(){
         <div class="gaprow-meta">${escapeHtml(c.kind.replace(/_/g, ' '))} &middot; ${Number(c.lat).toFixed(4)}, ${Number(c.lng).toFixed(4)} &middot; <a href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">OpenStreetMap</a></div></div></label>`).join('');
   } catch(err){ el.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
 }
+// The browser asks OpenStreetMap directly (it is fast from here); the server then
+// checks and saves what came back.
+async function osmFetchFromBrowser(query, endpoints){
+  const errs = [];
+  for(const url of endpoints){
+    try{
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 25000);
+      const res = await fetch(url, { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(query) });
+      clearTimeout(t);
+      if(!res.ok) throw new Error('replied ' + res.status);
+      const data = await res.json();
+      return (data.elements || []).map(el => ({
+        type: el.type, id: el.id, lat: el.lat, lon: el.lon, center: el.center,
+        tags: Object.fromEntries(['name','amenity','shop','tourism','man_made','junction'].filter(k => el.tags && el.tags[k]).map(k => [k, el.tags[k]])),
+      }));
+    } catch(e){ errs.push(new URL(url).hostname + ': ' + (e.name === 'AbortError' ? 'no answer in 25s' : e.message)); }
+  }
+  throw new Error('Could not reach OpenStreetMap (' + errs.join('; ') + ')');
+}
 document.getElementById('osmRefreshBtn').addEventListener('click', osmLoad);
 document.getElementById('osmIsland').addEventListener('change', osmLoad);
 document.getElementById('osmImportBtn').addEventListener('click', async () => {
@@ -2408,7 +2428,9 @@ document.getElementById('osmImportBtn').addEventListener('click', async () => {
   try{
     for(let i = 0; i < OSM_GROUPS.length; i++){
       osmSay(`Asking OpenStreetMap about ${island} (${i + 1} of ${OSM_GROUPS.length})...`);
-      const r = await lmApi('osm_import', 'POST', { island, group: OSM_GROUPS[i] });
+      const q = await lmApi('osm_query&island=' + encodeURIComponent(island) + '&group=' + OSM_GROUPS[i], 'GET');
+      const elements = await osmFetchFromBrowser(q.query, q.endpoints);
+      const r = await lmApi('osm_import', 'POST', { island, group: OSM_GROUPS[i], elements });
       found += r.found; added += r.new_candidates; saved += r.already_saved;
     }
     osmSay(`${island}: OpenStreetMap has ${found} named places. ${added} new ones are waiting for your approval${saved ? '; ' + saved + ' were already in your landmarks' : ''}.`);

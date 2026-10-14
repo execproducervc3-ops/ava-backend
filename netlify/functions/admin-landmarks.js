@@ -80,12 +80,21 @@ exports.handler = async (event) => {
       return json(200, { ok: true, landmark: data, found_as: found ? `${found.found_as} (${found.address})` : null });
     }
 
+    if (event.httpMethod === 'GET' && action === 'osm_query') {
+      if (!osm.ISLAND_BOXES[params.island] || !osm.GROUPS[params.group]) return json(400, { error: 'Unknown island or group.' });
+      return json(200, { query: osm.buildQuery(params.island, params.group), endpoints: osm.OVERPASS, groups: osm.GROUP_NAMES });
+    }
+
     if (event.httpMethod === 'POST' && action === 'osm_import') {
       const body = JSON.parse(event.body || '{}');
       const island = body.island, group = body.group;
       if (!osm.ISLAND_BOXES[island]) return json(400, { error: 'Pick an island that can be imported.' });
       if (!osm.GROUPS[group]) return json(400, { error: 'Unknown group.' });
-      const data = await osm.fetchOverpass(osm.buildQuery(island, group));
+      // The admin page normally fetches from OpenStreetMap itself and sends the
+      // elements here; the server only fetches when none are supplied.
+      const data = Array.isArray(body.elements)
+        ? { elements: body.elements.slice(0, 1000) }
+        : await osm.fetchOverpass(osm.buildQuery(island, group));
       const rows = osm.parseElements(data, island);
       // Leave out what is already saved, and what was decided before.
       const { data: have } = await supabase.from('landmarks').select('name').eq('island', island);

@@ -104,4 +104,4 @@ async function fetchOverpass(query, fetchImpl){
 
 const osmUrl = (ref) => `https://www.openstreetmap.org/${ref}`;
 
-module.exports = { ISLAND_BOXES, IMPORT_ISLANDS, GROUPS, GROUP_NAMES, buildQuery, classify, parseElements, fetchOverpass, osmUrl };
+module.exports = { OVERPASS, ISLAND_BOXES, IMPORT_ISLANDS, GROUPS, GROUP_NAMES, buildQuery, classify, parseElements, fetchOverpass, osmUrl };
