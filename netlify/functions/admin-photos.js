@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { runFinder, getSupabase } = require('./photo-core');
+const mirror = require('./photo-mirror');
 const supabase = getSupabase();
 
 const CORS = {
@@ -15,14 +16,21 @@ const TARGET_TABLES = ['points_of_interest', 'knowledge_deep_dives', 'guide_spec
 
 async function approveCandidate(c) {
   const col = keyColumn(c.target_table);
+  let url = c.image_url, mirrored = false;
+  // Photos from sources other than Wikimedia are copied into AVA's own storage.
+  if (c.provider && c.provider !== 'wikimedia') {
+    try { url = await mirror.mirrorRemote(supabase, fetch, c.image_url, `${c.target_table}/${c.target_key}`); mirrored = true; }
+    catch (e) { console.error('mirror failed, keeping the original link:', e.message); }
+  }
   const { error } = await supabase.from(c.target_table).update({
-    photo_url: c.image_url, photo_credit: c.credit, photo_license: c.license, photo_source_url: c.source_url,
+    photo_url: url, photo_credit: c.credit, photo_license: c.license, photo_source_url: c.source_url,
   }).eq(col, c.target_key);
   if (error) throw error;
   const now = new Date().toISOString();
   await supabase.from('photo_candidates').update({ status: 'approved', reviewed_at: now }).eq('id', c.id);
   await supabase.from('photo_candidates').update({ status: 'superseded', reviewed_at: now })
     .eq('target_table', c.target_table).eq('target_key', c.target_key).eq('status', 'pending');
+  return { mirrored };
 }
 
 exports.handler = async (event) => {
@@ -95,9 +103,10 @@ exports.handler = async (event) => {
       const { data: c } = await supabase.from('photo_candidates').select('*').eq('id', body.candidate_id).maybeSingle();
       if (!c) return json(404, { error: 'Candidate not found' });
       if (c.status !== 'pending') return json(409, { error: 'That candidate was already handled.' });
-      if (action === 'approve') await approveCandidate(c);
+      let extra = {};
+      if (action === 'approve') extra = await approveCandidate(c);
       else await supabase.from('photo_candidates').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', c.id);
-      return json(200, { ok: true });
+      return json(200, { ok: true, ...extra });
     }
 
     if (event.httpMethod === 'POST' && action === 'approve_best') {
@@ -113,6 +122,57 @@ exports.handler = async (event) => {
         approved++;
       }
       return json(200, { ok: true, approved, min_score: AUTO_APPROVE_MIN_SCORE });
+    }
+
+    if (event.httpMethod === 'GET' && action === 'targets') {
+      const term = String(params.q || '').trim().replace(/[%,()]/g, ' ').slice(0, 60);
+      if (term.length < 2) return json(200, { targets: [] });
+      const [pois, spp] = await Promise.all([
+        supabase.from('points_of_interest').select('id, name, island').eq('active', true).ilike('name', `%${term}%`).limit(10),
+        supabase.from('guide_species').select('id, common_name, scientific_name').eq('active', true).or(`common_name.ilike.%${term}%,scientific_name.ilike.%${term}%`).limit(10),
+      ]);
+      const targets = [
+        ...((pois.data) || []).map(r => ({ target_table: 'points_of_interest', target_key: r.id, name: r.name, sub: r.island })),
+        ...((spp.data) || []).map(r => ({ target_table: 'guide_species', target_key: r.id, name: r.common_name, sub: r.scientific_name })),
+      ];
+      return json(200, { targets });
+    }
+
+    if (event.httpMethod === 'POST' && action === 'add_manual') {
+      // Your own photo (or one you have permission to use). You supply the credit and the
+      // licence or permission note; AVA shows the credit under the picture.
+      const body = JSON.parse(event.body || '{}');
+      if (!['points_of_interest', 'guide_species'].includes(body.target_table) || !body.target_key) return json(400, { error: 'Choose a place or species first.' });
+      const credit = String(body.credit || '').trim();
+      const licenseNote = String(body.license_note || '').trim();
+      if (credit.length < 3 || credit.length > 200) return json(400, { error: 'Enter the credit to show under the photo (for example "Photo: Jane Doe").' });
+      if (licenseNote.length < 3 || licenseNote.length > 200) return json(400, { error: 'Enter the licence or permission (for example "CC BY 4.0" or "Permission from the photographer, 13 Oct 2026").' });
+      const sourceUrl = mirror.isPublicHttpUrl(String(body.source_url || '').trim()) ? String(body.source_url).trim() : null;
+      let buf;
+      try {
+        if (body.image_base64) {
+          buf = Buffer.from(String(body.image_base64).replace(/^data:[^,]*,/, ''), 'base64');
+          if (buf.length > mirror.MAX_BYTES) return json(400, { error: 'That photo is too large. Use one under 4 MB.' });
+        } else if (body.image_url) {
+          buf = await mirror.downloadImage(fetch, String(body.image_url).trim(), { finderOnly: false });
+        } else return json(400, { error: 'Choose a photo file or paste an image link.' });
+        const col = keyColumn(body.target_table);
+        const { data: target } = await supabase.from(body.target_table).select(col).eq(col, body.target_key).maybeSingle();
+        if (!target) return json(404, { error: 'That place or species was not found.' });
+        const url = await mirror.storeBuffer(supabase, buf, `${body.target_table}/${body.target_key}`);
+        const { error } = await supabase.from(body.target_table).update({
+          photo_url: url, photo_credit: credit, photo_license: licenseNote, photo_source_url: sourceUrl,
+        }).eq(col, body.target_key);
+        if (error) throw error;
+        const now = new Date().toISOString();
+        await supabase.from('photo_candidates').update({ status: 'superseded', reviewed_at: now }).eq('target_table', body.target_table).eq('target_key', body.target_key).eq('status', 'pending');
+        const audit = { target_table: body.target_table, target_key: String(body.target_key), image_url: url, credit, license: licenseNote, source_url: sourceUrl || url, file_title: 'Added by you', score: 1, status: 'approved', reviewed_at: now, provider: 'manual' };
+        let { error: aErr } = await supabase.from('photo_candidates').upsert(audit, { onConflict: 'target_table,target_key,image_url', ignoreDuplicates: true });
+        if (aErr && /provider/i.test(aErr.message || '')) { delete audit.provider; await supabase.from('photo_candidates').upsert(audit, { onConflict: 'target_table,target_key,image_url', ignoreDuplicates: true }); }
+        return json(200, { ok: true, photo_url: url });
+      } catch (e) {
+        return json(400, { error: e.message });
+      }
     }
 
     if (event.httpMethod === 'POST' && action === 'remove_photo') {

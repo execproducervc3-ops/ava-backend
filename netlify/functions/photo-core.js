@@ -1,8 +1,10 @@
 const { createClient } = require('@supabase/supabase-js');
-const { findCandidates } = require('./commons-photos');
+const { findAll } = require('./photo-sources');
 
 // Species photos are capped below the 90% auto-approve line: a species photo always needs your click.
 const SPECIES_SCORE_CAP = 0.85;
+// Anything from a source other than Wikimedia Commons is also held below the 90% line.
+const OTHER_SOURCE_CAP = 0.85;
 const RECHECK_DAYS = 30;
 
 function getSupabase() {
@@ -12,7 +14,12 @@ function getSupabase() {
 async function saveCandidates(supabase, table, key, list) {
   if (!list.length) return 0;
   const rows = list.map(c => ({ target_table: table, target_key: String(key), ...c, status: 'pending' }));
-  const { error } = await supabase.from('photo_candidates').upsert(rows, { onConflict: 'target_table,target_key,image_url', ignoreDuplicates: true });
+  const opts = { onConflict: 'target_table,target_key,image_url', ignoreDuplicates: true };
+  let { error } = await supabase.from('photo_candidates').upsert(rows, opts);
+  if (error && /provider/i.test(error.message || '')) {
+    // migration-055 not run yet: save without the source label rather than lose the proposals
+    ({ error } = await supabase.from('photo_candidates').upsert(rows.map(({ provider, ...rest }) => rest), opts));
+  }
   if (error) throw error;
   return rows.length;
 }
@@ -36,12 +43,12 @@ async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}
   for (const sp of species || []) {
     let re;
     try { re = new RegExp(sp.must_match, 'i'); } catch (e) { continue; }
-    speciesJobs.push({ table: 'guide_species', key: sp.id, cap: SPECIES_SCORE_CAP, target: { name: sp.common_name, queries: sp.queries, mustMatch: re } });
+    speciesJobs.push({ table: 'guide_species', key: sp.id, kind: 'species', cap: SPECIES_SCORE_CAP, target: { name: sp.common_name, scientific: sp.scientific_name, queries: sp.queries, mustMatch: re } });
   }
   // Keep a few slots for species so they are not starved while places are still being worked through.
   const speciesSlots = Math.min(speciesJobs.length, Math.max(2, Math.floor(limit / 3)));
   const jobs = [
-    ...(places || []).slice(0, limit - speciesSlots).map(p => ({ table: 'points_of_interest', key: p.id, target: { name: p.name, island: p.island } })),
+    ...(places || []).slice(0, limit - speciesSlots).map(p => ({ table: 'points_of_interest', key: p.id, kind: 'place', cap: OTHER_SOURCE_CAP, target: { name: p.name, island: p.island } })),
     ...speciesJobs.slice(0, speciesSlots),
   ];
 
@@ -49,8 +56,14 @@ async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}
     if (Date.now() - started > budgetMs) break;
     summary.checked++;
     try {
-      let found = await findCandidates(job.target, fetchFn, 3);
-      if (job.cap) found = found.map(c => ({ ...c, score: Math.min(c.score, job.cap) }));
+      const { candidates, errors } = await findAll(job.target, fetchFn, job.kind);
+      if (errors.length && !candidates.length) throw new Error(errors.join('; '));
+      if (errors.length) console.error('photo finder partial errors for', job.target.name, errors.join('; '));
+      // Species photos are always capped; for places only the non-Wikimedia sources are.
+      const found = candidates.map(c => {
+        const cap = job.kind === 'species' ? job.cap : (c.provider === 'wikimedia' ? 1 : job.cap);
+        return { ...c, score: Math.min(c.score, cap) };
+      });
       const n = await saveCandidates(supabase, job.table, job.key, found);
       if (n) { summary.with_candidates++; summary.candidates += n; }
       const keyCol = 'id';

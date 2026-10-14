@@ -230,7 +230,7 @@
 
   <div class="panel">
     <h2>Place photos</h2>
-    <div class="empty-note" style="margin-bottom:10px;">AVA looks for free-licence photos (Wikimedia Commons) for places and for each wildlife species in the guides (the scientific name is shown under the species). Each one keeps its credit and licence, which AVA shows under the picture. Nothing appears in AVA until you approve it.</div>
+    <div class="empty-note" style="margin-bottom:10px;">AVA looks for free-licence photos (Wikimedia Commons, iNaturalist and Openverse) for places and for each wildlife species in the guides (the scientific name is shown under the species). Each one keeps its credit and licence, which AVA shows under the picture. Nothing appears in AVA until you approve it.</div>
     <div id="placePhotoStats" class="empty-note" style="margin-bottom:10px;"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
       <button class="btn-secondary" id="placePhotoRun">Find more photos</button>
@@ -239,6 +239,21 @@
     <div id="placePhotoMsg" class="empty-note" style="margin-bottom:8px;"></div>
     <div id="placePhotoList"></div>
     <div id="placePhotoPager" style="display:flex; gap:8px; align-items:center; margin-top:10px;"></div>
+    <details id="mpBox" style="margin-top:14px;">
+      <summary style="cursor:pointer; font-weight:600;">Add your own photo</summary>
+      <div class="empty-note" style="margin:8px 0;">For a photo you took, or one you have permission to use (a photographer, the tourism authority, a business). AVA keeps a copy and shows your credit under the picture. Only add photos you are allowed to use.</div>
+      <input id="mpSearch" type="text" placeholder="Search a place or species" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+      <div id="mpResults" style="margin:6px 0;"></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; margin-top:6px;">
+        <div><div style="font-size:12px; color:var(--soft); margin-bottom:2px;">Photo file (JPEG, PNG or WebP, under 4 MB)</div><input id="mpFile" type="file" accept="image/jpeg,image/png,image/webp"></div>
+        <input id="mpImageUrl" type="text" placeholder="…or a direct link to the image file" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <input id="mpCredit" type="text" placeholder="Credit shown under the photo (e.g. Photo: Jane Doe)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <input id="mpLicense" type="text" placeholder="Licence or permission (e.g. CC BY 4.0, or permission from Jane, 13 Oct 2026)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <input id="mpSource" type="text" placeholder="Link to the original (optional)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+      </div>
+      <div id="mpPicked" class="empty-note" style="margin-top:8px;">Nothing selected yet.</div>
+      <div style="margin-top:8px;"><button class="btn-publish" id="mpAdd">Add this photo</button></div>
+    </details>
   </div>
 
   <div class="panel">
@@ -1391,7 +1406,7 @@ async function loadPlacePhotos(){
         ${g.candidates.map(c => `
           <div style="border:1px solid var(--line); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px;">
             <a href="${escapeHtml(c.image_url)}" target="_blank" rel="noopener"><img loading="lazy" src="${escapeHtml(c.image_url)}" alt="" style="width:100%; height:150px; object-fit:cover; border-radius:8px; background:#eee;"></a>
-            <div style="font-size:12px; color:var(--soft);">Match ${Math.round(c.score * 100)}% · ${escapeHtml(c.license)}<br>${escapeHtml(c.credit)}<br><a href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">${escapeHtml(c.file_title || 'Commons page')}</a></div>
+            <div style="font-size:12px; color:var(--soft);">Match ${Math.round(c.score * 100)}% · ${escapeHtml(c.license)}<br>${escapeHtml(c.credit)}<br>Source: ${escapeHtml(({ wikimedia: 'Wikimedia Commons', inaturalist: 'iNaturalist', openverse: 'Openverse', manual: 'Added by you' })[c.provider || 'wikimedia'] || c.provider)} · <a href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">${escapeHtml(c.file_title || 'photo page')}</a></div>
             <div style="display:flex; gap:6px;"><button class="btn-publish" data-pp-approve="${escapeHtml(c.id)}">Use this</button><button class="btn-danger" data-pp-reject="${escapeHtml(c.id)}">No</button></div>
           </div>`).join('')}
       </div>
@@ -1403,6 +1418,43 @@ async function loadPlacePhotos(){
   document.getElementById('ppPrev').onclick = () => { placePhotoPage--; loadPlacePhotos(); };
   document.getElementById('ppNext').onclick = () => { placePhotoPage++; loadPlacePhotos(); };
 }
+
+let mpTarget = null, mpTimer = null;
+document.getElementById('mpSearch').addEventListener('input', () => {
+  clearTimeout(mpTimer);
+  mpTimer = setTimeout(async () => {
+    const q = document.getElementById('mpSearch').value.trim(), box = document.getElementById('mpResults');
+    if(q.length < 2){ box.innerHTML = ''; return; }
+    try{
+      const r = await fetch(`${PHOTOS_API}?action=targets&q=${encodeURIComponent(q)}`, { headers: { 'X-Admin-Secret': secret } });
+      const d = await r.json();
+      box.innerHTML = (d.targets || []).length ? d.targets.map((t, i) => `<button class="btn-secondary" style="margin:2px 4px 2px 0;" data-mp="${i}">${escapeHtml(t.name)}${t.sub ? ' · ' + escapeHtml(t.sub) : ''}</button>`).join('') : '<div class="empty-note">No match.</div>';
+      box.querySelectorAll('[data-mp]').forEach(b => b.addEventListener('click', () => {
+        mpTarget = d.targets[+b.dataset.mp];
+        document.getElementById('mpPicked').textContent = 'Adding a photo for: ' + mpTarget.name + (mpTarget.sub ? ' (' + mpTarget.sub + ')' : '');
+        box.innerHTML = '';
+      }));
+    } catch(e){ box.innerHTML = '<div class="empty-note">Search failed.</div>'; }
+  }, 300);
+});
+document.getElementById('mpAdd').addEventListener('click', async e => {
+  const btn = e.target, picked = document.getElementById('mpPicked');
+  if(!mpTarget){ picked.textContent = 'Choose a place or species first (search above).'; return; }
+  const file = document.getElementById('mpFile').files[0], url = document.getElementById('mpImageUrl').value.trim();
+  if(!file && !url){ picked.textContent = 'Choose a photo file or paste an image link.'; return; }
+  if(file && file.size > 4000000){ picked.textContent = 'That photo is over 4 MB. Please use a smaller one.'; return; }
+  btn.disabled = true; picked.textContent = 'Adding…';
+  try{
+    const body = { target_table: mpTarget.target_table, target_key: mpTarget.target_key, credit: document.getElementById('mpCredit').value, license_note: document.getElementById('mpLicense').value, source_url: document.getElementById('mpSource').value };
+    if(file){ body.image_base64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = () => rej(new Error('Could not read the file')); fr.readAsDataURL(file); }); }
+    else body.image_url = url;
+    await photosCall('add_manual', body);
+    picked.textContent = 'Added. ' + mpTarget.name + ' now has your photo.';
+    mpTarget = null; ['mpFile', 'mpImageUrl', 'mpCredit', 'mpLicense', 'mpSource'].forEach(id => { document.getElementById(id).value = ''; });
+    loadPlacePhotos();
+  } catch(err){ picked.textContent = err.message; }
+  btn.disabled = false;
+});
 
 document.getElementById('placePhotoRun').addEventListener('click', async e => {
   const btn = e.target, msg = document.getElementById('placePhotoMsg');
