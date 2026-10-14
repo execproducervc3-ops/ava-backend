@@ -90,6 +90,19 @@ exports.handler = async (event) => {
       return json(200, { places_total: placesTotal, places_with_photo: placesWith, pending_candidates: pending, species_total: speciesTotal, species_with_photo: speciesWith });
     }
 
+    if (event.httpMethod === 'POST' && action === 'recheck') {
+      // Search again, with every source, for everything that still has no photo.
+      const cleared = {};
+      for (const [table, label] of [['points_of_interest', 'places'], ['guide_species', 'species']]) {
+        const { data, error } = await supabase.from(table).select('id').is('photo_url', null).not('photo_checked_at', 'is', null).limit(2000);
+        if (error) { cleared[label] = 0; continue; }
+        const ids = (data || []).map(r => r.id);
+        if (ids.length) await supabase.from(table).update({ photo_checked_at: null }).in('id', ids);
+        cleared[label] = ids.length;
+      }
+      return json(200, { ok: true, ...cleared });
+    }
+
     if (event.httpMethod === 'POST' && action === 'run') {
       const body = JSON.parse(event.body || '{}');
       const limit = Math.min(10, Math.max(1, parseInt(body.limit, 10) || 8));

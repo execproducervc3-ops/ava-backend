@@ -234,6 +234,7 @@
     <div id="placePhotoStats" class="empty-note" style="margin-bottom:10px;"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
       <button class="btn-secondary" id="placePhotoRun">Find more photos</button>
+      <button class="btn-secondary" id="placePhotoRecheck" title="Search again, with every source, for everything that still has no photo">Search again with all sources</button>
       <button class="btn-publish" id="placePhotoBest">Approve all strong matches (90%+)</button>
     </div>
     <div id="placePhotoMsg" class="empty-note" style="margin-bottom:8px;"></div>
@@ -1458,12 +1459,24 @@ document.getElementById('mpAdd').addEventListener('click', async e => {
 
 document.getElementById('placePhotoRun').addEventListener('click', async e => {
   const btn = e.target, msg = document.getElementById('placePhotoMsg');
-  btn.disabled = true; msg.textContent = 'Searching Wikimedia Commons…';
+  btn.disabled = true; msg.textContent = 'Searching Wikimedia Commons, iNaturalist and Openverse…';
   try{
     const r = await photosCall('run', { limit: 8 });
-    msg.textContent = `Checked ${r.checked} place${r.checked === 1 ? '' : 's'}: ${r.with_candidates} had usable photos (${r.candidates} proposed)${r.errors ? ', ' + r.errors + ' error(s)' : ''}. Press again to check more.`;
+    const src = r.by_source || {}, names = { wikimedia: 'Wikimedia', inaturalist: 'iNaturalist', openverse: 'Openverse' };
+    const found = Object.keys(src).map(k => `${src[k]} from ${names[k] || k}`).join(', ');
+    msg.textContent = (r.checked ? `Checked ${r.checked} item${r.checked === 1 ? '' : 's'}: ${r.with_candidates} had usable photos (${r.candidates} proposed${found ? ': ' + found : ''})${r.errors ? ', ' + r.errors + ' failed' : ''}. Press again to check more.` : 'Nothing left to check. Press "Search again with all sources" to re-search items that still have no photo.')
+      + (r.problems && r.problems.length ? ' Problems: ' + r.problems.join(' | ') : '');
     placePhotoPage = 0; loadPlacePhotos();
   } catch(err){ msg.textContent = 'Could not search: ' + err.message; }
+  btn.disabled = false;
+});
+document.getElementById('placePhotoRecheck').addEventListener('click', async e => {
+  const btn = e.target, msg = document.getElementById('placePhotoMsg');
+  btn.disabled = true;
+  try{
+    const r = await photosCall('recheck', {});
+    msg.textContent = `Ready to search again: ${r.places || 0} place${r.places === 1 ? '' : 's'} and ${r.species || 0} species with no photo. Now press "Find more photos" a few times.`;
+  } catch(err){ msg.textContent = 'Could not reset: ' + err.message; }
   btn.disabled = false;
 });
 document.getElementById('placePhotoBest').addEventListener('click', async e => {

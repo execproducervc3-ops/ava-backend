@@ -28,7 +28,7 @@ async function saveCandidates(supabase, table, key, list) {
 // inside a Netlify function. Returns counts for the admin page.
 async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}) {
   const started = Date.now();
-  const summary = { checked: 0, with_candidates: 0, candidates: 0, errors: 0 };
+  const summary = { checked: 0, with_candidates: 0, candidates: 0, errors: 0, problems: [], by_source: {} };
   const cutoff = new Date(Date.now() - RECHECK_DAYS * 86400000).toISOString();
   const stale = 'photo_checked_at.is.null,photo_checked_at.lt.' + cutoff;
 
@@ -57,6 +57,8 @@ async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}
     summary.checked++;
     try {
       const { candidates, errors } = await findAll(job.target, fetchFn, job.kind);
+      for (const c of candidates) summary.by_source[c.provider || 'wikimedia'] = (summary.by_source[c.provider || 'wikimedia'] || 0) + 1;
+      for (const er of errors) if (summary.problems.length < 6 && !summary.problems.includes(er)) summary.problems.push(er);
       if (errors.length && !candidates.length) throw new Error(errors.join('; '));
       if (errors.length) console.error('photo finder partial errors for', job.target.name, errors.join('; '));
       // Species photos are always capped; for places only the non-Wikimedia sources are.
