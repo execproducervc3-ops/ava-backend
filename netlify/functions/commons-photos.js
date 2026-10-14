@@ -12,6 +12,7 @@ const UA = process.env.WIKIMEDIA_USER_AGENT || 'AskVincyBot/1.0 (https://askvinc
 
 const GENERIC = new Set(['the', 'of', 'and', 'in', 'on', 'park', 'beach', 'bay', 'island', 'heritage', 'recreational', 'centre', 'center', 'nature', 'museum', 'st', 'saint']);
 const GEO_RE = /vincent|grenadines|bequia|mustique|canouan|mayreau|union island|kingstown|svg\b/i;
+const SPECIES_BAD_RE = /\b(skull|skeleton|specimen|taxiderm\w*|museum|illustration|drawing|painting|engraving|plate|distribution|range|cladogram|egg|eggs|dead|carcass|stuffed|fossil|tattoo|toy|statue)\b/i;
 const BAD_TITLE_RE = /\b(map|flag|coat of arms|logo|locator|stamp|banknote|diagram|poster|screenshot)\b/i;
 
 function stripHtml(s) {
@@ -58,6 +59,7 @@ function evaluatePages(pages, target) {
     if (!/^image\/(jpeg|png|webp)$/i.test(ii.mime || '')) continue;
     if ((ii.width || 0) < 800) continue;
     if (BAD_TITLE_RE.test(title)) continue;
+    if (target.mustMatch && SPECIES_BAD_RE.test(title)) continue;
     if (val('NonFree').toLowerCase() === 'true') continue;
     const licence = val('LicenseShortName');
     if (!licenceAllowed(licence)) continue;

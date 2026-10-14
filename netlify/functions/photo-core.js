@@ -1,12 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 const { findCandidates } = require('./commons-photos');
 
-// Wildlife guides cover many species, so each gets a hero photo of its best-known subject.
-const SPECIES = {
-  'wildlife-birds-svg': { queries: ['Amazona guildingii', 'Saint Vincent amazon'], mustMatch: /guildingii|vincent'?s? (amazon|parrot)/i },
-  'wildlife-reptiles-amphibians-svg': { queries: ['Gonatodes daudini', 'Union Island gecko'], mustMatch: /daudini|union island gecko/i },
-  'wildlife-marine-whales-turtles-svg': { queries: ['Tobago Cays turtle', 'Tobago Cays green turtle'], mustMatch: /tobago cays/i },
-};
+// Species photos are capped below the 90% auto-approve line: a species photo always needs your click.
+const SPECIES_SCORE_CAP = 0.85;
 const RECHECK_DAYS = 30;
 
 function getSupabase() {
@@ -32,22 +28,32 @@ async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}
   const { data: places, error: pErr } = await supabase.from('points_of_interest')
     .select('id, name, island').eq('active', true).is('photo_url', null).or(stale).order('photo_checked_at', { ascending: true, nullsFirst: true }).limit(limit);
   if (pErr) throw pErr;
-  const { data: guides } = await supabase.from('knowledge_deep_dives')
-    .select('slug, title').in('slug', Object.keys(SPECIES)).is('photo_url', null).or(stale).limit(limit);
+  const { data: species } = await supabase.from('guide_species')
+    .select('id, common_name, scientific_name, queries, must_match').eq('active', true).is('photo_url', null).or(stale)
+    .order('photo_checked_at', { ascending: true, nullsFirst: true }).limit(limit);
 
+  const speciesJobs = [];
+  for (const sp of species || []) {
+    let re;
+    try { re = new RegExp(sp.must_match, 'i'); } catch (e) { continue; }
+    speciesJobs.push({ table: 'guide_species', key: sp.id, cap: SPECIES_SCORE_CAP, target: { name: sp.common_name, queries: sp.queries, mustMatch: re } });
+  }
+  // Keep a few slots for species so they are not starved while places are still being worked through.
+  const speciesSlots = Math.min(speciesJobs.length, Math.max(2, Math.floor(limit / 3)));
   const jobs = [
-    ...(places || []).map(p => ({ table: 'points_of_interest', key: p.id, target: { name: p.name, island: p.island } })),
-    ...(guides || []).map(g => ({ table: 'knowledge_deep_dives', key: g.slug, target: { name: g.title, ...SPECIES[g.slug] } })),
-  ].slice(0, limit);
+    ...(places || []).slice(0, limit - speciesSlots).map(p => ({ table: 'points_of_interest', key: p.id, target: { name: p.name, island: p.island } })),
+    ...speciesJobs.slice(0, speciesSlots),
+  ];
 
   for (const job of jobs) {
     if (Date.now() - started > budgetMs) break;
     summary.checked++;
     try {
-      const found = await findCandidates(job.target, fetchFn, 3);
+      let found = await findCandidates(job.target, fetchFn, 3);
+      if (job.cap) found = found.map(c => ({ ...c, score: Math.min(c.score, job.cap) }));
       const n = await saveCandidates(supabase, job.table, job.key, found);
       if (n) { summary.with_candidates++; summary.candidates += n; }
-      const keyCol = job.table === 'points_of_interest' ? 'id' : 'slug';
+      const keyCol = 'id';
       await supabase.from(job.table).update({ photo_checked_at: new Date().toISOString() }).eq(keyCol, job.key);
     } catch (e) {
       summary.errors++;
@@ -58,4 +64,4 @@ async function runFinder(supabase, fetchFn, { limit = 8, budgetMs = 20000 } = {}
   return summary;
 }
 
-module.exports = { runFinder, saveCandidates, SPECIES, getSupabase };
+module.exports = { runFinder, saveCandidates, SPECIES_SCORE_CAP, getSupabase };

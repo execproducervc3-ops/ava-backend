@@ -10,7 +10,8 @@ const CORS = {
 const json = (statusCode, body) => ({ statusCode, headers: CORS, body: JSON.stringify(body) });
 const AUTO_APPROVE_MIN_SCORE = 0.9;
 
-function keyColumn(table) { return table === 'points_of_interest' ? 'id' : 'slug'; }
+function keyColumn(table) { return table === 'knowledge_deep_dives' ? 'slug' : 'id'; }
+const TARGET_TABLES = ['points_of_interest', 'knowledge_deep_dives', 'guide_species'];
 
 async function approveCandidate(c) {
   const col = keyColumn(c.target_table);
@@ -50,7 +51,12 @@ exports.handler = async (event) => {
       const slice = all.slice(page * size, page * size + size);
       const poiIds = slice.filter(g => g.target_table === 'points_of_interest').map(g => g.target_key);
       const slugs = slice.filter(g => g.target_table === 'knowledge_deep_dives').map(g => g.target_key);
+      const spIds = slice.filter(g => g.target_table === 'guide_species').map(g => g.target_key);
       const names = {};
+      if (spIds.length) {
+        const { data } = await supabase.from('guide_species').select('id, common_name, scientific_name').in('id', spIds);
+        for (const r of data || []) names[`guide_species|${r.id}`] = { name: r.common_name, island: r.scientific_name };
+      }
       if (poiIds.length) {
         const { data } = await supabase.from('points_of_interest').select('id, name, island').in('id', poiIds);
         for (const r of data || []) names[`points_of_interest|${r.id}`] = { name: r.name, island: r.island };
@@ -68,7 +74,12 @@ exports.handler = async (event) => {
       const placesTotal = await count('points_of_interest', q => q.eq('active', true));
       const placesWith = await count('points_of_interest', q => q.eq('active', true).not('photo_url', 'is', null));
       const pending = await count('photo_candidates', q => q.eq('status', 'pending'));
-      return json(200, { places_total: placesTotal, places_with_photo: placesWith, pending_candidates: pending });
+      let speciesTotal = 0, speciesWith = 0;
+      try {
+        speciesTotal = await count('guide_species', q => q.eq('active', true));
+        speciesWith = await count('guide_species', q => q.eq('active', true).not('photo_url', 'is', null));
+      } catch (e) { /* before migration-054 */ }
+      return json(200, { places_total: placesTotal, places_with_photo: placesWith, pending_candidates: pending, species_total: speciesTotal, species_with_photo: speciesWith });
     }
 
     if (event.httpMethod === 'POST' && action === 'run') {
@@ -106,7 +117,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST' && action === 'remove_photo') {
       const body = JSON.parse(event.body || '{}');
-      if (!['points_of_interest', 'knowledge_deep_dives'].includes(body.target_table) || !body.target_key) return json(400, { error: 'target_table and target_key are required' });
+      if (!TARGET_TABLES.includes(body.target_table) || !body.target_key) return json(400, { error: 'target_table and target_key are required' });
       const { error } = await supabase.from(body.target_table).update({ photo_url: null, photo_credit: null, photo_license: null, photo_source_url: null }).eq(keyColumn(body.target_table), body.target_key);
       if (error) throw error;
       return json(200, { ok: true });

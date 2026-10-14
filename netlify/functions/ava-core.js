@@ -1271,6 +1271,55 @@ async function listDeepDives(category){
 }
 
 
+// Species photos. When a question is about a species AVA has an approved photo for, the
+// photo is shown with the species' common and scientific name. Matching is deterministic:
+// whole-word keywords from the guide_species table, no AI involved. The small table is
+// cached for 10 minutes, so this costs almost nothing per message.
+let speciesCache = { at: 0, rows: [] };
+async function getSpeciesWithPhotos(){
+  if(Date.now() - speciesCache.at < 600000) return speciesCache.rows;
+  try{
+    const { data, error } = await supabase
+      .from('guide_species')
+      .select('common_name, scientific_name, keywords, photo_url, photo_credit, photo_source_url, sort_order')
+      .eq('active', true)
+      .not('photo_url', 'is', null);
+    if(error) throw error;
+    speciesCache = { at: Date.now(), rows: (data || []).filter(r => r.photo_credit) };
+  } catch(err){
+    console.error('getSpeciesWithPhotos error (non-fatal):', err.message);
+    speciesCache = { at: Date.now() - 540000, rows: speciesCache.rows }; // retry in about a minute
+  }
+  return speciesCache.rows;
+}
+
+function keywordHit(text, kw){
+  const esc = String(kw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[\s-]+/g, '[\\s-]+');
+  return new RegExp('(^|[^a-z])' + esc + '(s|es)?([^a-z]|$)').test(text);
+}
+
+async function matchSpeciesPhotos(text, max){
+  try{
+    const msg = String(text || '').toLowerCase();
+    if(!msg) return [];
+    const rows = await getSpeciesWithPhotos();
+    const hits = [];
+    for(const r of rows){
+      const matched = (r.keywords || []).filter(k => keywordHit(msg, k));
+      if(!matched.length) continue;
+      hits.push({ r, strength: Math.max(...matched.map(k => k.length)), count: matched.length });
+    }
+    hits.sort((a, b) => b.strength - a.strength || b.count - a.count || (a.r.sort_order || 0) - (b.r.sort_order || 0));
+    if(!hits.length) return [];
+    // Only the species matched most specifically: "hawksbill turtle" is the hawksbill, not every turtle.
+    const top = hits[0].strength;
+    return hits.filter(h => h.strength === top).slice(0, max || 2).map(h => h.r);
+  } catch(err){
+    console.error('matchSpeciesPhotos error (non-fatal):', err.message);
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Directions in a local voice. The ROUTE is real (Google Routes, step by step)
 // and the LANDMARKS are real (named banks, churches, fuel stations etc. from
@@ -1429,7 +1478,7 @@ async function queryDirections(origin, destination){
 }
 
 module.exports = {
-  queryDirections, findPointOfInterestByName, listDeepDives,
+  queryDirections, findPointOfInterestByName, listDeepDives, matchSpeciesPhotos,
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,

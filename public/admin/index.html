@@ -230,7 +230,7 @@
 
   <div class="panel">
     <h2>Place photos</h2>
-    <div class="empty-note" style="margin-bottom:10px;">AVA looks for free-licence photos (Wikimedia Commons) for places and wildlife guides that have none. Each one keeps its credit and licence, which AVA shows under the picture. Nothing appears in AVA until you approve it.</div>
+    <div class="empty-note" style="margin-bottom:10px;">AVA looks for free-licence photos (Wikimedia Commons) for places and for each wildlife species in the guides (the scientific name is shown under the species). Each one keeps its credit and licence, which AVA shows under the picture. Nothing appears in AVA until you approve it.</div>
     <div id="placePhotoStats" class="empty-note" style="margin-bottom:10px;"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
       <button class="btn-secondary" id="placePhotoRun">Find more photos</button>
@@ -254,6 +254,17 @@
     <div id="swMsg" class="empty-note" style="margin-bottom:8px;"></div>
     <div id="swChanges"></div>
     <div id="swPager" style="display:flex; gap:8px; align-items:center; margin:10px 0;"></div>
+
+    <details id="swPasteBox" style="margin-top:14px;">
+      <summary style="cursor:pointer; font-weight:600;">Paste an announcement</summary>
+      <div class="empty-note" style="margin:8px 0;">For news that only exists on Facebook or other places AVA is not allowed to read. Paste the text of one post. AVA summarises it and checks that every point quoted really appears in what you pasted. Then it waits in the list above for you to review.</div>
+      <textarea id="swPasteText" rows="6" placeholder="Paste the text of the announcement here" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); font:inherit;"></textarea>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; margin-top:8px;">
+        <input id="swPasteName" type="text" placeholder="Where is it from? (e.g. APIS Facebook)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <input id="swPasteUrl" type="text" placeholder="Link to the post (optional)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+      </div>
+      <div style="margin-top:8px;"><button class="btn-publish" id="swPasteBtn">Summarise and add to review</button></div>
+    </details>
 
     <details id="swSourcesBox" style="margin-top:14px;">
       <summary style="cursor:pointer; font-weight:600;">Pages being watched</summary>
@@ -1221,7 +1232,7 @@ async function loadSourceWatch(){
     const tags = (c.relevant_to || []).map(t => `<span style="display:inline-block; font-size:12px; padding:2px 8px; border:1px solid var(--line); border-radius:999px; margin-right:4px;">${escapeHtml(AVA_LABELS[t] || t)}</span>`).join('');
     const body = c.summary ? `<div style="margin:6px 0;">${escapeHtml(c.summary)}</div>` : `<div class="empty-note" style="margin:6px 0;">${c.kind === 'file' ? 'The linked file changed. Open it to see what is new.' : (c.analysis_status === 'failed' ? 'The summary failed.' : 'Not summarised yet.')}</div>`;
     return `<div class="reviewitem" data-id="${escapeHtml(c.id)}">
-      <div class="reviewretailer"><a href="${escapeHtml(src.url || '#')}" target="_blank" rel="noopener">${escapeHtml(src.name || 'Unknown page')}</a> <span style="color:var(--soft); font-weight:400; font-size:13px;">${escapeHtml(swWhen(c.detected_at))}</span></div>
+      <div class="reviewretailer">${(String(src.url || '').startsWith('manual:') ? (c.origin_url ? `<a href="${escapeHtml(c.origin_url)}" target="_blank" rel="noopener">${escapeHtml(src.name || 'Pasted announcement')}</a>` : escapeHtml(src.name || 'Pasted announcement')) : `<a href="${escapeHtml(src.url || '#')}" target="_blank" rel="noopener">${escapeHtml(src.name || 'Unknown page')}</a>`)} ${String(src.url || '').startsWith('manual:') ? '<span style="font-size:12px; color:var(--soft);">(pasted)</span>' : ''} <span style="color:var(--soft); font-weight:400; font-size:13px;">${escapeHtml(swWhen(c.detected_at))}</span></div>
       ${body}
       ${facts ? `<ul style="margin:6px 0 6px 18px; padding:0;">${facts}</ul>` : ''}
       ${tags ? `<div style="margin:6px 0;">Matters for: ${tags}</div>` : ''}
@@ -1323,6 +1334,17 @@ document.getElementById('swRun').addEventListener('click', async e => {
   } catch(err){ msg.textContent = 'Could not run: ' + err.message; }
   btn.disabled = false;
 });
+document.getElementById('swPasteBtn').addEventListener('click', async e => {
+  const btn = e.target, msg = document.getElementById('swMsg');
+  btn.disabled = true; msg.textContent = 'Reading the announcement…';
+  try{
+    const r = await swCall('paste_post', { text: document.getElementById('swPasteText').value, name: document.getElementById('swPasteName').value, url: document.getElementById('swPasteUrl').value });
+    msg.textContent = r.analysis_status === 'analysed' ? (r.relevant ? 'Added to the review list above.' : 'Added, but nothing checkable was found in it. Look at it in the review list.') : 'Added without a summary. Press "Summarise" on it in the list above.';
+    document.getElementById('swPasteText').value = '';
+    swPage = 0; document.getElementById('swStatus').value = 'pending'; loadSourceWatch();
+  } catch(err){ msg.textContent = err.message; }
+  btn.disabled = false;
+});
 document.getElementById('swAdd').addEventListener('click', async e => {
   const btn = e.target, msg = document.getElementById('swMsg');
   btn.disabled = true;
@@ -1352,7 +1374,7 @@ async function loadPlacePhotos(){
   const stats = document.getElementById('placePhotoStats');
   try{
     const sr = await fetch(`${PHOTOS_API}?action=stats`, { headers: { 'X-Admin-Secret': secret } });
-    if(sr.ok){ const s = await sr.json(); stats.textContent = `${s.places_with_photo} of ${s.places_total} places have a photo · ${s.pending_candidates} proposed photo${s.pending_candidates === 1 ? '' : 's'} waiting for you`; }
+    if(sr.ok){ const s = await sr.json(); stats.textContent = `${s.places_with_photo} of ${s.places_total} places have a photo` + (s.species_total ? ` · ${s.species_with_photo} of ${s.species_total} wildlife species have a photo` : '') + ` · ${s.pending_candidates} proposed photo${s.pending_candidates === 1 ? '' : 's'} waiting for you`; }
   } catch(e){}
   const res = await fetch(`${PHOTOS_API}?action=list&page=${placePhotoPage}`, { headers: { 'X-Admin-Secret': secret } });
   if(!res.ok){
