@@ -47,4 +47,9 @@
 [functions."photo-finder"]
   schedule = "@daily"
 
+[functions."source-watch"]
+  schedule = "0 */3 * * *"
+
+
+
 

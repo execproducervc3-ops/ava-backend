@@ -242,6 +242,44 @@
   </div>
 
   <div class="panel">
+    <h2>Source watch</h2>
+    <div class="empty-note" style="margin-bottom:10px;">AVA checks official pages on a schedule and tells you when something changes (a fee, a notice, a schedule). It only reads and reports. It never changes what AVA knows: you read each change, update AVA yourself, then mark it done. Pages that ask not to be read by automated tools are skipped.</div>
+    <div id="swStats" class="empty-note" style="margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center;">
+      <button class="btn-secondary" id="swRun">Check pages now</button>
+      <select id="swStatus" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <option value="pending">Needs review</option><option value="noted">Done</option><option value="dismissed">Dismissed</option>
+      </select>
+    </div>
+    <div id="swMsg" class="empty-note" style="margin-bottom:8px;"></div>
+    <div id="swChanges"></div>
+    <div id="swPager" style="display:flex; gap:8px; align-items:center; margin:10px 0;"></div>
+
+    <details id="swSourcesBox" style="margin-top:14px;">
+      <summary style="cursor:pointer; font-weight:600;">Pages being watched</summary>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">
+        <input id="swSearch" type="text" placeholder="Search pages" style="flex:1; min-width:160px; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        <select id="swFilter" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+          <option value="">All</option><option value="failing">Failing</option><option value="blocked">Not allowed by site</option><option value="inactive">Paused</option>
+        </select>
+      </div>
+      <div id="swSources"></div>
+      <div id="swSourcesPager" style="display:flex; gap:8px; align-items:center; margin:10px 0;"></div>
+      <div style="border-top:1px solid var(--line); padding-top:12px; margin-top:12px;">
+        <div style="font-weight:600; margin-bottom:8px;">Add a page</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px;">
+          <input id="swNewUrl" type="text" placeholder="https://…" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+          <input id="swNewName" type="text" placeholder="Name (optional)" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+          <select id="swNewArea" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);"></select>
+          <input id="swNewDays" type="number" min="1" max="90" value="7" title="Check every N days" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">
+        </div>
+        <div style="margin-top:8px;"><button class="btn-publish" id="swAdd">Watch this page</button></div>
+      </div>
+      <div id="swDiscover" style="margin-top:12px;"></div>
+    </details>
+  </div>
+
+  <div class="panel">
     <h2>Knowledge gaps</h2>
     <div class="empty-note" style="margin-bottom:10px;">What AVA couldn't answer from its own data, grouped and ranked by how often it's actually been asked.</div>
     <div id="gapsList"></div>
@@ -495,6 +533,7 @@ async function tryLogin(password, showErrors){
   loadReviewQueue();
   loadBizApprovals();
   loadPlacePhotos();
+  loadSourceWatch();
   loadTopPicks();
   loadGaps();
   loadAgentDrafts();
@@ -1137,6 +1176,164 @@ async function renderBizBody(d, page){
   const mb = more.querySelector('button');
   if(mb) mb.onclick = () => { mb.disabled = true; renderBizBody(d, page + 1); };
 }
+
+// ---------------------------------------------------------------- Source watch
+const SOURCES_API = '/.netlify/functions/admin-sources';
+let swPage = 0, swSrcPage = 0, swAreas = ['general'];
+const AVA_LABELS = { prices_tax_duty: 'Prices, tax and duty', ferry_transport: 'Ferries and transport', utilities: 'Utilities', places_attractions: 'Places and attractions', events_festivals: 'Events and festivals', health_services: 'Health services', education_scholarships: 'Education and scholarships', government_services: 'Government services', safety_hazards: 'Safety and hazards', business_directory: 'Business directory', visas_immigration: 'Visas and immigration', other: 'Other' };
+
+async function swCall(action, body){
+  const r = await fetch(`${SOURCES_API}?action=${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+  return d;
+}
+async function swGet(qs){
+  const r = await fetch(`${SOURCES_API}?${qs}`, { headers: { 'X-Admin-Secret': secret } });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+  return d;
+}
+const swWhen = iso => iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'never';
+
+async function loadSourceWatch(){
+  const list = document.getElementById('swChanges');
+  if(!list) return;
+  const pager = document.getElementById('swPager');
+  try{
+    const s = await swGet('action=stats');
+    document.getElementById('swStats').textContent = `${s.active} of ${s.total} pages being watched · ${s.pending_changes} change${s.pending_changes === 1 ? '' : 's'} waiting for you` + (s.failing ? ` · ${s.failing} page${s.failing === 1 ? '' : 's'} failing` : '') + (s.blocked ? ` · ${s.blocked} not allowed by the site` : '') + (s.unanalysed ? ` · ${s.unanalysed} not summarised yet` : '');
+  } catch(e){}
+  const status = document.getElementById('swStatus').value;
+  let data;
+  try{ data = await swGet(`action=changes&status=${status}&page=${swPage}`); }
+  catch(e){
+    list.innerHTML = `<div class="empty-note">Could not load (${escapeHtml(e.message)}). If this mentions a missing table, run migration-052-source-watch.sql in Supabase.</div>`;
+    pager.innerHTML = ''; return;
+  }
+  if(!data.changes.length){
+    list.innerHTML = `<div class="empty-note">${status === 'pending' ? 'Nothing waiting. Changes appear here when a watched page is updated.' : 'Nothing here yet.'}</div>`;
+    pager.innerHTML = ''; return;
+  }
+  list.innerHTML = data.changes.map(c => {
+    const src = c.source || {};
+    const facts = (c.facts || []).map(f => `<li>${escapeHtml(f.fact)}<br><span style="color:var(--soft); font-size:12px;">Page says: “${escapeHtml(f.quote)}”</span></li>`).join('');
+    const tags = (c.relevant_to || []).map(t => `<span style="display:inline-block; font-size:12px; padding:2px 8px; border:1px solid var(--line); border-radius:999px; margin-right:4px;">${escapeHtml(AVA_LABELS[t] || t)}</span>`).join('');
+    const body = c.summary ? `<div style="margin:6px 0;">${escapeHtml(c.summary)}</div>` : `<div class="empty-note" style="margin:6px 0;">${c.kind === 'file' ? 'The linked file changed. Open it to see what is new.' : (c.analysis_status === 'failed' ? 'The summary failed.' : 'Not summarised yet.')}</div>`;
+    return `<div class="reviewitem" data-id="${escapeHtml(c.id)}">
+      <div class="reviewretailer"><a href="${escapeHtml(src.url || '#')}" target="_blank" rel="noopener">${escapeHtml(src.name || 'Unknown page')}</a> <span style="color:var(--soft); font-weight:400; font-size:13px;">${escapeHtml(swWhen(c.detected_at))}</span></div>
+      ${body}
+      ${facts ? `<ul style="margin:6px 0 6px 18px; padding:0;">${facts}</ul>` : ''}
+      ${tags ? `<div style="margin:6px 0;">Matters for: ${tags}</div>` : ''}
+      ${c.added_text ? `<details style="margin:6px 0;"><summary style="cursor:pointer; font-size:13px;">What was added on the page</summary><pre style="white-space:pre-wrap; font-size:12px; max-height:220px; overflow:auto;">${escapeHtml(c.added_text)}</pre></details>` : ''}
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        ${c.status === 'pending' ? `<button class="btn-publish" data-sw-act="noted">Done, I've handled it</button><button class="btn-danger" data-sw-act="dismissed">Not important</button>` : `<button class="btn-secondary" data-sw-act="pending">Move back to review</button>`}
+        ${c.kind === 'text' && c.analysis_status !== 'analysed' ? `<button class="btn-secondary" data-sw-act="analyse">Summarise</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-sw-act]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('.reviewitem').dataset.id, act = b.dataset.swAct;
+    b.disabled = true;
+    try{
+      if(act === 'analyse') await swCall('analyse_change', { id });
+      else await swCall('review_change', { id, status: act });
+      loadSourceWatch();
+    } catch(err){ alert(err.message); b.disabled = false; }
+  }));
+  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  pager.innerHTML = `<button class="btn-secondary" id="swPrev" ${swPage <= 0 ? 'disabled' : ''}>Previous</button><span style="color:var(--soft); font-size:13px;">Page ${swPage + 1} of ${pages} · ${data.total} change${data.total === 1 ? '' : 's'}</span><button class="btn-secondary" id="swNext" ${swPage + 1 >= pages ? 'disabled' : ''}>Next</button>`;
+  document.getElementById('swPrev').onclick = () => { swPage--; loadSourceWatch(); };
+  document.getElementById('swNext').onclick = () => { swPage++; loadSourceWatch(); };
+}
+
+async function loadWatchedSources(){
+  const box = document.getElementById('swSources'), pager = document.getElementById('swSourcesPager');
+  const q = encodeURIComponent(document.getElementById('swSearch').value.trim()), f = document.getElementById('swFilter').value;
+  let data;
+  try{ data = await swGet(`action=sources&page=${swSrcPage}&q=${q}&filter=${f}`); }
+  catch(e){ box.innerHTML = `<div class="empty-note">Could not load (${escapeHtml(e.message)}).</div>`; pager.innerHTML = ''; return; }
+  swAreas = data.areas || swAreas;
+  const sel = document.getElementById('swNewArea');
+  if(!sel.options.length) sel.innerHTML = swAreas.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a.replace('_', ' '))}</option>`).join('');
+  if(!data.sources.length){ box.innerHTML = '<div class="empty-note">No pages match.</div>'; pager.innerHTML = ''; return; }
+  box.innerHTML = data.sources.map(s => {
+    const bad = s.fail_count >= 3 || s.last_status === 'blocked_by_robots';
+    return `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px;" data-id="${escapeHtml(s.id)}" data-url="${escapeHtml(s.url)}">
+      <div><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.name)}</a> <span style="color:var(--soft); font-size:12px;">${escapeHtml(s.area.replace('_', ' '))} · every ${s.check_every_days} day${s.check_every_days === 1 ? '' : 's'}${s.active ? '' : ' · paused'}</span></div>
+      <div style="font-size:12px; color:${bad ? 'var(--danger)' : 'var(--soft)'}; margin:2px 0 6px;">Last checked ${escapeHtml(swWhen(s.last_checked_at))} · ${escapeHtml((s.last_status || 'not checked yet').replace(/_/g, ' '))}${s.last_error ? ' · ' + escapeHtml(s.last_error) : ''}</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn-secondary" data-sw-src="check">Check now</button>
+        <button class="btn-secondary" data-sw-src="${s.active ? 'pause' : 'resume'}">${s.active ? 'Pause' : 'Resume'}</button>
+        <button class="btn-secondary" data-sw-src="discover">Find more pages on this site</button>
+        <button class="btn-danger" data-sw-src="remove">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-sw-src]').forEach(b => b.addEventListener('click', async () => {
+    const card = b.closest('[data-id]'), id = card.dataset.id, act = b.dataset.swSrc, msg = document.getElementById('swMsg');
+    b.disabled = true;
+    try{
+      if(act === 'check'){ const r = await swCall('check_now', { id }); msg.textContent = 'Result: ' + String(r.result.status || '').replace(/_/g, ' ') + (r.result.error ? ' (' + r.result.error + ')' : ''); }
+      else if(act === 'pause' || act === 'resume') await swCall('update_source', { id, active: act === 'resume' });
+      else if(act === 'remove'){ if(!confirm('Stop watching this page and delete its change history?')){ b.disabled = false; return; } await swCall('delete_source', { id }); }
+      else if(act === 'discover'){ await swDiscover({ id }); b.disabled = false; return; }
+      loadWatchedSources(); loadSourceWatch();
+    } catch(err){ alert(err.message); b.disabled = false; }
+  }));
+  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  pager.innerHTML = `<button class="btn-secondary" id="swsPrev" ${swSrcPage <= 0 ? 'disabled' : ''}>Previous</button><span style="color:var(--soft); font-size:13px;">Page ${swSrcPage + 1} of ${pages} · ${data.total} page${data.total === 1 ? '' : 's'}</span><button class="btn-secondary" id="swsNext" ${swSrcPage + 1 >= pages ? 'disabled' : ''}>Next</button>`;
+  document.getElementById('swsPrev').onclick = () => { swSrcPage--; loadWatchedSources(); };
+  document.getElementById('swsNext').onclick = () => { swSrcPage++; loadWatchedSources(); };
+}
+
+async function swDiscover(body){
+  const el = document.getElementById('swDiscover');
+  el.innerHTML = '<div class="empty-note">Looking through the site for pages that carry news, notices, fees, forms and schedules…</div>';
+  try{
+    const r = await swCall('discover', body);
+    if(!r.candidates.length){ el.innerHTML = '<div class="empty-note">No new pages found that are not already watched.</div>'; return; }
+    el.innerHTML = `<div style="font-weight:600; margin-bottom:6px;">Found ${r.candidates.length} page${r.candidates.length === 1 ? '' : 's'} on this site</div>
+      <div style="max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:6px 10px;">
+      ${r.candidates.map((c, i) => `<label style="display:flex; gap:8px; padding:3px 0; font-size:13px;"><input type="checkbox" data-sw-cand="${i}" checked><span>${escapeHtml(c.name)}<br><span style="color:var(--soft); font-size:12px;">${escapeHtml(c.url)}</span></span></label>`).join('')}
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;"><button class="btn-publish" id="swAddCands">Watch selected pages</button></div>`;
+    document.getElementById('swAddCands').onclick = async e => {
+      const items = [...el.querySelectorAll('[data-sw-cand]')].filter(x => x.checked).map(x => r.candidates[+x.dataset.swCand]);
+      if(!items.length) return;
+      e.target.disabled = true;
+      try{ const a = await swCall('add_many', { items: items.map(i => ({ url: i.url, name: i.name })), area: document.getElementById('swNewArea').value }); el.innerHTML = `<div class="empty-note">Now watching ${a.added} more page${a.added === 1 ? '' : 's'}. Their first check records a starting point; changes show up after that.</div>`; loadWatchedSources(); loadSourceWatch(); }
+      catch(err){ alert(err.message); e.target.disabled = false; }
+    };
+  } catch(err){ el.innerHTML = `<div class="empty-note">${escapeHtml(err.message)}</div>`; }
+}
+
+document.getElementById('swStatus').addEventListener('change', () => { swPage = 0; loadSourceWatch(); });
+document.getElementById('swSourcesBox').addEventListener('toggle', e => { if(e.target.open) loadWatchedSources(); });
+let swTimer = null;
+document.getElementById('swSearch').addEventListener('input', () => { clearTimeout(swTimer); swTimer = setTimeout(() => { swSrcPage = 0; loadWatchedSources(); }, 300); });
+document.getElementById('swFilter').addEventListener('change', () => { swSrcPage = 0; loadWatchedSources(); });
+document.getElementById('swRun').addEventListener('click', async e => {
+  const btn = e.target, msg = document.getElementById('swMsg');
+  btn.disabled = true; msg.textContent = 'Checking the pages that are due…';
+  try{
+    const r = (await swCall('run', { limit: 8 })).summary;
+    msg.textContent = r.due ? `Checked ${r.checked} of ${r.due} due: ${r.changed} changed, ${r.baseline} newly recorded, ${r.errors} failed.` : 'No pages are due yet.';
+    loadSourceWatch();
+  } catch(err){ msg.textContent = 'Could not run: ' + err.message; }
+  btn.disabled = false;
+});
+document.getElementById('swAdd').addEventListener('click', async e => {
+  const btn = e.target, msg = document.getElementById('swMsg');
+  btn.disabled = true;
+  try{
+    const r = await swCall('add_source', { url: document.getElementById('swNewUrl').value, name: document.getElementById('swNewName').value, area: document.getElementById('swNewArea').value, check_every_days: document.getElementById('swNewDays').value });
+    msg.textContent = r.added ? 'Added. It will be checked on the next run.' : 'That page is already being watched.';
+    document.getElementById('swNewUrl').value = ''; document.getElementById('swNewName').value = '';
+    loadWatchedSources(); loadSourceWatch();
+  } catch(err){ alert(err.message); }
+  btn.disabled = false;
+});
 
 const PHOTOS_API = '/.netlify/functions/admin-photos';
 let placePhotoPage = 0;
