@@ -1375,6 +1375,17 @@ async function fetchLandmarks(points){
     const curatedList = curated || [];
     curatedList.forEach(l => out.push({ name: l.name, kind: l.kind, lat: l.lat, lng: l.lng, source: 'curated' }));
 
+    // Google places saved in admin: used only while their coordinates are under 30 days old (Google's limit).
+    try{
+      const since = new Date(Date.now() - 30 * 86400000).toISOString();
+      const { data: refs } = await supabase.from('google_place_refs').select('label, kind, lat, lng').eq('active', true).gte('coords_fetched_at', since).limit(1500);
+      (refs || []).forEach(r => {
+        if(r.lat == null || r.lng == null) return;
+        curatedList.push({ name: r.label, kind: r.kind, lat: r.lat, lng: r.lng });
+        out.push({ name: r.label, kind: r.kind, lat: r.lat, lng: r.lng, source: 'google_saved' });
+      });
+    }catch(e){ console.error('google_place_refs read failed (non-fatal):', e.message); }
+
     const uncovered = points.filter(p => !curatedList.some(l => metersBetween(p, l) <= LANDMARK_RADIUS_M));
     if(!uncovered.length) return out;
 
@@ -1474,6 +1485,34 @@ function shrinkPolyline(encoded){
   return null;
 }
 
+// Live Google Maps search for places AVA's own data doesn't have. Nothing is stored; every answer
+// must be shown as coming from Google Maps with its link. Only Pro-level fields are requested.
+const SVG_BOX = { low: { latitude: 12.50, longitude: -61.50 }, high: { latitude: 13.40, longitude: -61.05 } };
+async function searchGooglePlaces(query, island){
+  if(!GOOGLE_KEY) return { note: 'Google Maps search is not configured.' };
+  const q0 = String(query || '').trim().slice(0, 120);
+  if(q0.length < 2) return { note: 'No search text given.' };
+  const q = /svg|vincent|grenadines/i.test(q0) || (island && q0.toLowerCase().includes(String(island).toLowerCase())) ? q0 : `${q0}${island ? ', ' + island : ''}, Saint Vincent and the Grenadines`;
+  try{
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_KEY,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName,places.businessStatus' },
+      body: JSON.stringify({ textQuery: q, maxResultCount: 5, locationRestriction: { rectangle: SVG_BOX } }),
+    });
+    if(!res.ok){ console.error('Google text search status', res.status, (await res.text().catch(() => '')).slice(0, 200)); return { note: 'Google Maps could not be reached just now.' }; }
+    const data = await res.json();
+    const results = (data.places || []).filter(p => p.businessStatus !== 'CLOSED_PERMANENTLY').map(p => ({
+      name: p.displayName && p.displayName.text, address: p.formattedAddress || null,
+      type: (p.primaryTypeDisplayName && p.primaryTypeDisplayName.text) || null, maps_url: p.googleMapsUri || null,
+    })).filter(p => p.name);
+    return results.length ? { results } : { note: 'Google Maps has nothing under that name in Saint Vincent and the Grenadines.' };
+  }catch(e){
+    console.error('searchGooglePlaces error:', e.message);
+    return { note: 'Google Maps could not be reached just now.' };
+  }
+}
+
 async function queryDirections(origin, destination){
   if(!GOOGLE_KEY) return { note: 'Directions are not configured.' };
   try{
@@ -1547,7 +1586,7 @@ async function queryDirections(origin, destination){
 }
 
 module.exports = {
-  queryDirections, findPointOfInterestByName, listDeepDives, matchSpeciesPhotos,
+  queryDirections, searchGooglePlaces, findPointOfInterestByName, listDeepDives, matchSpeciesPhotos,
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
   queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
