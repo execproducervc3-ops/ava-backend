@@ -54,14 +54,14 @@
   timeout = 26
 
 [[redirects]]
-  from = "/a/*"
-  to = "/.netlify/functions/share-page?kind=a&id=:splat"
+  from = "/a/:id"
+  to = "/.netlify/functions/share-page?kind=a&id=:id"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/l/*"
-  to = "/.netlify/functions/share-page?kind=l&id=:splat"
+  from = "/l/:id"
+  to = "/.netlify/functions/share-page?kind=l&id=:id"
   status = 200
   force = true
 

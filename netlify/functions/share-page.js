@@ -73,9 +73,17 @@ async function listingPage(id){
 exports.handler = async (event) => {
   try{
     const q = event.queryStringParameters || {};
-    const id = decodeURIComponent(String(q.id || '').split('/')[0]);
-    if(q.kind === 'a') return await answerPage(id);
-    if(q.kind === 'l') return await listingPage(id);
+    let kind = q.kind, id = String(q.id || '').split('/')[0];
+    // Netlify may not fill the id into the redirect's query string, so also read it from the address that was opened.
+    if(!kind || !id || id.startsWith(':')){
+      let p = '';
+      try{ p = new URL(event.rawUrl).pathname; } catch(e){ p = event.path || ''; }
+      const m = p.match(/\/(a|l)\/([^/?#]+)/);
+      if(m){ kind = m[1]; id = m[2]; }
+    }
+    id = decodeURIComponent(id);
+    if(kind === 'a') return await answerPage(id);
+    if(kind === 'l') return await listingPage(id);
     return notFound('That page');
   } catch(err){
     console.error('share-page error:', err);
