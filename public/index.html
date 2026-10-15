@@ -224,6 +224,15 @@
   .luckyballlbl{font-size:8px;text-transform:uppercase;opacity:.85;line-height:1;margin-bottom:1px;}
 
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .sharemenu{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.25);padding:6px;min-width:200px;}
+  .sharemenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;font-size:14px;color:var(--ink);background:none;border:0;border-radius:9px;padding:9px 11px;cursor:pointer;}
+  .sharemenu button:hover{background:var(--teal-soft);}
+  .sharemenu .sm-ico{width:22px;text-align:center;font-size:16px;}
+  .sharebar{margin-top:10px;display:flex;gap:8px;}
+  .sharebtn,.dirshare{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--soft);cursor:pointer;}
+  .sharebtn:hover,.dirshare:hover{border-color:var(--teal);color:var(--teal);}
+  .dirshare{padding:4px 9px;margin-left:6px;flex:0 0 auto;}
+  .avatoast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--cream);padding:9px 16px;border-radius:999px;font-size:13px;z-index:50;box-shadow:var(--shadow);}
   .routemap{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);}
   .routemap-map{height:260px;width:100%;background:#e8eef0;}
   .routemap-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:7px 10px;font-size:12px;color:var(--muted, #666);}
@@ -504,6 +513,87 @@ function appendMessage(role, text, linkCard, retailResults, newsResults, ferryRe
   return wrap;
 }
 
+// ---- Sharing -------------------------------------------------------------
+function showToast(msg){
+  const t = document.createElement('div'); t.className = 'avatoast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
+}
+async function shareOrCopy(url, title, text){
+  if(navigator.share){
+    try{ await navigator.share({ title, text, url }); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; }
+  }
+  try{ await navigator.clipboard.writeText(url); showToast('Link copied'); }
+  catch(e){ window.prompt('Copy this link', url); }
+}
+function closeShareMenu(){ const m = document.getElementById('avaShareMenu'); if(m) m.remove(); }
+// Several ways to share one link. Instagram has no web share link, so it copies the link to paste there.
+function openShareMenu(anchor, opts){
+  closeShareMenu();
+  const url = opts.url, title = opts.title || 'AVA', text = opts.text || title;
+  const line = `${text} ${url}`.trim();
+  const copy = async (msg) => {
+    try{ await navigator.clipboard.writeText(url); showToast(msg); }
+    catch(e){ window.prompt('Copy this link', url); }
+  };
+  const open = (u) => window.open(u, '_blank', 'noopener,noreferrer');
+  const items = [
+    { ico: '&#128279;', label: 'Copy link', run: () => copy('Link copied') },
+    { ico: '&#128172;', label: 'WhatsApp', run: () => open('https://wa.me/?text=' + encodeURIComponent(line)) },
+    { ico: '&#128101;', label: 'Facebook', run: () => open('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url)) },
+    { ico: '&#128247;', label: 'Instagram', run: () => copy('Link copied. Paste it into your Instagram story, post or message.') },
+  ];
+  if(navigator.share) items.push({ ico: '&#8943;', label: 'More...', run: () => shareOrCopy(url, title, text) });
+  const m = document.createElement('div');
+  m.id = 'avaShareMenu'; m.className = 'sharemenu'; m.setAttribute('role', 'menu');
+  items.forEach(it => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('role', 'menuitem');
+    b.innerHTML = `<span class="sm-ico">${it.ico}</span><span>${it.label}</span>`;
+    b.addEventListener('click', () => { closeShareMenu(); it.run(); });
+    m.appendChild(b);
+  });
+  document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  let left = Math.min(Math.max(8, r.left), window.innerWidth - mw - 8);
+  let top = r.bottom + 6;
+  if(top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  m.style.left = left + 'px'; m.style.top = top + 'px';
+  setTimeout(() => {
+    const away = (e) => { if(!m.contains(e.target)){ closeShareMenu(); document.removeEventListener('click', away, true); document.removeEventListener('keydown', esc, true); } };
+    const esc = (e) => { if(e.key === 'Escape'){ closeShareMenu(); document.removeEventListener('click', away, true); document.removeEventListener('keydown', esc, true); } };
+    document.addEventListener('click', away, true); document.addEventListener('keydown', esc, true);
+  }, 0);
+}
+function addShareBar(wrap, share){
+  const bubble = wrap && wrap.querySelector('.bubble');
+  if(!bubble || !share || !share.payload || !share.sig) return;
+  let q = '';
+  try{ q = JSON.parse(share.payload).q || ''; }catch(e){}
+  const bar = document.createElement('div'); bar.className = 'sharebar';
+  bar.innerHTML = '<button type="button" class="sharebtn">&#128279; Share this answer</button>';
+  bubble.appendChild(bar);
+  let url = null;
+  bar.querySelector('button').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try{
+      if(!url){
+        const r = await fetch('/.netlify/functions/share-create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(share) });
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok || !j.url) throw new Error(j.error || 'Could not create a share link.');
+        url = j.url;
+      }
+      openShareMenu(btn, { url, title: q ? 'AVA: ' + q.slice(0, 80) : 'An answer from AVA', text: q ? 'I asked AVA: ' + q.slice(0, 80) : 'An answer from AVA' });
+    } catch(err){ showToast(err.message); }
+    btn.disabled = false;
+  });
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('.dirshare');
+  if(!b) return;
+  openShareMenu(b, { url: location.origin + '/l/' + encodeURIComponent(b.dataset.shareListing), title: b.dataset.shareName || 'AVA listing', text: (b.dataset.shareName || 'A listing') + ' on AVA' });
+});
+
 function renderDirectoryResults(results){
   const rows = results.map(d => `
     <div class="dirrow${d.is_top_pick ? ' dirrow-pick' : ''}">
@@ -513,6 +603,7 @@ function renderDirectoryResults(results){
         ${d.is_top_pick && d.top_pick_note ? `<div class="dirpicknote">${escapeHtml(d.top_pick_note)}</div>` : ''}
       </div>
       ${d.phone ? `<a href="tel:${escapeHtml(String(d.phone).replace(/[^\d+]/g,''))}" class="dirphone">&#128222;</a>` : ''}
+      ${d.id ? `<button type="button" class="dirshare" data-share-listing="${escapeHtml(d.id)}" data-share-name="${escapeHtml(d.name)}" title="Share this listing" aria-label="Share this listing">&#128279;</button>` : ''}
     </div>`).join('');
   return `<div class="dircard"><div class="dircard-lbl">From AVA's directory</div>${rows}</div>`;
 }
@@ -1080,6 +1171,7 @@ async function handleSend(text){
       const bubble = avaWrap && avaWrap.querySelector('.bubble');
       if(bubble) bubble.insertAdjacentHTML('beforeend', renderDeepDiveCard(data.deepDives));
     }
+    addShareBar(avaWrap, data.share);
     history.push({ role: 'assistant', content: finalText });
     await saveHistory();
   } catch(err){

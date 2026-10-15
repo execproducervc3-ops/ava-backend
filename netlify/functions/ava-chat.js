@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const shareCore = require('./share-core.js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // One-way hash for anonymous product-interest tracking — the raw device ID
@@ -980,7 +981,21 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
       } catch(e){ console.error('species photo match failed (non-fatal):', e.message); }
     }
     await recordUsage(true, null, startTime, deviceId);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards, routeMap }) };
+    // A signed snapshot the visitor can choose to share. Nothing is stored unless they press Share.
+    let share = null;
+    try{
+      if(!budgetExceeded){
+        const lastIn = incoming[incoming.length - 1];
+        const q = lastIn && lastIn.role === 'user' && typeof lastIn.content === 'string' ? lastIn.content.slice(0, 300) : '';
+        const snap = JSON.stringify({
+          v: 1, q, text: finalText, at: new Date().toISOString(),
+          linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers,
+          directoryResults, placeCards, routeMap,
+        });
+        if(snap.length < 150000) share = { payload: snap, sig: shareCore.signPayload(snap) };
+      }
+    } catch(e){ console.error('share snapshot failed (non-fatal):', e.message); }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards, routeMap, share }) };
   } catch(err){
     console.error('ava-chat error:', err);
     await recordUsage(false, err && err.message, startTime, deviceId);
