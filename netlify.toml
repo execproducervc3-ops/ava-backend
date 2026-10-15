@@ -53,5 +53,16 @@
 [functions."admin-landmarks"]
   timeout = 26
 
+[[redirects]]
+  from = "/a/*"
+  to = "/.netlify/functions/share-page?kind=a&id=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/l/*"
+  to = "/.netlify/functions/share-page?kind=l&id=:splat"
+  status = 200
+  force = true
 
 
