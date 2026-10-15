@@ -29,6 +29,10 @@ async function answerPage(id){
   const when = new Date(d.at || row.created_at);
   const whenTxt = isNaN(when) ? '' : when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/St_Vincent' });
   const photo = (d.placeCards || []).find(c => core.safeHttp(c.photo_url));
+  // Retailer-submitted product photos (single or multi-item lookups) also count.
+  const retailFlat = (Array.isArray(d.retailResults) ? d.retailResults : []).flatMap(r => Array.isArray(r && r.results) ? r.results : [r]);
+  const retailPhoto = retailFlat.find(r => r && core.safeHttp(r.photo_url));
+  const shareImage = photo ? photo.photo_url : retailPhoto ? retailPhoto.photo_url : `${core.SITE}/og/a/${id}`;
   const title = core.answerTitle(d.q) + ' | AVA';
   const url = `${core.SITE}/a/${id}`;
   const staticHtml = `${d.q ? `<div class="msg user"><div class="bubble">${core.esc(d.q)}</div></div>` : ''}<div class="msg ava"><div class="bubble">${String(d.text || '').split(/\n{2,}/).map(p => `<p>${core.esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</div></div>
@@ -36,7 +40,7 @@ async function answerPage(id){
     <div class="sharepage-btns" style="justify-content:center"><button type="button" class="sharebtn" id="shareThis">&#128279; Share</button></div>`;
   // The client script re-renders the cards; keep the note and share button after it.
   return html(200, core.renderPage(template, {
-    title, desc: core.plainText(d.text, 180), image: photo ? photo.photo_url : `${core.SITE}/og/a/${id}`, url,
+    title, desc: core.plainText(d.text, 180), image: shareImage, url,
     robots: 'noindex, follow', staticHtml, data: { kind: 'a', data: d },
   }));
 }
