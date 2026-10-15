@@ -20,8 +20,10 @@ function notFound(what){
 
 async function answerPage(id){
   if(!/^[0-9A-Za-z]{10}$/.test(id)) return notFound('That answer');
-  const { data: row } = await supabase.from('shared_answers').select('id, question, payload, created_at, expires_at, hidden').eq('id', id).maybeSingle();
-  if(!row || row.hidden || new Date(row.expires_at) < new Date()) return notFound('That answer');
+  const { data: row, error: readErr } = await supabase.from('shared_answers').select('id, question, payload, created_at, expires_at, hidden').eq('id', id).maybeSingle();
+  if(readErr){ console.error('share-page read error:', readErr.message); throw new Error('read failed: ' + readErr.message); }
+  if(!row) { console.error('share-page: no shared answer with id', id); return notFound('That answer'); }
+  if(row.hidden || new Date(row.expires_at) < new Date()) return notFound('That answer');
   supabase.rpc('bump_shared_answer_views', { p_id: id }).then(() => {}, () => {});
   const d = row.payload || {};
   const when = new Date(d.at || row.created_at);
@@ -41,8 +43,9 @@ async function answerPage(id){
 
 async function listingPage(id){
   if(!/^[0-9A-Za-z-]{1,64}$/.test(id)) return notFound('That listing');
-  const { data: l } = await supabase.from('directory_listings')
+  const { data: l, error: listErr } = await supabase.from('directory_listings')
     .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note').eq('id', id).eq('status', 'active').maybeSingle();
+  if(listErr){ console.error('share-page listing error:', listErr.message); throw new Error('read failed: ' + listErr.message); }
   if(!l) return notFound('That listing');
   const cat = String(l.category || '').replace(/_/g, ' ');
   const where = [l.address, l.island].filter(Boolean).join(', ');
@@ -76,6 +79,6 @@ exports.handler = async (event) => {
     return notFound('That page');
   } catch(err){
     console.error('share-page error:', err);
-    return html(500, 'Something went wrong. Please try again.', { 'Cache-Control': 'no-store' });
+    return html(500, `<!doctype html><meta charset="utf-8"><title>Error | AVA</title><p style="font-family:sans-serif;padding:24px">Something went wrong loading this page. Please try again in a moment.<br><small>${core.esc(String(err.message || '').slice(0, 160))}</small></p>`, { 'Cache-Control': 'no-store' });
   }
 };
