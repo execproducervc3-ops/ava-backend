@@ -348,6 +348,26 @@
     <input type="text" id="lmNear" placeholder="e.g. Layou, or Leeward Highway" autocomplete="off">
     <div style="display:flex; gap:8px; margin-top:8px;"><button id="lmAddBtn">Add landmark</button></div>
     <div class="empty-note" id="lmMsg" style="display:none; margin-top:8px;"></div>
+    <details id="gpDetails" style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
+      <summary id="gpSummary" style="cursor:pointer; font-size:14px; font-weight:600;">Find places on Google Maps</summary>
+      <div style="margin-top:8px;">
+      <div class="empty-note" style="margin-bottom:8px;">Search Google Maps, then save a place as a direction landmark. Google's terms let AVA keep only its place ID, so that is all that is saved for good, plus your own short label. AVA refreshes the map position from Google every few weeks, and a saved place stops being used if it hasn't been refreshed in 30 days.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input type="text" id="gpQuery" placeholder="e.g. RBC Bank Kingstown" autocomplete="off" style="flex:1; min-width:180px;">
+        <select id="gpIsland"></select>
+        <button class="btn-secondary" id="gpSearchBtn">Search Google</button>
+      </div>
+      <div class="empty-note" id="gpMsg" style="display:none; margin-top:8px;"></div>
+      <div id="gpResults" style="margin-top:10px;"></div>
+      <div style="border-top:1px solid var(--border, #ddd); margin-top:12px; padding-top:10px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+          <strong id="gpSavedTitle" style="font-size:13px;">Saved Google places</strong>
+          <button class="btn-secondary" id="gpRefreshBtn">Refresh map positions</button>
+        </div>
+        <div id="gpSaved" style="max-height:360px; overflow:auto;"></div>
+      </div>
+      </div>
+    </details>
     <details id="osmDetails" style="border-top:1px solid var(--border, #ddd); margin-top:16px; padding-top:12px;">
       <summary style="cursor:pointer; font-size:14px; font-weight:600;">Import from OpenStreetMap</summary>
       <div style="margin-top:8px;">
@@ -2306,6 +2326,77 @@ function lmFillSelects(kinds, islands){
   if(!isleSel.options.length) isleSel.innerHTML = islands.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
 }
 lmFillSelects(LM_KINDS, LM_ISLANDS);
+
+// ---- Google Maps finder (saves place IDs only) ----
+const GP_API = '/.netlify/functions/admin-google-places';
+async function gpApi(action, method, body){
+  const res = await fetch(`${GP_API}?action=${action}`, { method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: method === 'POST' ? JSON.stringify(body || {}) : undefined });
+  const raw = await res.text(); let data = null; try{ data = JSON.parse(raw); }catch(e){}
+  if(!data) throw new Error(res.status === 404 ? 'The Google places service was not found (404). Check that netlify/functions/admin-google-places.js is in your repo and deployed.' : 'The Google places service returned an unexpected reply (HTTP ' + res.status + ').');
+  if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
+  return data;
+}
+function gpSay(text, isErr){
+  const el = document.getElementById('gpMsg');
+  el.style.display = text ? 'block' : 'none'; el.style.color = isErr ? 'var(--danger)' : 'var(--live)'; el.textContent = text || '';
+}
+document.getElementById('gpIsland').innerHTML = '<option value="">Any island</option>' + LM_ISLANDS.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
+let gpFound = [];
+async function gpLoadSaved(){
+  const el = document.getElementById('gpSaved');
+  try{
+    const d = await gpApi('list', 'GET');
+    document.getElementById('gpSavedTitle').textContent = `Saved Google places (${d.places.length})` + (d.expiring ? ` · ${d.expiring} need a position refresh` : '');
+    if(!d.places.length){ el.innerHTML = '<div class="empty-note">None saved yet.</div>'; return; }
+    el.innerHTML = d.places.map(p => `<div class="gaprow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <div style="flex:1; min-width:160px;"><strong>${escapeHtml(p.label)}</strong><div class="empty-note">${escapeHtml(p.kind.replace(/_/g,' '))}${p.island ? ' · ' + escapeHtml(p.island) : ''}${p.active ? '' : ' · switched off'}</div></div>
+      <button class="btn-secondary" data-gp-toggle="${p.id}" data-active="${p.active ? '1' : '0'}">${p.active ? 'Switch off' : 'Switch on'}</button>
+      <button class="btn-secondary" data-gp-del="${p.id}">Remove</button></div>`).join('');
+  }catch(e){ el.innerHTML = `<div class="empty-note" style="color:var(--danger)">${escapeHtml(e.message)}</div>`; }
+}
+document.getElementById('gpDetails').addEventListener('toggle', (e) => { if(e.target.open) gpLoadSaved(); });
+async function gpSearch(){
+  const q = document.getElementById('gpQuery').value.trim();
+  const box = document.getElementById('gpResults');
+  if(q.length < 3){ gpSay('Type at least 3 letters.', true); return; }
+  gpSay('Searching Google Maps…'); box.innerHTML = '';
+  try{
+    const d = await gpApi('search', 'POST', { query: q, island: document.getElementById('gpIsland').value });
+    gpFound = d.results;
+    gpSay(d.results.length ? '' : 'Google found nothing for that.');
+    box.innerHTML = d.results.map((r, i) => `<div class="gaprow" style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;">
+      <div style="flex:1; min-width:200px;"><strong>${escapeHtml(r.name || '')}</strong>
+        <div class="empty-note">${escapeHtml([r.type, r.address].filter(Boolean).join(' · '))}${r.maps_url ? ` · <a href="${escapeHtml(r.maps_url)}" target="_blank" rel="noopener noreferrer">View on Google Maps</a>` : ''}</div></div>
+      ${r.saved ? '<span class="empty-note">Already saved</span>' : `<input type="text" class="gpLabel" data-i="${i}" placeholder="Your label, e.g. RBC bank, Halifax St" style="min-width:200px;">
+        <select class="gpKind" data-i="${i}">${LM_KINDS.map(k => `<option value="${k}">${k.replace(/_/g,' ')}</option>`).join('')}</select>
+        <button data-gp-add="${i}">Save</button>`}</div>`).join('');
+  }catch(e){ gpSay(e.message, true); }
+}
+document.getElementById('gpSearchBtn').addEventListener('click', gpSearch);
+document.getElementById('gpQuery').addEventListener('keydown', (e) => { if(e.key === 'Enter') gpSearch(); });
+document.getElementById('gpRefreshBtn').addEventListener('click', async () => {
+  gpSay('Refreshing from Google…');
+  try{ const d = await gpApi('refresh', 'POST', {}); gpSay(d.checked ? `Refreshed ${d.updated}${d.closed ? ', ' + d.closed + ' closed or removed (switched off)' : ''}${d.failed ? ', ' + d.failed + ' failed' : ''}.` : 'Nothing needs refreshing yet.'); gpLoadSaved(); }
+  catch(e){ gpSay(e.message, true); }
+});
+document.getElementById('gpDetails').addEventListener('click', async (e) => {
+  const add = e.target.closest('[data-gp-add]'), tog = e.target.closest('[data-gp-toggle]'), del = e.target.closest('[data-gp-del]');
+  try{
+    if(add){
+      const i = Number(add.dataset.gpAdd), r = gpFound[i];
+      const label = document.querySelector(`.gpLabel[data-i="${i}"]`).value.trim();
+      const kind = document.querySelector(`.gpKind[data-i="${i}"]`).value;
+      if(!label){ gpSay('Give it your own short label first.', true); return; }
+      await gpApi('add', 'POST', { place_id: r.place_id, label, kind, island: document.getElementById('gpIsland').value || null, lat: r.lat, lng: r.lng });
+      gpSay('Saved. AVA will use it in directions.'); r.saved = true; add.closest('.gaprow').querySelector('.gpLabel').disabled = true; add.disabled = true; add.textContent = 'Saved'; gpLoadSaved();
+    } else if(tog){
+      await gpApi('toggle', 'POST', { id: Number(tog.dataset.gpToggle), active: tog.dataset.active !== '1' }); gpLoadSaved();
+    } else if(del){
+      if(!confirm('Remove this saved Google place?')) return;
+      await gpApi('delete', 'POST', { id: Number(del.dataset.gpDel) }); gpLoadSaved();
+    }
+  }catch(err){ gpSay(err.message, true); }
+});
 function lmSay(text, isErr){
   const el = document.getElementById('lmMsg');
   el.style.display = text ? 'block' : 'none';
