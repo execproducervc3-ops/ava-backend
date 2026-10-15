@@ -29,14 +29,14 @@ async function answerPage(id){
   const when = new Date(d.at || row.created_at);
   const whenTxt = isNaN(when) ? '' : when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/St_Vincent' });
   const photo = (d.placeCards || []).find(c => core.safeHttp(c.photo_url));
-  const title = d.q ? `${String(d.q).slice(0, 90)} | AVA` : 'An answer from AVA';
+  const title = core.answerTitle(d.q) + ' | AVA';
   const url = `${core.SITE}/a/${id}`;
   const staticHtml = `${d.q ? `<div class="msg user"><div class="bubble">${core.esc(d.q)}</div></div>` : ''}<div class="msg ava"><div class="bubble">${String(d.text || '').split(/\n{2,}/).map(p => `<p>${core.esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</div></div>
     <div class="sharepage-note">Answered by AVA${whenTxt ? ' on ' + core.esc(whenTxt) : ''}. Prices, schedules and opening details can change, so check before you go.</div>
     <div class="sharepage-btns" style="justify-content:center"><button type="button" class="sharebtn" id="shareThis">&#128279; Share</button></div>`;
   // The client script re-renders the cards; keep the note and share button after it.
   return html(200, core.renderPage(template, {
-    title, desc: core.plainText(d.text, 180), image: photo ? photo.photo_url : DEFAULT_IMAGE, url,
+    title, desc: core.plainText(d.text, 180), image: photo ? photo.photo_url : `${core.SITE}/og/a/${id}`, url,
     robots: 'noindex, follow', staticHtml, data: { kind: 'a', data: d },
   }));
 }
@@ -67,7 +67,7 @@ async function listingPage(id){
   const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: l.name, url,
     address: { '@type': 'PostalAddress', streetAddress: l.address || undefined, addressLocality: l.island || undefined, addressCountry: 'VC' },
     telephone: l.phone || undefined, sameAs: site || undefined };
-  return html(200, core.renderPage(template, { title: `${l.name} | AVA`, desc, image: DEFAULT_IMAGE, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
+  return html(200, core.renderPage(template, { title: `${l.name} | AVA`, desc, image: `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
 }
 
 exports.handler = async (event) => {

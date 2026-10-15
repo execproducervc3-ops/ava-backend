@@ -37,4 +37,14 @@ function renderPage(template, v){
   return template.replace(/\{\{([A-Z]+)\}\}/g, (m, k) => (k in map ? map[k] : m));
 }
 
-module.exports = { SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };
+function answerTitle(q){
+  const t = String(q || '').replace(/\s+/g, ' ').trim();
+  if(!t) return 'An answer from AVA';
+  const words = t.split(' ').length;
+  let cap = t[0].toUpperCase() + t.slice(1);
+  if(cap.length > 90) cap = cap.slice(0, 89).replace(/\s+\S*$/, '') + '…';
+  if(words <= 3) return `What AVA says about "${t.slice(0, 60)}"`;
+  return cap;
+}
+
+module.exports = { answerTitle, SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };

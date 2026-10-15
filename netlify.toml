@@ -53,6 +53,11 @@
 [functions."admin-landmarks"]
   timeout = 26
 
+[functions]
+  external_node_modules = ["@resvg/resvg-js"]
+  included_files = ["netlify/functions/fonts/**"]
+
+
 [[redirects]]
   from = "/a/:id"
   to = "/.netlify/functions/share-page?kind=a&id=:id"
@@ -65,4 +70,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/og/a/:id"
+  to = "/.netlify/functions/share-image?kind=a&id=:id"
+  status = 200
 
+[[redirects]]
+  from = "/og/l/:id"
+  to = "/.netlify/functions/share-image?kind=l&id=:id"
+  status = 200
