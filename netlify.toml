@@ -13,10 +13,12 @@
 
 [functions]
   node_bundler = "esbuild"
-  # Kept as a harmless safety net from an earlier fix attempt — not known
-  # to be strictly necessary now that mcp-server is CommonJS like every
-  # other function, but costs nothing to leave in place.
-  external_node_modules = ["@supabase/supabase-js"]
+  # supabase-js was kept as a harmless safety net from an earlier fix attempt.
+  # @resvg/resvg-js is needed for the share preview pictures: it contains a
+  # compiled native part that can't be bundled, so it must stay external.
+  external_node_modules = ["@supabase/supabase-js", "@resvg/resvg-js"]
+  # Fonts used to draw the share preview pictures.
+  included_files = ["netlify/functions/fonts/**"]
 
 [functions."ingest-news"]
   schedule = "@daily"
@@ -53,11 +55,7 @@
 [functions."admin-landmarks"]
   timeout = 26
 
-[functions]
-  external_node_modules = ["@resvg/resvg-js"]
-  included_files = ["netlify/functions/fonts/**"]
-
-
+# Shared answers and listings (public pages)
 [[redirects]]
   from = "/a/:id"
   to = "/.netlify/functions/share-page?kind=a&id=:id"
@@ -70,6 +68,7 @@
   status = 200
   force = true
 
+# Preview pictures for shared links
 [[redirects]]
   from = "/og/a/:id"
   to = "/.netlify/functions/share-image?kind=a&id=:id"
