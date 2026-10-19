@@ -271,6 +271,7 @@
   .dirrow-pick{background:var(--gold-soft);}
   .dirpickstar{color:var(--gold);}
   .dirpicknote{font-size:11px;color:var(--soft);font-style:italic;margin-top:2px;}
+  .dirthumb{flex:0 0 auto;width:52px;height:52px;border-radius:8px;object-fit:cover;}
   .dirmain{flex:1;min-width:0;}
   .dirname{font-size:12.5px;font-weight:600;}
   .dirmeta{font-size:11px;color:var(--soft);}
@@ -597,6 +598,7 @@ document.addEventListener('click', (e) => {
 function renderDirectoryResults(results){
   const rows = results.map(d => `
     <div class="dirrow${d.is_top_pick ? ' dirrow-pick' : ''}">
+      ${d.photo_url && /^https?:\/\//i.test(d.photo_url) ? `<img class="dirthumb photo-clickable" loading="lazy" src="${escapeHtml(d.photo_url)}" data-full-photo="${escapeHtml(d.photo_url)}" alt="${escapeHtml(d.name)}">` : ''}
       <div class="dirmain">
         <div class="dirname">${d.is_top_pick ? '<span class="dirpickstar">&#9733;</span> ' : ''}${escapeHtml(d.name)}</div>
         <div class="dirmeta">${[d.island, d.address].filter(Boolean).map(escapeHtml).join(' &middot; ')}</div>

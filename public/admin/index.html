@@ -187,10 +187,31 @@
         </select>
       </div>
       <div><label>Name</label><input type="text" id="bizName" placeholder="e.g. Sunset Guesthouse"></div>
-      <div class="full"><label>Island</label><input type="text" id="bizIsland" placeholder="e.g. Bequia"></div>
+      <div class="full"><label>Island</label>
+        <select id="bizIsland">
+          <option value="">Choose an island…</option>
+          <option>Saint Vincent</option>
+          <option>Bequia</option>
+          <option>Mustique</option>
+          <option>Canouan</option>
+          <option>Mayreau</option>
+          <option>Union Island</option>
+          <option>Palm Island</option>
+          <option>Petit Saint Vincent</option>
+          <option>Tobago Cays</option>
+        </select>
+      </div>
       <div class="full"><label>Address</label><input type="text" id="bizAddress" placeholder="Optional"></div>
       <div><label>Phone</label><input type="text" id="bizPhone" placeholder="Optional"></div>
       <div><label>Website (optional)</label><input type="text" id="bizWebsite" placeholder="Optional — leave blank if none"></div>
+      <div class="full"><label>Photo (optional)</label>
+        <input type="file" id="bizPhoto" accept="image/jpeg,image/png,image/webp,image/*">
+        <div class="empty-note" style="margin-top:4px;">Shown with this business when it appears in AVA's answers and on its share page. Only use a photo the business has given you, or that you took. It is shrunk automatically before upload.</div>
+        <div id="bizPhotoPreview" style="display:none; margin-top:8px; align-items:center; gap:10px;">
+          <img id="bizPhotoImg" alt="" style="width:96px; height:96px; object-fit:cover; border-radius:8px;">
+          <button type="button" class="btn-secondary" id="bizPhotoClear">Remove photo</button>
+        </div>
+      </div>
     </div>
     <button id="addBizBtn">Add business</button>
     <div class="error" id="addBizError"></div>
@@ -1065,6 +1086,48 @@ async function loadInterest(){
 
 const DIRECTORY_API = '/.netlify/functions/admin-directory';
 
+// Shrinks a chosen photo to at most 1280 px on its longest side and returns it as JPEG base64.
+let bizPhotoData = null;
+function shrinkPhoto(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 1280, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const dataUrl = c.toDataURL('image/jpeg', 0.82);
+      resolve(dataUrl);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that photo. Please use a JPEG or PNG.')); };
+    img.src = url;
+  });
+}
+function clearBizPhoto(){
+  bizPhotoData = null;
+  document.getElementById('bizPhoto').value = '';
+  document.getElementById('bizPhotoPreview').style.display = 'none';
+}
+document.getElementById('bizPhotoClear').addEventListener('click', clearBizPhoto);
+document.getElementById('bizPhoto').addEventListener('change', async (e) => {
+  const errorEl = document.getElementById('addBizError');
+  const f = e.target.files && e.target.files[0];
+  if(!f){ clearBizPhoto(); return; }
+  try{
+    const dataUrl = await shrinkPhoto(f);
+    bizPhotoData = dataUrl.split(',')[1];
+    document.getElementById('bizPhotoImg').src = dataUrl;
+    document.getElementById('bizPhotoPreview').style.display = 'flex';
+    errorEl.textContent = '';
+  }catch(err){
+    clearBizPhoto();
+    errorEl.style.color = 'var(--danger)';
+    errorEl.textContent = err.message;
+  }
+});
+
 document.getElementById('addBizBtn').addEventListener('click', async () => {
   const errorEl = document.getElementById('addBizError');
   errorEl.textContent = '';
@@ -1073,9 +1136,15 @@ document.getElementById('addBizBtn').addEventListener('click', async () => {
     errorEl.textContent = 'Business name is required.';
     return;
   }
+  if(!document.getElementById('bizIsland').value){
+    errorEl.style.color = 'var(--danger)';
+    errorEl.textContent = 'Please choose an island.';
+    return;
+  }
   const body = {
     category: document.getElementById('bizCategory').value,
     name,
+    photo: bizPhotoData ? { data: bizPhotoData } : null,
     island: document.getElementById('bizIsland').value.trim() || null,
     address: document.getElementById('bizAddress').value.trim() || null,
     phone: document.getElementById('bizPhone').value.trim() || null,
@@ -1088,6 +1157,7 @@ document.getElementById('addBizBtn').addEventListener('click', async () => {
   if(res.ok){
     document.getElementById('bizName').value = '';
     document.getElementById('bizIsland').value = '';
+    clearBizPhoto();
     document.getElementById('bizAddress').value = '';
     document.getElementById('bizPhone').value = '';
     document.getElementById('bizWebsite').value = '';

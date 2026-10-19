@@ -48,7 +48,7 @@ async function answerPage(id){
 async function listingPage(id){
   if(!/^[0-9A-Za-z-]{1,64}$/.test(id)) return notFound('That listing');
   const { data: l, error: listErr } = await supabase.from('directory_listings')
-    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note').eq('id', id).eq('status', 'active').maybeSingle();
+    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note, photo_url').eq('id', id).eq('status', 'active').maybeSingle();
   if(listErr){ console.error('share-page listing error:', listErr.message); throw new Error('read failed: ' + listErr.message); }
   if(!l) return notFound('That listing');
   const cat = String(l.category || '').replace(/_/g, ' ');
@@ -56,8 +56,10 @@ async function listingPage(id){
   const site = core.safeHttp(l.website);
   const tel = l.phone ? String(l.phone).replace(/[^\d+]/g, '') : '';
   const url = `${core.SITE}/l/${l.id}`;
+  const photo = core.safeHttp(l.photo_url);
   const desc = [cat && cat[0].toUpperCase() + cat.slice(1), where, l.phone ? 'Tel ' + l.phone : ''].filter(Boolean).join(' · ') + '. Found on AVA, Ask Vincy Anything.';
   const staticHtml = `<div class="listing">
+    ${photo ? `<img class="listing-photo photo-clickable" src="${core.esc(photo)}" data-full-photo="${core.esc(photo)}" alt="${core.esc(l.name)}">` : ''}
     <h1>${l.is_top_pick ? '<span style="color:var(--gold)">&#9733;</span> ' : ''}${core.esc(l.name)}</h1>
     <div class="meta">${core.esc([cat, l.island].filter(Boolean).join(' · '))}</div>
     ${l.is_top_pick && l.top_pick_note ? `<div class="pick">${core.esc(l.top_pick_note)}</div>` : ''}
@@ -70,8 +72,8 @@ async function listingPage(id){
   <div class="sharepage-note">Listing details are checked by AVA's team but can change; please confirm before you travel.</div>`;
   const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: l.name, url,
     address: { '@type': 'PostalAddress', streetAddress: l.address || undefined, addressLocality: l.island || undefined, addressCountry: 'VC' },
-    telephone: l.phone || undefined, sameAs: site || undefined };
-  return html(200, core.renderPage(template, { title: `${l.name} | AVA`, desc, image: `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
+    telephone: l.phone || undefined, sameAs: site || undefined, image: photo || undefined };
+  return html(200, core.renderPage(template, { title: `${l.name} | AVA`, desc, image: photo || `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
 }
 
 exports.handler = async (event) => {

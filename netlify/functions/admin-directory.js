@@ -8,6 +8,9 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+const mirror = require('./photo-mirror');
+const MAX_UPLOAD_BYTES = 3000000;
+
 const VALID_ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent', 'Tobago Cays'];
 const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife', 'trucking'];
 
@@ -154,12 +157,27 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'A valid island is required: ' + VALID_ISLANDS.join(', ') }) };
       }
 
+      // Optional photo, already shrunk by the admin page. Checked by its first bytes, not its name.
+      let photoUrl = null;
+      if (body.photo && body.photo.data) {
+        const buf = Buffer.from(String(body.photo.data), 'base64');
+        if (!buf.length || buf.length > MAX_UPLOAD_BYTES) {
+          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'That photo is too large. Try a smaller one.' }) };
+        }
+        try {
+          photoUrl = await mirror.storeBuffer(supabase, buf, 'listings');
+        } catch (e) {
+          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: e.message || 'Could not store that photo.' }) };
+        }
+      }
+
       const { data, error } = await supabase.from('directory_listings').insert({
         category, name,
         address: address || null,
         island: cleanIsland,
         phone: phone || null,
         website: website || null,
+        photo_url: photoUrl,
         source: 'curated',
         status: 'active',
         verified_by: 'human',
