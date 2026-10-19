@@ -9,7 +9,7 @@ const CORS = {
 };
 
 const VALID_ISLANDS = ['Saint Vincent', 'Bequia', 'Mustique', 'Canouan', 'Mayreau', 'Union Island', 'Palm Island', 'Petit Saint Vincent', 'Tobago Cays'];
-const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife'];
+const VALID_CATEGORIES = ['restaurant', 'pharmacy', 'doctor', 'taxi_service', 'cinema', 'retailer', 'pop_up_vendor', 'accommodation', 'car_rental', 'promoter', 'nightlife', 'trucking'];
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
@@ -41,6 +41,7 @@ exports.handler = async (event) => {
       cinema: 'service_rate',
       promoter: 'event_ticket',
       nightlife: 'menu_item',
+      trucking: 'service_rate',
     };
 
     if (event.httpMethod === 'GET' && action === 'list_top_picks') {
