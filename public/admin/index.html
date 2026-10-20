@@ -160,6 +160,13 @@
   </div>
 
   <div class="panel">
+    <h2>Jobs awaiting approval</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Jobs customers have posted. Approving opens the job for 3 days, then shows a button that opens WhatsApp Web with the customer's private link ready to send. Nothing is sent until you press send in WhatsApp.</div>
+    <div class="empty-note" id="jobsMsg" style="display:none; margin-bottom:8px;"></div>
+    <div id="jobsList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Product interest</h2>
     <div class="empty-note" style="margin-bottom:10px;">Total searches and distinct visitors per product, anonymous — no way to trace back to who searched.</div>
     <div id="interestList"></div>
@@ -625,6 +632,7 @@ async function tryLogin(password, showErrors){
   loadAgentDrafts();
   loadEvents();
   loadLandmarks();
+  loadJobs();
   loadUsage();
   loadSubscribers();
   loadInterest();
@@ -2681,6 +2689,49 @@ document.getElementById('osmList').addEventListener('click', async (e) => {
 });
 
 
+
+// ---- Jobs (dispatcher) ----
+const JOBS_API = '/.netlify/functions/jobs-admin';
+async function jobsApi(action, method, body){
+  const res = await fetch(`${JOBS_API}?action=${action}`, { method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: method === 'POST' ? JSON.stringify(body || {}) : undefined });
+  let data = null; try{ data = await res.json(); } catch(e){}
+  if(!data) throw new Error('The jobs service returned an unexpected reply (HTTP ' + res.status + '). Check that jobs-admin.js is deployed.');
+  if(!res.ok) throw new Error(data.error || ('Error ' + res.status));
+  return data;
+}
+function jobsSay(t, bad){ const el = document.getElementById('jobsMsg'); el.style.display = t ? 'block' : 'none'; el.textContent = t || ''; el.style.color = bad ? '#c0392b' : ''; }
+async function loadJobs(){
+  const box = document.getElementById('jobsList');
+  try{
+    const { jobs } = await jobsApi('list', 'GET');
+    if(!jobs.length){ box.innerHTML = '<div class="empty-note">No jobs waiting.</div>'; return; }
+    box.innerHTML = jobs.map(j => `<div style="border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;">
+      <div style="font-size:12px; color:var(--soft);">${escapeHtml(j.category)} · ${escapeHtml(j.island)} · posted ${escapeHtml(new Date(j.created_at).toLocaleString())}</div>
+      <div style="font-weight:600; margin:4px 0;">${escapeHtml(j.description)}</div>
+      <div style="font-size:13px;">${escapeHtml([j.from_place && j.to_place ? j.from_place + ' to ' + j.to_place : '', j.when_text, j.budget_text ? 'Budget ' + j.budget_text : ''].filter(Boolean).join(' · '))}</div>
+      <div style="font-size:13px; color:var(--soft);">WhatsApp: +${escapeHtml(j.whatsapp_number)}</div>
+      ${(j.photos || []).length ? '<div style="display:flex; gap:6px; margin-top:6px;">' + j.photos.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="" style="width:72px; height:72px; object-fit:cover; border-radius:6px;"></a>`).join('') + '</div>' : ''}
+      <div style="display:flex; gap:8px; margin-top:10px;" data-job="${escapeHtml(j.id)}">
+        <button class="btn-publish" data-jact="approve">Approve</button>
+        <button class="btn-secondary" data-jact="reject">Reject and delete</button>
+      </div></div>`).join('');
+  } catch(err){ box.innerHTML = ''; jobsSay(err.message, true); }
+}
+document.getElementById('jobsList').addEventListener('click', async (e) => {
+  const act = e.target.dataset && e.target.dataset.jact; if(!act) return;
+  const id = e.target.parentElement.dataset.job;
+  if(act === 'reject' && !confirm('Reject this job? It will be deleted.')) return;
+  e.target.disabled = true; jobsSay('');
+  try{
+    const r = await jobsApi(act, 'POST', { id });
+    if(act === 'approve'){
+      jobsSay('Approved. The job is open for 3 days. Press the button below to open WhatsApp Web with the message ready, then press send there.');
+      const a = document.createElement('a'); a.href = r.whatsapp_link; a.target = '_blank'; a.rel = 'noopener'; a.className = 'btn-publish'; a.style.cssText = 'display:inline-block; margin:6px 0 10px; padding:10px 16px; border-radius:8px; text-decoration:none;'; a.textContent = 'Open WhatsApp Web';
+      document.getElementById('jobsMsg').appendChild(document.createElement('br')); document.getElementById('jobsMsg').appendChild(a);
+    } else jobsSay('Rejected and deleted.');
+    loadJobs();
+  } catch(err){ jobsSay(err.message, true); e.target.disabled = false; }
+});
 </script>
 </body>
 </html>

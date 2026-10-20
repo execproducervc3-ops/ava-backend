@@ -78,3 +78,10 @@
   from = "/og/l/:id"
   to = "/.netlify/functions/share-image?kind=l&id=:id"
   status = 200
+
+# AVA Jobs: the customer's private job page (the page reads the token from its address)
+[[redirects]]
+  from = "/job/:token"
+  to = "/job/index.html"
+  status = 200
+  force = true

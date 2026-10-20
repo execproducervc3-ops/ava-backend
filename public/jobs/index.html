@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post a job | AVA</title><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#15181A;--panel:#1E2224;--line:#33383B;--ink:#EDEAE3;--soft:#9C978A;--teal:#3FA3A3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+.wrap{max-width:520px;margin:0 auto}header{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)}
+header b{font-size:17px}header span{margin-left:auto;color:var(--soft);font-size:14px}
+main{padding:24px 20px 48px;display:flex;flex-direction:column;gap:20px}
+h1{margin:0;font-size:26px;line-height:1.2}p{margin:0;line-height:1.5}.soft{color:var(--soft);font-size:13px;line-height:1.4}
+label.l{display:block;font-size:13px;color:var(--soft);margin-bottom:6px}
+input[type=text],select,textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:0 14px;font:inherit;font-size:16px;height:48px}
+textarea{height:104px;padding:12px 14px;resize:none;line-height:1.4}
+.row{display:flex;gap:12px}.row>div{flex:1;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.photos{display:flex;gap:10px}.slot{flex:1;aspect-ratio:1/1;border:1px dashed var(--line);border-radius:10px;background:transparent;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;overflow:hidden;position:relative}
+.slot img{width:100%;height:100%;object-fit:cover}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.5;color:var(--soft)}.chk input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--teal)}
+button.go{height:52px;border-radius:26px;border:0;background:var(--teal);color:var(--bg);font:inherit;font-size:17px;font-weight:700;cursor:pointer}
+button.go:disabled{opacity:.5}.err{color:#F0846B;font-size:14px;min-height:20px}
+.pill{display:inline-block;font-size:12px;font-weight:600;color:var(--bg);background:var(--teal);border-radius:10px;padding:3px 10px}
+</style></head><body><div class="wrap"><header><svg viewBox="180 100 320 440" width="29" height="40" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M 325 420 Q 315 470 330 510 Q 340 475 335 420 Z" fill="#D9541F"/><path d="M 300 418 Q 280 460 295 495 Q 312 465 318 420 Z" fill="#2D6E8E"/><path d="M 355 418 Q 375 460 360 495 Q 343 465 337 420 Z" fill="#E8A317"/><ellipse cx="340" cy="330" rx="100" ry="120" fill="#E8A317"/><path d="M 250 295 Q 222 330 232 375 Q 250 395 283 385 Q 258 340 250 295 Z" fill="#6B8E23"/><path d="M 255 350 Q 240 365 246 380 Q 262 388 278 380 Q 262 368 255 350 Z" fill="#2D6E8E"/><path d="M 430 295 Q 458 330 448 375 Q 430 395 397 385 Q 422 340 430 295 Z" fill="#6B8E23"/><path d="M 425 350 Q 440 365 434 380 Q 418 388 402 380 Q 418 368 425 350 Z" fill="#2D6E8E"/><circle cx="340" cy="205" r="68" fill="#7C9A3D"/><path d="M 318 212 Q 340 206 362 212 Q 360 232 340 252 Q 320 232 318 212 Z" fill="#4A3728"/><path d="M 328 222 Q 340 218 352 222 Q 350 234 340 244 Q 330 234 328 222 Z" fill="#2B2116" opacity="0.5"/><circle cx="312" cy="195" r="10" fill="#FBF3E7"/><circle cx="313" cy="196" r="6" fill="#2B2116"/><circle cx="315" cy="193" r="1.8" fill="#FBF3E7"/><circle cx="368" cy="195" r="10" fill="#FBF3E7"/><circle cx="369" cy="196" r="6" fill="#2B2116"/><circle cx="371" cy="193" r="1.8" fill="#FBF3E7"/><path d="M 310 435 Q 305 448 298 456" stroke="#5A4632" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M 370 435 Q 375 448 382 456" stroke="#5A4632" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M 250 458 Q 340 446 430 458" stroke="#5A4632" stroke-width="7" fill="none" stroke-linecap="round"/></svg><b>AVA</b><span>Jobs</span></header>
+<main id="formView">
+<div><h1>Post a job</h1><p class="soft" style="font-size:15px;margin-top:8px">Tell AVA what you need. Providers on AVA reply with quotes. It is free, and AVA checks every job before providers see it.</p></div>
+<div><label class="l" for="what">What do you need done?</label><textarea id="what" maxlength="800"></textarea></div>
+<div><label class="l" for="cat">Type of service</label><select id="cat"><option value="trucking">Trucking service</option><option value="taxi">Taxi service</option></select></div>
+<div><label class="l" for="isl">Island</label><select id="isl"></select></div>
+<div class="row"><div><label class="l" for="from">From</label><input id="from" type="text" maxlength="120"></div><div><label class="l" for="to">To</label><input id="to" type="text" maxlength="120"></div></div>
+<div class="row"><div><label class="l" for="when">When</label><input id="when" type="text" maxlength="120" placeholder="e.g. This Saturday"></div><div><label class="l" for="budget">Budget (optional)</label><input id="budget" type="text" maxlength="60" placeholder="EC$"></div></div>
+<div><label class="l" for="phone">Your WhatsApp number</label><input id="phone" type="text" inputmode="tel" placeholder="+1 784 ___ ____">
+<div class="soft" style="margin-top:8px">AVA sends your private job link here once your job is approved. Providers never see your details until you choose a quote.</div></div>
+<div><div class="l">Photos (optional, up to 3)</div><div class="photos" id="slots"></div>
+<div class="soft" style="margin-top:6px">Add photos of what needs moving or fixing. Providers you invite can see them.</div></div>
+<label class="chk"><input id="terms" type="checkbox"><span>I understand AVA introduces customers and providers and is not part of the job or payment.</span></label>
+<div class="err" id="err" role="alert"></div>
+<button class="go" id="send" type="button">Send for review</button>
+</main>
+<main id="doneView" style="display:none"><h1>Thank you</h1><div class="card"><div style="font-weight:600">AVA will check your job</div><p class="soft" style="font-size:14px">Once it is approved, we send your private job link to your WhatsApp number. Providers will then be able to send you quotes.</p></div></main>
+</div>
+<input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/*" style="display:none">
+<script>
+const ISLANDS=['Saint Vincent','Bequia','Mustique','Canouan','Mayreau','Union Island','Palm Island','Petit Saint Vincent','Tobago Cays'];
+const $=id=>document.getElementById(id);
+$('isl').innerHTML=ISLANDS.map(i=>'<option>'+i+'</option>').join('');
+const photos=[null,null,null];let cur=0;
+const ICON='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 16l-5-5-8 8"/></svg>';
+function drawSlots(){
+  $('slots').innerHTML='';
+  photos.forEach((p,i)=>{
+    const b=document.createElement('button');b.type='button';b.className='slot';
+    b.setAttribute('aria-label',p?'Remove photo '+(i+1):'Add photo '+(i+1));
+    if(p){const im=document.createElement('img');im.src='data:image/jpeg;base64,'+p;im.alt='';b.appendChild(im);}else{b.innerHTML=ICON;}
+    b.onclick=()=>{
+      if(photos[i]){photos[i]=null;drawSlots();}
+      else{cur=i;$('file').value='';$('file').click();}
+    };
+    $('slots').appendChild(b);
+  });
+}
+drawSlots();
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{
+      const s=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement('canvas');
+      c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
+      res(c.toDataURL('image/jpeg',0.82).split(',')[1]);
+    };
+    im.onerror=()=>rej(new Error('That photo could not be read.'));
+    im.src=u;
+  });
+}
+$('file').onchange=async()=>{
+  const f=$('file').files[0];if(!f)return;
+  try{photos[cur]=await shrink(f);drawSlots();}catch(e){$('err').textContent=e.message;}
+};
+$('send').onclick=async()=>{
+  $('err').textContent='';$('send').disabled=true;
+  try{
+    const r=await fetch('/.netlify/functions/jobs-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      description:$('what').value,category:$('cat').value,island:$('isl').value,from:$('from').value,to:$('to').value,
+      when:$('when').value,budget:$('budget').value,whatsapp:$('phone').value,terms:$('terms').checked,
+      photos:photos.filter(Boolean).map(d=>({data:d}))})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||'Something went wrong. Please try again.');
+    $('formView').style.display='none';$('doneView').style.display='flex';window.scrollTo(0,0);
+  }catch(e){$('err').textContent=e.message;}
+  $('send').disabled=false;
+};
+</script></body></html>
