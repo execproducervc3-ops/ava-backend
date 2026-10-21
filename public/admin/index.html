@@ -90,6 +90,14 @@
   .stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
   .stat{border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--bg); text-align:center;}
   .stat .n{font-size:20px; font-weight:600;} .stat .l{font-size:11px; color:var(--soft); margin-top:2px;}
+
+  .admintabs{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 18px;}
+  .admintab{background:var(--panel); color:var(--soft); border:1px solid var(--line); border-radius:999px; padding:7px 13px; font-size:13px; font-weight:600;}
+  .admintab:hover{color:var(--ink); background:var(--panel);}
+  .admintab.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .tabcount{display:inline-block; min-width:18px; padding:0 5px; margin-left:6px; border-radius:9px; background:var(--danger); color:#fff; font-size:11px; line-height:18px; text-align:center;}
+  .admintab.on .tabcount{background:#fff; color:var(--accent-dark);}
+  @media (max-width:640px){ .admintabs{flex-wrap:nowrap; overflow-x:auto; padding-bottom:6px;} .admintab{flex:0 0 auto; white-space:nowrap;} }
   .usagetable{width:100%; border-collapse:collapse; font-size:13px; margin-bottom:14px;}
   .usagetable th, .usagetable td{padding:6px 4px; border-bottom:1px solid var(--line); text-align:right;}
   .usagetable th:first-child, .usagetable td:first-child{text-align:left;}
@@ -151,7 +159,7 @@
 </div>
 
 <div id="adminPanel" class="wrap" style="display:none;">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; padding-right:52px;">
     <div>
       <h1>AVA Admin</h1>
       <div class="sub">Sponsored placements — active ones rotate randomly on each visit.</div>
@@ -2704,6 +2712,7 @@ async function loadJobs(){
   const box = document.getElementById('jobsList');
   try{
     const { jobs } = await jobsApi('list', 'GET');
+    setTabCount('Jobs awaiting approval', jobs.length);
     if(!jobs.length){ box.innerHTML = '<div class="empty-note">No jobs waiting.</div>'; return; }
     box.innerHTML = jobs.map(j => `<div style="border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;">
       <div style="font-size:12px; color:var(--soft);">${escapeHtml(j.category)} · ${escapeHtml(j.island)} · posted ${escapeHtml(new Date(j.created_at).toLocaleString())}</div>
@@ -2732,6 +2741,44 @@ document.getElementById('jobsList').addEventListener('click', async (e) => {
     loadJobs();
   } catch(err){ jobsSay(err.message, true); e.target.disabled = false; }
 });
+
+// ---- Admin tabs: one tab per existing panel. Panels are only shown or hidden, never changed. ----
+const ADMIN_TAB_FIRST = ['Jobs awaiting approval','Businesses awaiting approval','Pending review','Agent drafts','Place photos','Source watch'];
+let adminTabsReady = false;
+function initAdminTabs(){
+  const root = document.getElementById('adminPanel');
+  const panels = [...root.children].filter(el => el.classList.contains('panel'));
+  if(!panels.length || adminTabsReady) return;
+  adminTabsReady = true;
+  const items = panels.map((el, i) => {
+    const h = el.querySelector('h2');
+    return { el, i, name: (h ? h.textContent : 'Section ' + (i + 1)).trim() };
+  });
+  const rank = n => { const k = ADMIN_TAB_FIRST.indexOf(n); return k < 0 ? 999 : k; };
+  const ordered = items.slice().sort((a, b) => (rank(a.name) - rank(b.name)) || (a.i - b.i));
+  const bar = document.createElement('div');
+  bar.className = 'admintabs'; bar.setAttribute('role', 'tablist');
+  ordered.forEach(it => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'admintab'; b.setAttribute('role', 'tab');
+    b.dataset.tab = it.name; b.innerHTML = escapeHtml(it.name) + '<span class="tabcount" style="display:none"></span>';
+    it.btn = b; bar.appendChild(b);
+  });
+  panels[0].parentNode.insertBefore(bar, panels[0]);
+  function show(name){
+    let hit = ordered.find(it => it.name === name) || ordered[0];
+    ordered.forEach(it => { const on = it === hit; it.el.style.display = on ? '' : 'none'; it.btn.classList.toggle('on', on); it.btn.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    try{ sessionStorage.setItem('ava_admin_tab', hit.name); }catch(e){}
+  }
+  bar.addEventListener('click', e => { const b = e.target.closest('.admintab'); if(b) show(b.dataset.tab); });
+  let last = ''; try{ last = sessionStorage.getItem('ava_admin_tab') || ''; }catch(e){}
+  show(last);
+}
+function setTabCount(name, n){
+  const b = [...document.querySelectorAll('.admintab')].find(x => x.dataset.tab === name); if(!b) return;
+  const c = b.querySelector('.tabcount'); c.textContent = n; c.style.display = n > 0 ? 'inline-block' : 'none';
+}
+initAdminTabs();
 </script>
 </body>
 </html>
