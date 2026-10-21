@@ -25,7 +25,8 @@ async function cardFor(kind, id){
     const { data: r } = await supabase.from('shared_answers').select('payload, expires_at, hidden').eq('id', id).maybeSingle();
     if(!r || r.hidden || new Date(r.expires_at) < new Date()) return null;
     const d = r.payload || {};
-    return { kicker: 'AVA · Answer', title: core.answerTitle(d.q), body: core.plainText(d.text, 220) };
+    const pv = core.answerPreview(d);
+    return { kicker: 'AVA · Answer', title: pv ? pv.title.replace(/(, on AVA| \| AVA)$/, '') : core.answerTitle(d.q), body: (pv && pv.desc) || core.plainText(d.text, 220) };
   }
   if(kind === 'l'){
     if(!/^[0-9A-Za-z-]{1,64}$/.test(id)) return null;

@@ -47,4 +47,44 @@ function answerTitle(q){
   return cap;
 }
 
-module.exports = { answerTitle, SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };
+
+// What a shared answer is called: the preview title, the grey line under it, and the title on
+// the picture. Never the bare question for short questions like "news" or "lettuce".
+function answerPreview(d){
+  d = d || {};
+  const trim = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, '') + '\u2026' : s; };
+  // 1. A price answer: "Lettuce from RB SALES, $5.00/lb, on AVA"
+  const groups = Array.isArray(d.retailResults) ? d.retailResults.filter(g => g && Array.isArray(g.results) && g.results.length) : [];
+  if (groups.length === 1) {
+    const g = groups[0];
+    const offers = g.results.filter(r => r && r.retailer && Number(r.price) > 0);
+    if (offers.length) {
+      const cheapest = offers.reduce((a, b) => (Number(b.price) < Number(a.price) ? b : a));
+      const price = '$' + Number(cheapest.price).toFixed(2) + (cheapest.unit ? '/' + String(cheapest.unit).slice(0, 12) : '');
+      const raw = trim(g.product || cheapest.item_name, 50);
+      if (raw) {
+        const product = raw[0].toUpperCase() + raw.slice(1);
+        const vendors = new Set(offers.map(r => String(r.retailer).trim().toLowerCase())).size;
+        return vendors === 1
+          ? { title: `${product} from ${trim(cheapest.retailer, 60)}, ${price}, on AVA`, desc: 'Prices from vendors on AVA. Tap to see the vendor and send an enquiry.' }
+          : { title: `${product} from ${price} at ${vendors} vendors, on AVA`, desc: 'Prices from vendors on AVA. Tap to compare and send an enquiry.' };
+      }
+    }
+  }
+  // 2. A news answer: "Latest news from SVG, 21 October 2026"
+  const news = Array.isArray(d.newsResults) ? d.newsResults.filter(a => a && a.topic) : [];
+  if (news.length) {
+    const when = new Date(d.at || Date.now());
+    const day = isNaN(when) ? '' : when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/St_Vincent' });
+    return { title: `Latest news from Saint Vincent and the Grenadines${day ? ', ' + day : ''}, on AVA`, desc: trim(news.slice(0, 3).map(a => a.topic).join(' \u00b7 '), 200) };
+  }
+  // 3. A very short question ("ferry", "weather"): say what the answer is instead of echoing the question
+  const q = String(d.q || '').replace(/\s+/g, ' ').trim();
+  if (q && q.split(' ').length <= 3) {
+    const first = plainText(d.text, 400).split(/(?<=[.!?])\s+/)[0];
+    if (first && first.length >= 20) return { title: trim(first.replace(/[.!?:\-\u2013\u2014]+$/, ''), 90) + ' | AVA', desc: null };
+  }
+  return null;
+}
+
+module.exports = { answerPreview, answerTitle, SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };
