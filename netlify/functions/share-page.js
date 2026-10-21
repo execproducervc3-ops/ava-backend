@@ -4,6 +4,7 @@
 // Both come in through redirects in netlify.toml.
 const { createClient } = require('@supabase/supabase-js');
 const core = require('./share-core');
+const { getBusinessPostings, ageText } = require('./business-data');
 const template = require('./share-template');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -48,7 +49,7 @@ async function answerPage(id){
 async function listingPage(id){
   if(!/^[0-9A-Za-z-]{1,64}$/.test(id)) return notFound('That listing');
   const { data: l, error: listErr } = await supabase.from('directory_listings')
-    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note, photo_url').eq('id', id).eq('status', 'active').maybeSingle();
+    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note, photo_url, subscribed_until').eq('id', id).eq('status', 'active').maybeSingle();
   if(listErr){ console.error('share-page listing error:', listErr.message); throw new Error('read failed: ' + listErr.message); }
   if(!l) return notFound('That listing');
   const cat = String(l.category || '').replace(/_/g, ' ');
@@ -58,6 +59,11 @@ async function listingPage(id){
   const url = `${core.SITE}/l/${l.id}`;
   const photo = core.safeHttp(l.photo_url);
   const desc = [cat && cat[0].toUpperCase() + cat.slice(1), where, l.phone ? 'Tel ' + l.phone : ''].filter(Boolean).join(' · ') + '. Found on AVA, Ask Vincy Anything.';
+  let posts = { offers: [], events: [] };
+  try { posts = await getBusinessPostings(supabase, l); } catch (e) { console.error('share-page postings error:', e.message); }
+  const priceFmt = (o) => '$' + Number(o.price).toFixed(2) + (o.unit ? '/' + o.unit : '');
+  const postsHtml = (posts.offers.length ? `<div class="bizposts"><h2 style="font-size:15px;margin:18px 0 6px">Current prices</h2>${posts.offers.map(o => `<div class="row" style="justify-content:space-between;gap:10px;${o.stale ? 'opacity:.55' : ''}"><span>${core.esc(o.item_name)}<br><small style="color:var(--soft)">${core.esc(ageText(o.age_days))}</small></span><b>${core.esc(priceFmt(o))}</b></div>`).join('')}</div>` : '')
+    + (posts.events.length ? `<div class="bizposts"><h2 style="font-size:15px;margin:18px 0 6px">Upcoming events</h2>${posts.events.map(ev => `<div class="row" style="display:block"><b>${core.esc(ev.title)}</b><br><small style="color:var(--soft)">${core.esc([ev.when, ev.venue].filter(Boolean).join(' · '))}</small></div>`).join('')}</div>` : '');
   const staticHtml = `<div class="listing">
     ${photo ? `<img class="listing-photo photo-clickable" src="${core.esc(photo)}" data-full-photo="${core.esc(photo)}" alt="${core.esc(l.name)}">` : ''}
     <h1>${l.is_top_pick ? '<span style="color:var(--gold)">&#9733;</span> ' : ''}${core.esc(l.name)}</h1>
@@ -68,6 +74,7 @@ async function listingPage(id){
     ${site ? `<div class="row">&#127760; <a href="${core.esc(site)}" target="_blank" rel="noopener noreferrer">${core.esc(site.replace(/^https?:\/\//i, '').replace(/\/$/, ''))}</a></div>` : ''}
     <div class="sharepage-btns"><button type="button" class="sharebtn" id="shareThis">&#128279; Share</button>
       <a class="sharebtn" style="text-decoration:none" href="/">Ask AVA about this place</a></div>
+    ${postsHtml}
   </div>
   <div class="sharepage-note">Listing details are checked by AVA's team but can change; please confirm before you travel.</div>`;
   const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: l.name, url,
