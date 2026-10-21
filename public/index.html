@@ -152,7 +152,7 @@
   .pricevalwrap{display:flex; flex-direction:column; align-items:flex-end; gap:6px;}
   .enquirybtn{background:var(--teal); color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;}
   .enquirybtn:hover{background:var(--teal-dark);}
-  .enquiry-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .enquiry-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1200; padding:20px;}
   .enquiry-modal{background:var(--card); border-radius:14px; padding:24px; max-width:380px; width:100%; box-shadow:var(--shadow);}
   .enquiry-modal h3{margin:0 0 4px; color:var(--ink); font-size:18px;}
   .enquiry-modal .enquiry-sub{color:var(--soft); font-size:13px; margin-bottom:16px;}
@@ -172,7 +172,7 @@
   .pricethumb{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:0 0 auto;background:var(--teal-soft);}
   .pricethumb.placeholder{display:flex;align-items:center;justify-content:center;font-size:24px;}
   .photo-clickable{cursor:pointer;}
-  .photo-viewer-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1100; display:flex; align-items:center; justify-content:center;}
+  .photo-viewer-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1300; display:flex; align-items:center; justify-content:center;}
   .photo-viewer-overlay img{max-width:100%; max-height:100%; object-fit:contain;}
   .photo-viewer-close{position:fixed; top:16px; right:16px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,0.15); color:#fff; border:none; font-size:20px; cursor:pointer; z-index:1101; display:flex; align-items:center; justify-content:center;}
   .pricemain{flex:1;min-width:0;}
@@ -224,7 +224,7 @@
   .luckyballlbl{font-size:8px;text-transform:uppercase;opacity:.85;line-height:1;margin-bottom:1px;}
 
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
-  .sharemenu{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.25);padding:6px;min-width:200px;}
+  .sharemenu{position:fixed;z-index:1400;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.25);padding:6px;min-width:200px;}
   .sharemenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;font-size:14px;color:var(--ink);background:none;border:0;border-radius:9px;padding:9px 11px;cursor:pointer;}
   .sharemenu button:hover{background:var(--teal-soft);}
   .sharemenu .sm-ico{width:22px;text-align:center;font-size:16px;}
@@ -286,6 +286,11 @@
   .bp-h{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--soft);margin:18px 0 6px;}
   .bp-item{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px;}
   .bp-item small{display:block;color:var(--soft);font-size:12px;}
+  .bp-item{align-items:center;}
+  .bp-thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;flex:0 0 auto;background:var(--teal-soft);}
+  .bp-thumb.ph{display:flex;align-items:center;justify-content:center;font-size:22px;}
+  .bp-main{flex:1;min-width:0;}
+  .bp-side{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
   .bp-item.stale{opacity:.55;}
   .bp-empty{font-size:13px;color:var(--soft);padding:6px 0;}
   .dirthumb{flex:0 0 auto;width:52px;height:52px;border-radius:8px;object-fit:cover;}
@@ -1469,8 +1474,17 @@ async function openBizPanel(id){
       + (b.phone ? `<div class="bp-row">&#128222; <a href="tel:${escapeHtml(String(b.phone).replace(/[^\d+]/g,''))}">${escapeHtml(b.phone)}</a></div>` : '')
       + (site ? `<div class="bp-row">&#127760; <a href="${escapeHtml(site)}" target="_blank" rel="noopener noreferrer">${escapeHtml(site.replace(/^https?:\/\//i,'').replace(/\/$/,''))}</a></div>` : '')
       + `<div class="bp-top" style="justify-content:flex-start;margin:10px 0 0"><button type="button" class="sharebtn" id="bpShare">&#128279; Share this business</button></div>`
-      + (d.offers.length ? `<div class="bp-h">Current prices</div>` + d.offers.map(o => `<div class="bp-item${o.stale ? ' stale' : ''}"><span>${escapeHtml(o.item_name)}<small>${age(o.age_days)}</small></span><b>$${Number(o.price).toFixed(2)}${o.unit ? '/' + escapeHtml(o.unit) : ''}</b></div>`).join('') : '')
-      + (d.events.length ? `<div class="bp-h">Upcoming events</div>` + d.events.map(ev => `<div class="bp-item"><span><b>${escapeHtml(ev.title)}</b><small>${escapeHtml([ev.when, ev.venue].filter(Boolean).join(' · '))}</small></span></div>`).join('') : '')
+      + (d.offers.length ? `<div class="bp-h">Current prices</div>` + d.offers.map(o => {
+          const price = '$' + Number(o.price).toFixed(2) + (o.unit ? '/' + o.unit : '');
+          const thumb = o.photo_url && /^https?:\/\//i.test(o.photo_url)
+            ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(o.photo_url)}" data-full-photo="${escapeHtml(o.photo_url)}" alt="${escapeHtml(o.item_name)}">`
+            : `<div class="bp-thumb ph">&#128717;</div>`;
+          return `<div class="bp-item${o.stale ? ' stale' : ''}">${thumb}<div class="bp-main">${escapeHtml(o.item_name)}<small>${age(o.age_days)}</small></div><div class="bp-side"><b>${escapeHtml(price)}</b><button class="enquirybtn" data-listing-id="${escapeHtml(id)}" data-offer-id="${escapeHtml(o.id || '')}" data-details="${escapeHtml(o.item_name + ' — ' + price)}" data-retailer="${escapeHtml(b.name)}">Send enquiry</button></div></div>`;
+        }).join('') : '')
+      + (d.events.length ? `<div class="bp-h">Upcoming events</div>` + d.events.map(ev => {
+          const fl = ev.flyer_url && /^https?:\/\//i.test(ev.flyer_url) ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(ev.flyer_url)}" data-full-photo="${escapeHtml(ev.flyer_url)}" alt="${escapeHtml(ev.title)}">` : '';
+          return `<div class="bp-item">${fl}<div class="bp-main"><b>${escapeHtml(ev.title)}</b><small>${escapeHtml([ev.when, ev.venue].filter(Boolean).join(' · '))}</small>${ev.ticket_price != null && ev.ticket_price !== '' ? `<small>Tickets: ${escapeHtml(String(ev.ticket_price))}</small>` : ''}</div></div>`;
+        }).join('') : '')
       + (!d.offers.length && !d.events.length ? `<div class="bp-empty" style="margin-top:14px">${d.subscribed ? 'This business has no current prices or events posted.' : 'No current postings to show for this business.'}</div>` : '');
     const sb = body.querySelector('#bpShare');
     sb.addEventListener('click', () => openShareMenu(sb, { url: location.origin + '/l/' + encodeURIComponent(id), title: b.name, text: b.name + ' on AVA' }));

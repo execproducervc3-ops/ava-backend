@@ -21,7 +21,7 @@ async function getBusinessPostings(supabase, listing) {
   if (oErr) throw oErr;
   out.offers = (offers || []).map(o => {
     const age = Math.max(0, Math.floor((now - new Date(o.created_at).getTime()) / 86400000));
-    return { item_name: o.item_name, price: o.price, unit: o.unit, photo_url: o.photo_url, age_days: age, stale: age > STALE_DAYS };
+    return { id: o.id, item_name: o.item_name, price: o.price, unit: o.unit, photo_url: o.photo_url, age_days: age, stale: age > STALE_DAYS };
   }).filter(o => o.age_days <= HIDE_DAYS).slice(0, 60);
 
   const { data: events, error: eErr } = await supabase.from('events')
