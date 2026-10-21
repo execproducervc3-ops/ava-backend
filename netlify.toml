@@ -55,6 +55,10 @@
 [functions."admin-landmarks"]
   timeout = 26
 
+# Drafting an entry from a watched page asks the AI, which can take longer than the default 10 seconds.
+[functions."admin-publish-entry"]
+  timeout = 26
+
 # Shared answers and listings (public pages)
 [[redirects]]
   from = "/a/:id"

@@ -165,11 +165,11 @@ function diffText(oldText, newText){
 
 // --------------------------------------------------------------- analysis ---
 
-async function claudeJson(fetchFn, apiKey, prompt){
+async function claudeJson(fetchFn, apiKey, prompt, maxTokens){
   const res = await fetchFn('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens || 900, messages: [{ role: 'user', content: prompt }] }),
   });
   if(!res.ok) throw new Error(`Anthropic request failed: ${res.status}`);
   const data = await res.json();
@@ -365,5 +365,5 @@ async function discoverLinks(fetchFn, url, max){
 
 module.exports = {
   AREAS, AVA_AREAS, UA, isSafeUrl, parseRobots, robotsAllowPath, htmlToLines, linesToText, diffText,
-  analyseChange, checkSource, dueSources, runWatcher, findLinks, discoverLinks, sha,
+  claudeJson, analyseChange, checkSource, dueSources, runWatcher, findLinks, discoverLinks, sha,
 };

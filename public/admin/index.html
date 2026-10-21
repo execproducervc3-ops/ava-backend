@@ -63,6 +63,7 @@
   .btn-danger:hover{background:#FBEAE8;}
   .empty-note{font-size:13px; color:var(--soft); text-align:center; padding:16px 0;}
   .reviewitem{border:1px solid #E0C36A; background:#FFFBEF; border-radius:8px; padding:12px 14px; margin-bottom:10px;}
+  html[data-theme="dark"] .reviewitem{border-color:#6B5A22; background:#262316;}
   .retailitem{border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:8px;}
   .retailitem-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;}
   .retailitem-retailer{font-weight:700; font-size:13.5px;}
@@ -230,6 +231,14 @@
     </div>
     <button id="addBizBtn">Add business</button>
     <div class="error" id="addBizError"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Vendor connections</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Connect a business you added to its owner's Telegram account with a one-time code. Search for the business, create a code, and send the message to the vendor yourself (for example on WhatsApp). A code works once and expires in 7 days.</div>
+    <input type="text" id="vcSearch" placeholder="Search a business name" autocomplete="off">
+    <div class="empty-note" id="vcMsg" style="display:none; margin-bottom:8px;"></div>
+    <div id="vcResults"></div>
   </div>
 
   <div class="panel">
@@ -1179,6 +1188,14 @@ document.getElementById('addBizBtn').addEventListener('click', async () => {
     document.getElementById('bizWebsite').value = '';
     errorEl.style.color = 'var(--live)';
     errorEl.textContent = `Added "${name}" successfully.`;
+    try{
+      const added = (await res.clone().json()).listing;
+      if(added && added.id){
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-secondary'; b.style.cssText = 'margin-left:10px;'; b.textContent = 'Create vendor code';
+        b.addEventListener('click', () => { document.querySelector('.admintab[data-tab="Vendor connections"]').click(); vcCreate(added.id, false, added.name || name); });
+        errorEl.appendChild(b);
+      }
+    } catch(e){}
   } else {
     const data = await res.json().catch(() => ({}));
     errorEl.style.color = 'var(--danger)';
@@ -1380,11 +1397,13 @@ async function loadSourceWatch(){
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
         ${c.status === 'pending' ? `<button class="btn-publish" data-sw-act="noted">Done, I've handled it</button><button class="btn-danger" data-sw-act="dismissed">Not important</button>` : `<button class="btn-secondary" data-sw-act="pending">Move back to review</button>`}
         ${c.kind === 'text' && c.analysis_status !== 'analysed' ? `<button class="btn-secondary" data-sw-act="analyse">Summarise</button>` : ''}
+        <button class="btn-secondary" data-sw-act="addto" data-src="${escapeHtml(c.origin_url || (String(src.url || '').startsWith('manual:') ? '' : (src.url || '')))}">Add to AVA&hellip;</button>
       </div>
     </div>`;
   }).join('');
   list.querySelectorAll('[data-sw-act]').forEach(b => b.addEventListener('click', async () => {
     const id = b.closest('.reviewitem').dataset.id, act = b.dataset.swAct;
+    if(act === 'addto'){ atoOpen(b.closest('.reviewitem'), id, b.dataset.src || ''); return; }
     b.disabled = true;
     try{
       if(act === 'analyse') await swCall('analyse_change', { id });
@@ -2741,6 +2760,169 @@ document.getElementById('jobsList').addEventListener('click', async (e) => {
     loadJobs();
   } catch(err){ jobsSay(err.message, true); e.target.disabled = false; }
 });
+
+
+// ---- Vendor connections (one-time codes) ----
+const VC_API = '/.netlify/functions/admin-vendor-codes';
+async function vcApi(action, method, body, query){
+  const res = await fetch(`${VC_API}?action=${action}${query || ''}`, { method, headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: method === 'POST' ? JSON.stringify(body || {}) : undefined });
+  let data = null; try{ data = await res.json(); } catch(e){}
+  if(!data) throw new Error('The vendor codes service returned an unexpected reply (HTTP ' + res.status + '). Check that admin-vendor-codes.js is deployed.');
+  return { status: res.status, data };
+}
+function vcSay(t, bad){ const el = document.getElementById('vcMsg'); el.style.display = t ? 'block' : 'none'; el.textContent = t || ''; el.style.color = bad ? '#c0392b' : ''; }
+function vcShowCode(name, r){
+  const box = document.getElementById('vcResults');
+  box.innerHTML = `<div style="border:1px solid var(--live); border-radius:10px; padding:12px; margin-bottom:10px;">
+    <div style="font-weight:700; margin-bottom:6px;">Code for ${escapeHtml(name)}${r.kind === 'reconnect' ? ' (reconnect)' : ''}: ${escapeHtml(r.code)}</div>
+    <div class="empty-note" style="margin-bottom:6px;">Works once. Expires ${escapeHtml(new Date(r.expires_at).toLocaleString())}. Copy this message and send it to the vendor:</div>
+    <textarea id="vcMessage" rows="5" readonly style="width:100%; box-sizing:border-box;">${escapeHtml(r.message)}</textarea>
+    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+      <button type="button" class="btn-publish" id="vcCopy">Copy message</button>
+      <a class="btn-secondary" style="padding:9px 16px; border-radius:6px; text-decoration:none; font-size:13.5px; font-weight:600;" target="_blank" rel="noopener" href="https://web.whatsapp.com/send?text=${encodeURIComponent(r.message)}">Open WhatsApp Web</a>
+    </div>
+    ${r.link ? '' : '<div class="empty-note" style="margin-top:8px; color:#c0392b;">Could not find AVA\'s bot name, so there is no link. The message tells the vendor to send the code to the bot instead.</div>'}
+  </div>` + box.innerHTML;
+  document.getElementById('vcCopy').addEventListener('click', async () => {
+    try{ await navigator.clipboard.writeText(r.message); vcSay('Message copied.'); } catch(e){ document.getElementById('vcMessage').select(); vcSay('Press copy on your keyboard to copy the selected message.'); }
+  });
+}
+async function vcCreate(id, confirmReconnect, name){
+  vcSay('');
+  try{
+    const { status, data } = await vcApi('create', 'POST', { listing_id: id, confirm_reconnect: confirmReconnect === true });
+    if(status === 409 && data.needs_confirm){
+      if(!confirm(data.error + '\n\nCreate a reconnect code?')) return;
+      return vcCreate(id, true, name);
+    }
+    if(status !== 200) throw new Error(data.error || ('Error ' + status));
+    vcShowCode(name, data);
+  } catch(err){ vcSay(err.message, true); }
+}
+function vcRender(list){
+  const box = document.getElementById('vcResults');
+  if(!list.length){ box.innerHTML = '<div class="empty-note">No matching businesses.</div>'; return; }
+  box.innerHTML = list.map(l => {
+    const code = l.active_code;
+    const left = code ? Math.max(0, Math.ceil((new Date(code.expires_at) - Date.now()) / 86400000)) : 0;
+    const state = l.connected ? 'Connected to Telegram' : (code ? `Code sent, expires in ${left} day${left === 1 ? '' : 's'}` : 'Not connected');
+    const hist = (l.history || []).slice(0, 4).map(h => `${escapeHtml(h.code)} · ${escapeHtml(h.status)} · ${escapeHtml(new Date(h.created_at).toLocaleDateString())}`).join('<br>');
+    return `<div style="border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;" data-vc="${escapeHtml(l.id)}" data-name="${escapeHtml(l.name)}">
+      <div style="font-weight:600;">${escapeHtml(l.name)}</div>
+      <div style="font-size:12.5px; color:var(--soft);">${escapeHtml([l.category, l.island].filter(Boolean).join(' · '))} · <b>${escapeHtml(state)}</b></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn-publish" data-vact="create">${l.connected ? 'Reconnect (new code)' : (code ? 'Make a new code' : 'Create vendor code')}</button>
+        ${code ? '<button class="btn-secondary" data-vact="cancel">Cancel code</button>' : ''}
+        ${l.connected ? '<button class="btn-danger" data-vact="disconnect">Disconnect</button>' : ''}
+      </div>
+      ${hist ? `<div style="font-size:12px; color:var(--soft); margin-top:8px;">${hist}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+let vcTimer = null, vcLast = '';
+async function vcSearch(){
+  const q = document.getElementById('vcSearch').value.trim(); vcLast = q;
+  if(q.length < 2){ document.getElementById('vcResults').innerHTML = ''; return; }
+  try{ const { data } = await vcApi('search', 'GET', null, '&q=' + encodeURIComponent(q)); if(q === vcLast) vcRender(data.listings || []); }
+  catch(err){ vcSay(err.message, true); }
+}
+document.getElementById('vcSearch').addEventListener('input', () => { clearTimeout(vcTimer); vcTimer = setTimeout(vcSearch, 300); });
+document.getElementById('vcResults').addEventListener('click', async (e) => {
+  const act = e.target.dataset && e.target.dataset.vact; if(!act) return;
+  const card = e.target.closest('[data-vc]'); const id = card.dataset.vc, name = card.dataset.name;
+  vcSay('');
+  try{
+    if(act === 'create'){ await vcCreate(id, false, name); return; }
+    if(act === 'cancel'){ await vcApi('cancel', 'POST', { listing_id: id }); vcSay('Code cancelled.'); vcSearch(); return; }
+    if(act === 'disconnect'){
+      let r = await vcApi('disconnect', 'POST', { listing_id: id });
+      if(r.status === 409 && r.data.needs_confirm){ if(!confirm(r.data.error)) return; r = await vcApi('disconnect', 'POST', { listing_id: id, confirm: true }); }
+      if(r.status !== 200) throw new Error(r.data.error || 'Could not disconnect.');
+      vcSay('Disconnected.'); vcSearch();
+    }
+  } catch(err){ vcSay(err.message, true); }
+});
+
+
+// ---- Add a watched-page change to AVA as a real entry (you edit, then publish) ----
+const ATO_API = '/.netlify/functions/admin-publish-entry';
+const ATO_TYPES = [['news','News or notice'],['scholarship','Scholarship or programme'],['place','Place to visit'],['reference','Reference overview'],['deep_dive','Deep-dive article']];
+const ATO_POI = ['beach','hiking_trail','waterfall','historic_site','marine_park','garden'];
+const ATO_REF = ['geography','history','government','culture','economy','practical','indigenous_peoples','music','motorsports','vincy_mas'];
+const ATO_ISLANDS = ['Saint Vincent','Bequia','Mustique','Canouan','Mayreau','Union Island','Palm Island','Petit Saint Vincent','Tobago Cays'];
+const ATO_FIELDS = {
+  news: [['topic','Headline','text'],['body','Text','area']],
+  scholarship: [['name','Name','text'],['provider','Provider','text'],['description','Description','area'],['eligibility','Who can apply','area'],['deadline','Deadline (YYYY-MM-DD, optional)','text'],['apply_url','Apply link (optional)','text']],
+  place: [['name','Name','text'],['category','Category','sel:poi'],['island','Island','sel:isl'],['description','Description (at least 40 characters)','area']],
+  reference: [['category','Category','sel:ref'],['title','Title','text'],['summary','Overview','area']],
+  deep_dive: [['category','Category','sel:ref'],['title','Title','text'],['body','Article','area']],
+};
+async function atoCall(action, body){
+  const r = await fetch(`${ATO_API}?action=${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  return { status: r.status, data: d };
+}
+function atoOpen(card, changeId, srcUrl){
+  let box = card.querySelector('.atobox');
+  if(box){ box.remove(); return; }
+  box = document.createElement('div');
+  box.className = 'atobox';
+  box.style.cssText = 'border:1px solid var(--line); border-radius:10px; padding:12px; margin-top:10px; background:var(--panel); color:var(--ink);';
+  box.innerHTML = `<div style="font-weight:600; margin-bottom:6px;">Add to AVA</div>
+    <div class="empty-note" style="margin-bottom:8px;">Pick a type. AVA drafts the wording from what the page says. You edit it, and nothing is saved until you press Publish.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <select class="atotype" style="padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink);">${ATO_TYPES.map(t => `<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
+      <button type="button" class="btn-secondary atodraft">Draft it</button>
+      <button type="button" class="btn-secondary atoblank">Start blank</button>
+    </div>
+    <div class="atomsg empty-note" style="margin-top:8px; display:none;"></div>
+    <div class="atoform" style="margin-top:10px;"></div>`;
+  card.appendChild(box);
+  const msg = (t, bad) => { const m = box.querySelector('.atomsg'); m.style.display = t ? 'block' : 'none'; m.textContent = t || ''; m.style.color = bad ? '#c0392b' : ''; };
+  const form = box.querySelector('.atoform');
+  const typeSel = box.querySelector('.atotype');
+  function render(fields){
+    const type = typeSel.value;
+    const row = (k, label, kind) => {
+      const v = fields && fields[k] != null ? String(fields[k]) : '';
+      const st = 'width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); margin-bottom:8px;';
+      let input;
+      if(kind === 'area') input = `<textarea data-k="${k}" rows="5" style="${st}">${escapeHtml(v)}</textarea>`;
+      else if(kind.startsWith('sel:')){
+        const opts = kind === 'sel:poi' ? ATO_POI : kind === 'sel:isl' ? ATO_ISLANDS : ATO_REF;
+        input = `<select data-k="${k}" style="${st}"><option value="">Choose&hellip;</option>${opts.map(o => `<option value="${o}"${o === v ? ' selected' : ''}>${o.replace(/_/g, ' ')}</option>`).join('')}</select>`;
+      } else input = `<input type="text" data-k="${k}" value="${escapeHtml(v)}" style="${st}">`;
+      return `<label style="display:block; font-size:12.5px; color:var(--soft); margin-bottom:3px;">${label}</label>${input}`;
+    };
+    form.innerHTML = ATO_FIELDS[type].map(f => row(f[0], f[1], f[2])).join('')
+      + `<label style="display:block; font-size:12.5px; color:var(--soft); margin-bottom:3px;">Source link (required, shown as the citation)</label><input type="text" class="atosrc" value="${escapeHtml(srcUrl)}" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); margin-bottom:8px;">`
+      + `<div style="display:flex; gap:8px;"><button type="button" class="btn-publish atopub">Publish to AVA</button><button type="button" class="btn-secondary atocancel">Cancel</button></div>`;
+    form.querySelector('.atocancel').addEventListener('click', () => box.remove());
+    form.querySelector('.atopub').addEventListener('click', async (e) => {
+      const fields = {}; form.querySelectorAll('[data-k]').forEach(el => { fields[el.dataset.k] = el.value; });
+      const body = { type: typeSel.value, fields, source_url: form.querySelector('.atosrc').value, change_id: changeId };
+      e.target.disabled = true; msg('');
+      try{
+        let r = await atoCall('publish', body);
+        if(r.status === 409 && r.data.needs_confirm){ if(!confirm(r.data.error + '\n\nContinue?')) { e.target.disabled = false; return; } r = await atoCall('publish', { ...body, confirm_replace: true }); }
+        if(r.status !== 200) throw new Error(r.data.error || ('Error ' + r.status));
+        form.innerHTML = ''; msg(`Published: ${r.data.label}. It is live in AVA now, and this change is marked done.`);
+        box.querySelector('.atodraft').disabled = true; box.querySelector('.atoblank').disabled = true;
+      } catch(err){ msg(err.message, true); e.target.disabled = false; }
+    });
+  }
+  box.querySelector('.atoblank').addEventListener('click', () => { msg(''); render({}); });
+  box.querySelector('.atodraft').addEventListener('click', async (e) => {
+    e.target.disabled = true; msg('Drafting\u2026');
+    try{
+      const r = await atoCall('draft', { change_id: changeId, type: typeSel.value });
+      if(r.status !== 200) throw new Error(r.data.error || ('Error ' + r.status));
+      if(r.data.source_url) srcUrl = r.data.source_url;
+      msg('Drafted from the page text. Check every field before publishing.'); render(r.data.fields);
+    } catch(err){ msg(err.message, true); }
+    e.target.disabled = false;
+  });
+}
 
 // ---- Admin tabs: one tab per existing panel. Panels are only shown or hidden, never changed. ----
 const ADMIN_TAB_FIRST = ['Jobs awaiting approval','Businesses awaiting approval','Pending review','Agent drafts','Place photos','Source watch'];
