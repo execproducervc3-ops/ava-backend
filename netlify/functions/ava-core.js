@@ -254,9 +254,24 @@ async function queryMultipleRetailPrices(productNames){
   return { items: results };
 }
 
+// A news answer shows every article from the last NEWS_DAYS days, hand-published and feed alike, newest first.
+// If that is fewer than NEWS_MIN (a quiet spell) it is topped up with the next newest; NEWS_MAX keeps the answer a sensible size.
+const NEWS_DAYS = 3;
+const NEWS_MIN = 10;
+const NEWS_MAX = 30;
+
+function mixNews(rows){
+  const sorted = [...rows].sort((x, y) => new Date(y.published_at || 0) - new Date(x.published_at || 0));
+  const cutoff = Date.now() - NEWS_DAYS * 86400000;
+  const recent = sorted.filter(r => r.published_at && new Date(r.published_at).getTime() >= cutoff);
+  const pick = recent.length >= NEWS_MIN ? recent.slice(0, NEWS_MAX) : sorted.slice(0, NEWS_MIN);
+  return pick.map(({ source, ...rest }) => rest);
+}
+
 async function queryNewsDB(topic){
   const t = (topic || '').trim().toLowerCase();
   const isBrowseRequest = !t || ['news', 'latest', 'latest news', 'all', 'everything', 'general', 'recent', 'local news', 'current events', 'what\'s new'].includes(t);
+  const COLS = 'topic, body, source_url, published_at, source';
 
   try{
     let data, error;
@@ -266,14 +281,24 @@ async function queryNewsDB(topic){
       // This is the actual enforcement point for the human-review gate designed
       // from the very first architecture session: no matter what the query is,
       // articles still sitting in draft/pending_review can never be returned here.
+      // Characters that have a meaning in the search syntax are removed so a comma or bracket cannot break it.
+      const clean = topic.trim().replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim();
       ({ data, error } = await supabase
         .from('knowledge_articles')
-        .select('topic, body, source_url, published_at')
+        .select(COLS)
         .eq('review_status', 'published')
-        .or(`topic.ilike.%${topic.trim()}%,body.ilike.%${topic.trim()}%`)
-        .order('published_at', { ascending: false })
-        .limit(5));
+        .or(`topic.ilike.%${clean}%,body.ilike.%${clean}%`)
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .limit(60));
       if(error) throw error;
+      // Nothing for the exact phrase: try articles that contain every word of it (any order).
+      const words = clean.split(' ').filter(w => w.length >= 3).slice(0, 5);
+      if((!data || !data.length) && words.length > 1){
+        let qy = supabase.from('knowledge_articles').select(COLS).eq('review_status', 'published');
+        for(const w of words) qy = qy.or(`topic.ilike.%${w}%,body.ilike.%${w}%`);
+        ({ data, error } = await qy.order('published_at', { ascending: false, nullsFirst: false }).limit(60));
+        if(error) throw error;
+      }
       if(!data || !data.length) specificSearchFailed = true;
     }
 
@@ -289,10 +314,10 @@ async function queryNewsDB(topic){
     if(isBrowseRequest){
       ({ data, error } = await supabase
         .from('knowledge_articles')
-        .select('topic, body, source_url, published_at')
+        .select(COLS)
         .eq('review_status', 'published')
-        .order('published_at', { ascending: false })
-        .limit(5));
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .limit(60));
       if(error) throw error;
     }
 
@@ -300,7 +325,7 @@ async function queryNewsDB(topic){
 
     if(specificSearchFailed) return { results: [], note: `No published news articles found on "${topic.trim()}" specifically.` };
     if(!data || !data.length) return { results: [], note: 'No published articles available yet.' };
-    return { results: data };
+    return { results: mixNews(data) };
   } catch(err){
     console.error('queryNewsDB error:', err);
     return { results: [], note: 'Could not reach the news database right now.' };
@@ -667,7 +692,7 @@ async function queryPricedListings(listingType, island){
       query = query.ilike('directory_listings.island', `%${island.trim()}%`);
     }
 
-    const { data: rawData, error } = await query.order('price', { ascending: true }).limit(40);
+    const { data: rawData, error } = await query.order('price', { ascending: true }).limit(60);
     if(error) throw error;
     const todayP = svgTodayCore();
     const data = (rawData || []).filter(r => r.directory_listings && r.directory_listings.subscribed_until && r.directory_listings.subscribed_until >= todayP).slice(0, 10);
