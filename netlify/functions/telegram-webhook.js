@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { claimVendorCode } = require('./vendor-codes');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -33,6 +34,14 @@ exports.handler = async (event) => {
   try {
     let { data: profile } = await supabase
       .from('retailer_profile').select('*').eq('telegram_user_id', fromId).maybeSingle();
+
+    // --- /start <code>: a business you added in admin connects to this Telegram account ---
+    const codeMatch = message.text && message.text.match(/^\/start(?:@\w+)?\s+(\S+)/i);
+    if (codeMatch) {
+      const result = await claimVendorCode(supabase, codeMatch[1], fromId);
+      await sendMessage(chatId, result.reply);
+      return ok();
+    }
 
     // --- /start: first contact, begin onboarding ---
     if (message.text === '/start') {
@@ -424,8 +433,8 @@ async function handleEventSubmission(message, fromId, chatId, profile) {
       await sendMessage(chatId, 'Please send /start first so I can set up your business, then send your event flyer again.');
       return;
     }
-    const { data: existingMatch } = await supabase.from('directory_listings')
-      .select('id').ilike('name', profile.business_name).is('claimed_by_telegram_id', null).limit(1).maybeSingle();
+    // Listings are connected only with a one-time vendor code, never by typing a name.
+    const existingMatch = null;
     if (existingMatch) {
       await supabase.from('directory_listings').update({ claimed_by_telegram_id: fromId }).eq('id', existingMatch.id);
       listingId = existingMatch.id;
@@ -763,13 +772,8 @@ async function confirmLatestDraft(fromId, chatId) {
     // Places — before creating a duplicate. Only matches unclaimed listings,
     // so this can never let someone claim a business that isn't theirs.
     const businessName = (profile && profile.business_name) || `Retailer ${fromId}`;
-    const { data: existingMatch } = await supabase
-      .from('directory_listings')
-      .select('id, category')
-      .ilike('name', businessName)
-      .is('claimed_by_telegram_id', null)
-      .limit(1)
-      .maybeSingle();
+    // Listings are connected only with a one-time vendor code, never by typing a name.
+    const existingMatch = null;
 
     if (existingMatch) {
       // Claim the existing listing, preserving its real category rather
