@@ -420,7 +420,10 @@ async function callClaude(messages, opts){
   }
   if(!res.ok){
     const errBody = await res.text().catch(() => '');
-    throw new Error(`Anthropic request failed: ${res.status} ${errBody}`.trim());
+    const apiErr = new Error(`Anthropic request failed: ${res.status} ${errBody}`.trim());
+    apiErr.status = res.status;
+    apiErr.body = errBody;
+    throw apiErr;
   }
   const data = await res.json();
   if(data.usage && REQ){
@@ -463,6 +466,15 @@ async function callWithBudget(messages, startTime){
     }
     return { timedOut: true };
   }
+}
+
+const ON_A_BREAK = "AVA is on a break, brb in a bit \ud83e\udd9c";
+function isClaudeUnavailable(err){
+  const st = err && err.status;
+  if(!st) return false;
+  const body = String(err.body || '').toLowerCase();
+  if(st === 400) return body.includes('credit balance') || body.includes('billing');
+  return st === 401 || st === 402 || st === 403 || st === 429 || st >= 500;
 }
 
 exports.handler = async (event) => {
@@ -1019,6 +1031,11 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
   } catch(err){
     console.error('ava-chat error:', err);
     await recordUsage(false, err && err.message, startTime, deviceId);
+    // Claude itself is unavailable (out of credit, bad key, rate limit, overloaded or down):
+    // say so in AVA's own voice instead of a generic error, and let the page keep it out of the conversation history.
+    if(isClaudeUnavailable(err)){
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ unavailable: true, text: ON_A_BREAK }) };
+    }
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Something went wrong. Please try again in a moment.' }) };
   }
 };
