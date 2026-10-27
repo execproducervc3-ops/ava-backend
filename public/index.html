@@ -152,7 +152,7 @@
   .pricevalwrap{display:flex; flex-direction:column; align-items:flex-end; gap:6px;}
   .enquirybtn{background:var(--teal); color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;}
   .enquirybtn:hover{background:var(--teal-dark);}
-  .enquiry-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .enquiry-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1200; padding:20px;}
   .enquiry-modal{background:var(--card); border-radius:14px; padding:24px; max-width:380px; width:100%; box-shadow:var(--shadow);}
   .enquiry-modal h3{margin:0 0 4px; color:var(--ink); font-size:18px;}
   .enquiry-modal .enquiry-sub{color:var(--soft); font-size:13px; margin-bottom:16px;}
@@ -172,7 +172,7 @@
   .pricethumb{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:0 0 auto;background:var(--teal-soft);}
   .pricethumb.placeholder{display:flex;align-items:center;justify-content:center;font-size:24px;}
   .photo-clickable{cursor:pointer;}
-  .photo-viewer-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1100; display:flex; align-items:center; justify-content:center;}
+  .photo-viewer-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1300; display:flex; align-items:center; justify-content:center;}
   .photo-viewer-overlay img{max-width:100%; max-height:100%; object-fit:contain;}
   .photo-viewer-close{position:fixed; top:16px; right:16px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,0.15); color:#fff; border:none; font-size:20px; cursor:pointer; z-index:1101; display:flex; align-items:center; justify-content:center;}
   .pricemain{flex:1;min-width:0;}
@@ -224,7 +224,7 @@
   .luckyballlbl{font-size:8px;text-transform:uppercase;opacity:.85;line-height:1;margin-bottom:1px;}
 
   .dircard{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
-  .sharemenu{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.25);padding:6px;min-width:200px;}
+  .sharemenu{position:fixed;z-index:1400;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.25);padding:6px;min-width:200px;}
   .sharemenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;font-size:14px;color:var(--ink);background:none;border:0;border-radius:9px;padding:9px 11px;cursor:pointer;}
   .sharemenu button:hover{background:var(--teal-soft);}
   .sharemenu .sm-ico{width:22px;text-align:center;font-size:16px;}
@@ -271,6 +271,28 @@
   .dirrow-pick{background:var(--gold-soft);}
   .dirpickstar{color:var(--gold);}
   .dirpicknote{font-size:11px;color:var(--soft);font-style:italic;margin-top:2px;}
+
+  [data-biz]{cursor:pointer;}
+  [data-biz]:hover .dirname,.pricename[data-biz]:hover{text-decoration:underline;}
+  .bizpanel-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;display:flex;align-items:flex-end;justify-content:center;}
+  .bizpanel{background:var(--card,#1E2224);color:var(--ink);width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 18px 28px;border:1px solid var(--line);}
+  @media (min-width:700px){.bizpanel-ov{align-items:center}.bizpanel{border-radius:16px}}
+  .bp-top{display:flex;gap:8px;justify-content:flex-end;margin-bottom:6px;}
+  .bp-close{font:inherit;font-size:18px;line-height:1;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--soft);cursor:pointer;}
+  .bp-photo{width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:10px;}
+  .bp-name{font-size:20px;font-weight:700;margin:0 0 2px;}
+  .bp-meta{font-size:13px;color:var(--soft);margin-bottom:8px;}
+  .bp-row{font-size:14px;margin:4px 0;}
+  .bp-h{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--soft);margin:18px 0 6px;}
+  .bp-item{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px;}
+  .bp-item small{display:block;color:var(--soft);font-size:12px;}
+  .bp-item{align-items:center;}
+  .bp-thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;flex:0 0 auto;background:var(--teal-soft);}
+  .bp-thumb.ph{display:flex;align-items:center;justify-content:center;font-size:22px;}
+  .bp-main{flex:1;min-width:0;}
+  .bp-side{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+  .bp-item.stale{opacity:.55;}
+  .bp-empty{font-size:13px;color:var(--soft);padding:6px 0;}
   .dirthumb{flex:0 0 auto;width:52px;height:52px;border-radius:8px;object-fit:cover;}
   .dirmain{flex:1;min-width:0;}
   .dirname{font-size:12.5px;font-weight:600;}
@@ -603,7 +625,7 @@ function renderDirectoryResults(results){
   const rows = results.map(d => `
     <div class="dirrow${d.is_top_pick ? ' dirrow-pick' : ''}">
       ${d.photo_url && /^https?:\/\//i.test(d.photo_url) ? `<img class="dirthumb photo-clickable" loading="lazy" src="${escapeHtml(d.photo_url)}" data-full-photo="${escapeHtml(d.photo_url)}" alt="${escapeHtml(d.name)}">` : ''}
-      <div class="dirmain">
+      <div class="dirmain"${d.id ? ` data-biz="${escapeHtml(d.id)}" role="button" tabindex="0" title="See everything this business has posted"` : ''}>
         <div class="dirname">${d.is_top_pick ? '<span class="dirpickstar">&#9733;</span> ' : ''}${escapeHtml(d.name)}</div>
         <div class="dirmeta">${[d.island, d.address].filter(Boolean).map(escapeHtml).join(' &middot; ')}</div>
         ${d.is_top_pick && d.top_pick_note ? `<div class="dirpicknote">${escapeHtml(d.top_pick_note)}</div>` : ''}
@@ -901,7 +923,7 @@ function renderRetailResults(groups){
       <div class="pricerow">
         ${r.photo_url ? `<img class="pricethumb photo-clickable" src="${r.photo_url}" data-full-photo="${escapeHtml(r.photo_url)}" alt="">` : `<div class="pricethumb placeholder">&#128717;</div>`}
         <div class="pricemain">
-          <div class="pricename">${i === 0 ? '<span class="cheapest">Cheapest</span> ' : ''}${escapeHtml(r.retailer)}</div>
+          <div class="pricename"${r.listing_id ? ` data-biz="${escapeHtml(r.listing_id)}" role="button" tabindex="0"` : ''}>${i === 0 ? '<span class="cheapest">Cheapest</span> ' : ''}${escapeHtml(r.retailer)}</div>
           <div class="priceitem">${escapeHtml(r.item_name)}</div>
           ${normalizedLine}
           ${contactBits.length ? `<div class="pricecontact">${contactBits.join(' &nbsp;·&nbsp; ')}</div>` : ''}
@@ -1427,6 +1449,58 @@ loadHistory();
   spawn();
   setInterval(spawn, 2400);
 })();
+
+// ---- Business panel: everything one business has posted ----
+function closeBizPanel(){ const o = document.getElementById('bizPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', bizEsc); }
+function bizEsc(e){ if(e.key === 'Escape') closeBizPanel(); }
+async function openBizPanel(id){
+  closeBizPanel();
+  const ov = document.createElement('div');
+  ov.id = 'bizPanelOv'; ov.className = 'bizpanel-ov';
+  ov.innerHTML = '<div class="bizpanel" role="dialog" aria-modal="true" aria-label="Business details"><div class="bp-top"><button type="button" class="bp-close" aria-label="Close">&times;</button></div><div id="bpBody" class="bp-empty">Loading&hellip;</div></div>';
+  ov.addEventListener('click', e => { if(e.target === ov || e.target.closest('.bp-close')) closeBizPanel(); });
+  document.body.appendChild(ov); document.addEventListener('keydown', bizEsc);
+  const body = ov.querySelector('#bpBody');
+  try{
+    const r = await fetch('/.netlify/functions/business-info?id=' + encodeURIComponent(id));
+    if(!r.ok) throw new Error('nf');
+    const d = await r.json(), b = d.business;
+    const where = [b.address, b.island].filter(Boolean).join(', ');
+    const site = b.website && /^https?:\/\//i.test(b.website) ? b.website : '';
+    const cat = String(b.category || '').replace(/_/g, ' ');
+    const age = n => n <= 0 ? 'updated today' : n === 1 ? 'updated yesterday' : 'updated ' + n + ' days ago';
+    body.className = '';
+    body.innerHTML =
+      (b.photo_url && /^https?:\/\//i.test(b.photo_url) ? `<img class="bp-photo photo-clickable" src="${escapeHtml(b.photo_url)}" data-full-photo="${escapeHtml(b.photo_url)}" alt="${escapeHtml(b.name)}">` : '')
+      + `<h2 class="bp-name">${b.is_top_pick ? '<span style="color:var(--gold)">&#9733;</span> ' : ''}${escapeHtml(b.name)}</h2>`
+      + `<div class="bp-meta">${escapeHtml([cat, b.island].filter(Boolean).join(' · '))}</div>`
+      + (where ? `<div class="bp-row">&#128205; ${escapeHtml(where)}</div>` : '')
+      + (b.phone ? `<div class="bp-row">&#128222; <a href="tel:${escapeHtml(String(b.phone).replace(/[^\d+]/g,''))}">${escapeHtml(b.phone)}</a></div>` : '')
+      + (site ? `<div class="bp-row">&#127760; <a href="${escapeHtml(site)}" target="_blank" rel="noopener noreferrer">${escapeHtml(site.replace(/^https?:\/\//i,'').replace(/\/$/,''))}</a></div>` : '')
+      + `<div class="bp-top" style="justify-content:flex-start;margin:10px 0 0"><button type="button" class="sharebtn" id="bpShare">&#128279; Share this business</button></div>`
+      + (d.offers.length ? `<div class="bp-h">Current prices</div>` + d.offers.map(o => {
+          const price = '$' + Number(o.price).toFixed(2) + (o.unit ? '/' + o.unit : '');
+          const thumb = o.photo_url && /^https?:\/\//i.test(o.photo_url)
+            ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(o.photo_url)}" data-full-photo="${escapeHtml(o.photo_url)}" alt="${escapeHtml(o.item_name)}">`
+            : `<div class="bp-thumb ph">&#128717;</div>`;
+          return `<div class="bp-item${o.stale ? ' stale' : ''}">${thumb}<div class="bp-main">${escapeHtml(o.item_name)}<small>${age(o.age_days)}</small></div><div class="bp-side"><b>${escapeHtml(price)}</b><button class="enquirybtn" data-listing-id="${escapeHtml(id)}" data-offer-id="${escapeHtml(o.id || '')}" data-details="${escapeHtml(o.item_name + ' — ' + price)}" data-retailer="${escapeHtml(b.name)}">Send enquiry</button></div></div>`;
+        }).join('') : '')
+      + (d.events.length ? `<div class="bp-h">Upcoming events</div>` + d.events.map(ev => {
+          const fl = ev.flyer_url && /^https?:\/\//i.test(ev.flyer_url) ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(ev.flyer_url)}" data-full-photo="${escapeHtml(ev.flyer_url)}" alt="${escapeHtml(ev.title)}">` : '';
+          return `<div class="bp-item">${fl}<div class="bp-main"><b>${escapeHtml(ev.title)}</b><small>${escapeHtml([ev.when, ev.venue].filter(Boolean).join(' · '))}</small>${ev.ticket_price != null && ev.ticket_price !== '' ? `<small>Tickets: ${escapeHtml(String(ev.ticket_price))}</small>` : ''}</div></div>`;
+        }).join('') : '')
+      + (!d.offers.length && !d.events.length ? `<div class="bp-empty" style="margin-top:14px">${d.subscribed ? 'This business has no current prices or events posted.' : 'No current postings to show for this business.'}</div>` : '');
+    const sb = body.querySelector('#bpShare');
+    sb.addEventListener('click', () => openShareMenu(sb, { url: location.origin + '/l/' + encodeURIComponent(id), title: b.name, text: b.name + ' on AVA' }));
+  } catch(e){ body.textContent = 'Could not load this business right now. Please try again.'; }
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-biz]');
+  if(t && !e.target.closest('a,button,.photo-clickable')) openBizPanel(t.dataset.biz);
+});
+document.addEventListener('keydown', e => {
+  if((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-biz]')){ e.preventDefault(); openBizPanel(e.target.dataset.biz); }
+});
 </script>
 </body>
 </html>
