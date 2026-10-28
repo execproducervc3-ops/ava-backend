@@ -92,3 +92,6 @@
 
 [functions."ingest-news-regional"]
   schedule = "0 */3 * * *"
+
+[functions."tryon"]
+  timeout = 26
