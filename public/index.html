@@ -309,6 +309,25 @@
   .bp-side{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
   .bp-item.stale{opacity:.55;}
   .bp-empty{font-size:13px;color:var(--soft);padding:6px 0;}
+  .tryonbtn{background:transparent;color:var(--teal);border:1px solid var(--teal);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .tryonbtn:hover{background:var(--teal-soft);}
+  .tryon-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1200;display:flex;align-items:flex-end;justify-content:center;}
+  .tryon{background:var(--card,#1E2224);color:var(--ink);width:100%;max-width:520px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 18px 26px;border:1px solid var(--line);}
+  @media (min-width:700px){.tryon-ov{align-items:center}.tryon{border-radius:16px}}
+  .tryon h3{margin:0 0 4px;font-size:18px;}
+  .tryon .tr-sub{font-size:13px;color:var(--soft);margin-bottom:12px;}
+  .tryon .tr-row{display:flex;gap:12px;align-items:flex-start;margin:10px 0;}
+  .tryon .tr-pic{width:96px;height:128px;border-radius:10px;object-fit:cover;background:var(--teal-soft);flex:0 0 auto;}
+  .tryon .tr-pick{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0;font-size:13px;}
+  .tryon .tr-tips{font-size:12px;color:var(--soft);margin:6px 0 0;padding-left:16px;}
+  .tryon label.tr-consent{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:12px 0;}
+  .tryon .tr-go{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer;width:100%;}
+  .tryon .tr-go:disabled{opacity:.5;cursor:not-allowed;}
+  .tryon .tr-alt{background:transparent;color:var(--teal);border:1px solid var(--teal);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;}
+  .tryon .tr-err{color:#C0392B;font-size:13px;margin:8px 0;}
+  .tryon .tr-result{width:100%;border-radius:12px;margin:8px 0;display:block;}
+  .tryon .tr-note{font-size:12px;color:var(--soft);margin:6px 0 10px;}
+  .tryon .tr-wait{font-size:14px;margin:14px 0;text-align:center;color:var(--soft);}
   .dirthumb{flex:0 0 auto;width:52px;height:52px;border-radius:8px;object-fit:cover;}
   .dirmain{flex:1;min-width:0;}
   .dirname{font-size:12.5px;font-weight:600;}
@@ -1512,9 +1531,100 @@ document.addEventListener('click', e => {
   openNewsPanel(a.getAttribute('href'), t && t.textContent, b && b.textContent, d && d.textContent);
 });
 
+
+// ---- "See it on you": virtual try-on (the visitor's photo is used once, never stored) ----
+const CLOTHING_WORDS = /\b(shirt|t-?shirt|tee|blouse|top|tank|dress|gown|skirt|shorts|pants|trousers|jeans|slacks|leggings|jumpsuit|romper|suit|blazer|jacket|coat|hoodie|sweater|jersey|cardigan|kaftan|sarong|wrap|swimsuit|swimwear|bikini|trunks|uniform|scrubs|apron|hat|cap|scarf)s?\b/i;
+const CLOTHING_BIZ = /(cloth|fashion|apparel|boutique|wear|garment|tailor|textile|dress)/i;
+function canTryOn(o, b){
+  if(!o || !o.photo_url || !/^https?:\/\//i.test(o.photo_url)) return false;
+  return CLOTHING_WORDS.test(String(o.item_name || '')) || CLOTHING_BIZ.test(String(b && b.category || ''));
+}
+function closeTryOn(){ const o = document.getElementById('tryOnOv'); if(o){ const u = o.dataset.url; if(u) URL.revokeObjectURL(u); o.remove(); } }
+function readPhotoAsJpeg(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      try{
+        const max = 1280, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.9));
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('read')); };
+    img.src = url;
+  });
+}
+function openTryOn(productUrl, itemName){
+  closeTryOn();
+  const ov = document.createElement('div');
+  ov.id = 'tryOnOv'; ov.className = 'tryon-ov';
+  ov.innerHTML = '<div class="tryon" role="dialog" aria-modal="true" aria-label="See it on you">'
+    + '<div class="bp-top"><button type="button" class="bp-close" aria-label="Close">&times;</button></div>'
+    + '<div id="trBody"></div></div>';
+  ov.addEventListener('click', e => { if(e.target === ov || e.target.closest('.bp-close')) closeTryOn(); });
+  document.body.appendChild(ov);
+  const body = ov.querySelector('#trBody');
+  let personData = '';
+  function showPicker(msg){
+    personData = '';
+    body.innerHTML = '<h3>See it on you</h3>'
+      + '<div class="tr-sub">' + escapeHtml(itemName) + '. Add a photo of yourself and AVA will show you a preview wearing it.</div>'
+      + '<div class="tr-row"><img class="tr-pic" id="trGarment" alt="" src="' + escapeHtml(productUrl) + '">'
+      + '<div class="tr-pick"><input type="file" id="trFile" accept="image/jpeg,image/png,image/webp">'
+      + '<img class="tr-pic" id="trMine" alt="" style="display:none">'
+      + '<ul class="tr-tips"><li>One person, standing, full length if you can</li><li>Good light, plain background</li><li>Arms away from the body</li></ul></div></div>'
+      + '<label class="tr-consent"><input type="checkbox" id="trConsent"> <span>I am happy for my photo to be sent to Google to create this preview. AVA does not keep it.</span></label>'
+      + '<div class="tr-err" id="trErr">' + escapeHtml(msg || '') + '</div>'
+      + '<button type="button" class="tr-go" id="trGo" disabled>Create my preview</button>';
+    const f = body.querySelector('#trFile'), mine = body.querySelector('#trMine'), cb = body.querySelector('#trConsent'), go = body.querySelector('#trGo'), err = body.querySelector('#trErr');
+    const sync = () => { go.disabled = !(personData && cb.checked); };
+    f.addEventListener('change', async () => {
+      err.textContent = ''; personData = ''; mine.style.display = 'none'; sync();
+      const file = f.files && f.files[0]; if(!file) return;
+      try{
+        personData = await readPhotoAsJpeg(file);
+        mine.src = personData; mine.style.display = 'block';
+      }catch(e){ err.textContent = 'We could not read that photo. Please try a JPEG or PNG.'; }
+      sync();
+    });
+    cb.addEventListener('change', sync);
+    go.addEventListener('click', run);
+  }
+  async function run(){
+    const msgSafe = personData;
+    body.innerHTML = '<h3>See it on you</h3><div class="tr-wait">Creating your preview&hellip; this can take up to 20 seconds.</div>';
+    try{
+      const r = await fetch('/.netlify/functions/tryon', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ person: msgSafe, product_url: productUrl, consent: true }) });
+      let d = {}; try{ d = await r.json(); }catch(e){}
+      personData = '';
+      if(r.ok && d.image && /^data:image\/(png|jpeg|webp);base64,/.test(d.image)){
+        body.innerHTML = '<h3>Your preview</h3><div class="tr-sub">' + escapeHtml(itemName) + '</div>'
+          + '<img class="tr-result" id="trOut" alt="Preview of you wearing ' + escapeHtml(itemName) + '">'
+          + '<div class="tr-note">This is an AI-generated preview. Fit, colour and drape may look different in real life.</div>'
+          + '<button type="button" class="tr-alt" id="trAgain">Try another photo</button> '
+          + '<button type="button" class="tr-alt" id="trDone">Close</button>';
+        body.querySelector('#trOut').src = d.image;
+        body.querySelector('#trAgain').addEventListener('click', () => showPicker(''));
+        body.querySelector('#trDone').addEventListener('click', closeTryOn);
+      } else {
+        showPicker(d.error || 'The outfit preview is on a break, try again in a bit.');
+      }
+    }catch(e){ personData = ''; showPicker('The outfit preview is on a break, try again in a bit.'); }
+  }
+  showPicker('');
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('.tryonbtn');
+  if(t){ e.preventDefault(); openTryOn(t.dataset.tryonPhoto, t.dataset.tryonName); }
+});
+
 // ---- Business panel: everything one business has posted ----
 function closeBizPanel(){ const o = document.getElementById('bizPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', bizEsc); }
-function bizEsc(e){ if(e.key === 'Escape') closeBizPanel(); }
+function bizEsc(e){ if(e.key === 'Escape'){ if(document.getElementById('tryOnOv')) closeTryOn(); else closeBizPanel(); } }
 async function openBizPanel(id){
   closeBizPanel();
   const ov = document.createElement('div');
@@ -1545,7 +1655,7 @@ async function openBizPanel(id){
           const thumb = o.photo_url && /^https?:\/\//i.test(o.photo_url)
             ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(o.photo_url)}" data-full-photo="${escapeHtml(o.photo_url)}" alt="${escapeHtml(o.item_name)}">`
             : `<div class="bp-thumb ph">&#128717;</div>`;
-          return `<div class="bp-item${o.stale ? ' stale' : ''}">${thumb}<div class="bp-main">${escapeHtml(o.item_name)}<small>${age(o.age_days)}</small></div><div class="bp-side"><b>${escapeHtml(price)}</b><button class="enquirybtn" data-listing-id="${escapeHtml(id)}" data-offer-id="${escapeHtml(o.id || '')}" data-details="${escapeHtml(o.item_name + ' — ' + price)}" data-retailer="${escapeHtml(b.name)}">Send enquiry</button></div></div>`;
+          return `<div class="bp-item${o.stale ? ' stale' : ''}">${thumb}<div class="bp-main">${escapeHtml(o.item_name)}<small>${age(o.age_days)}</small></div><div class="bp-side"><b>${escapeHtml(price)}</b>${canTryOn(o, b) ? `<button type="button" class="tryonbtn" data-tryon-photo="${escapeHtml(o.photo_url)}" data-tryon-name="${escapeHtml(o.item_name)}">&#128085; See it on you</button>` : ''}<button class="enquirybtn" data-listing-id="${escapeHtml(id)}" data-offer-id="${escapeHtml(o.id || '')}" data-details="${escapeHtml(o.item_name + ' — ' + price)}" data-retailer="${escapeHtml(b.name)}">Send enquiry</button></div></div>`;
         }).join('') : '')
       + (d.events.length ? `<div class="bp-h">Upcoming events</div>` + d.events.map(ev => {
           const fl = ev.flyer_url && /^https?:\/\//i.test(ev.flyer_url) ? `<img class="bp-thumb photo-clickable" loading="lazy" src="${escapeHtml(ev.flyer_url)}" data-full-photo="${escapeHtml(ev.flyer_url)}" alt="${escapeHtml(ev.title)}">` : '';
