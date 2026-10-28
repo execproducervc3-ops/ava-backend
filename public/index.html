@@ -277,6 +277,22 @@
   .bizpanel-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;display:flex;align-items:flex-end;justify-content:center;}
   .bizpanel{background:var(--card,#1E2224);color:var(--ink);width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 18px 28px;border:1px solid var(--line);}
   @media (min-width:700px){.bizpanel-ov{align-items:center}.bizpanel{border-radius:16px}}
+
+  .newspanel{max-width:780px;height:90vh;display:flex;flex-direction:column;overflow:hidden;padding:14px 16px 16px;}
+  @media (min-width:700px){.newspanel{height:84vh}}
+  .np-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex:0 0 auto;}
+  .np-open{font-size:12.5px;font-weight:600;color:var(--teal);text-decoration:none;}
+  .np-open:hover{text-decoration:underline;}
+  .np-title{font-size:17px;font-weight:700;line-height:1.3;margin:0 0 4px;flex:0 0 auto;}
+  .np-meta{font-size:12px;color:var(--soft);margin-bottom:8px;flex:0 0 auto;}
+  .np-sum{font-size:13px;line-height:1.5;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;flex:0 0 auto;max-height:22vh;overflow:auto;}
+  .np-sum b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);margin-bottom:3px;font-weight:600;}
+  .np-view{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
+  .np-frame{flex:1 1 auto;width:100%;min-height:200px;border:1px solid var(--line);border-radius:10px;background:#fff;}
+  .np-note{font-size:13px;color:var(--soft);padding:14px 4px;line-height:1.5;}
+  .np-btn{display:inline-block;margin-top:8px;padding:10px 16px;border-radius:999px;background:var(--teal);color:#fff;font-weight:600;text-decoration:none;font-size:13.5px;}
+  .np-foot{font-size:11.5px;color:var(--soft);margin-top:6px;flex:0 0 auto;}
+  .np-foot a{color:var(--teal);}
   .bp-top{display:flex;gap:8px;justify-content:flex-end;margin-bottom:6px;}
   .bp-close{font:inherit;font-size:18px;line-height:1;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--soft);cursor:pointer;}
   .bp-photo{width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:10px;}
@@ -1449,6 +1465,52 @@ loadHistory();
   spawn();
   setInterval(spawn, 2400);
 })();
+
+// ---- News reading panel: opens a news article's page inside AVA ----
+function closeNewsPanel(){ const o = document.getElementById('newsPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', newsEsc); }
+function newsEsc(e){ if(e.key === 'Escape') closeNewsPanel(); }
+async function openNewsPanel(url, topic, summary, dateStr){
+  closeNewsPanel();
+  let host = '';
+  try{ host = new URL(url).hostname.replace(/^www\./, ''); }catch(e){}
+  const safeUrl = escapeHtml(url);
+  const ov = document.createElement('div');
+  ov.id = 'newsPanelOv'; ov.className = 'bizpanel-ov';
+  ov.innerHTML =
+    '<div class="bizpanel newspanel" role="dialog" aria-modal="true" aria-label="News article">'
+    + '<div class="np-bar"><a class="np-open" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Open in new tab &#8599;</a>'
+    + '<button type="button" class="bp-close" aria-label="Close">&times;</button></div>'
+    + '<h2 class="np-title">' + escapeHtml(topic || 'News article') + '</h2>'
+    + '<div class="np-meta">' + escapeHtml([host, dateStr].filter(Boolean).join(' · ')) + '</div>'
+    + (summary ? '<div class="np-sum"><b>AVA\'s summary</b>' + escapeHtml(summary) + '</div>' : '')
+    + '<div class="np-view" id="npView"><div class="np-note">Opening the article&hellip;</div></div>'
+    + '</div>';
+  ov.addEventListener('click', e => { if(e.target === ov || e.target.closest('.bp-close')) closeNewsPanel(); });
+  document.body.appendChild(ov); document.addEventListener('keydown', newsEsc);
+  const view = ov.querySelector('#npView');
+  const fallback = () => {
+    view.innerHTML = '<div class="np-note">This site does not allow its pages to be shown inside AVA.<br><a class="np-btn" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Read on ' + escapeHtml(host || 'the site') + ' &#8599;</a></div>';
+  };
+  let embeddable = false;
+  try{
+    const r = await fetch('/.netlify/functions/link-frame-check?url=' + encodeURIComponent(url));
+    if(r.ok) embeddable = !!(await r.json()).embeddable;
+  }catch(e){}
+  if(!document.getElementById('newsPanelOv')) return;     // closed while checking
+  if(!embeddable){ fallback(); return; }
+  // No allow-top-navigation: a page that tries to take over the whole window is simply stopped.
+  view.innerHTML = '<iframe class="np-frame" src="' + safeUrl + '" title="' + escapeHtml(topic || 'News article') + '" referrerpolicy="no-referrer" loading="eager" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>'
+    + '<div class="np-foot">Page not showing? <a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Open it in a new tab</a>.</div>';
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a.newslink');
+  if(!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // leave "open in new tab" shortcuts alone
+  const row = a.closest('.newsrow');
+  if(!row) return;
+  e.preventDefault();
+  const t = row.querySelector('.newstopic'), b = row.querySelector('.newsbody'), d = row.querySelector('.newsdate');
+  openNewsPanel(a.getAttribute('href'), t && t.textContent, b && b.textContent, d && d.textContent);
+});
 
 // ---- Business panel: everything one business has posted ----
 function closeBizPanel(){ const o = document.getElementById('bizPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', bizEsc); }
