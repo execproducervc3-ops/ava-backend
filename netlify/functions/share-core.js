@@ -21,9 +21,20 @@ function shareId(sig){
   return out;
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: '\u2019', lsquo: '\u2018', ldquo: '\u201C', rdquo: '\u201D', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026' };
+function decodeEntities(s){
+  let t = String(s ?? '');
+  for(let i = 0; i < 2; i++){
+    t = t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+      if(e[0] === '#'){ const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }
+      const v = NAMED[e.toLowerCase()]; return v === undefined ? m : v;
+    });
+  }
+  return t.replace(/[\u00A0\u2007\u202F]/g, ' ');
+}
 const safeHttp = (u) => /^https?:\/\//i.test(String(u || '')) ? String(u) : '';
 function plainText(md, max){
-  const t = String(md || '').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1').replace(/\*\*|__|_(?=\S)|`/g, '').replace(/\s+/g, ' ').trim();
+  const t = decodeEntities(md).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1').replace(/\*\*|__|_(?=\S)|`/g, '').replace(/\s+/g, ' ').trim();
   return t.length > max ? t.slice(0, max - 1).replace(/\s+\S*$/, '') + '…' : t;
 }
 // JSON that is safe inside a <script> tag.
@@ -52,7 +63,7 @@ function answerTitle(q){
 // the picture. Never the bare question for short questions like "news" or "lettuce".
 function answerPreview(d){
   d = d || {};
-  const trim = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, '') + '\u2026' : s; };
+  const trim = (s, n) => { s = decodeEntities(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, '') + '\u2026' : s; };
   // 1. A price answer: "Lettuce from RB SALES, $5.00/lb, on AVA"
   const groups = Array.isArray(d.retailResults) ? d.retailResults.filter(g => g && Array.isArray(g.results) && g.results.length) : [];
   if (groups.length === 1) {
@@ -87,4 +98,4 @@ function answerPreview(d){
   return null;
 }
 
-module.exports = { answerPreview, answerTitle, SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };
+module.exports = { decodeEntities, answerPreview, answerTitle, SITE, signPayload, verifySig, shareId, esc, safeHttp, plainText, scriptJson, renderPage };
