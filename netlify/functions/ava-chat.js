@@ -109,7 +109,7 @@ const TOOLS = [
   },
   {
     name: 'query_news',
-    description: "Search AVA's own database of published local SVG news articles. Use this before web search for questions about recent local news, government announcements, or current happenings in SVG — this is curated, human-reviewed content specific to SVG, more reliable than a general web search for local news. For a specific subject, pass that as the topic. For a general 'what's the latest news' style question, pass a general term like 'latest' — this returns the most recent published articles.",
+    description: "For news from across the wider Caribbean (other islands, CARICOM, the OECS, regional stories) pass a topic containing the word \"regional\" or \"Caribbean\", for example \"regional news\" or \"Caribbean news\" or \"Caribbean tourism\" — these come from regional news outlets, summarised, and are NOT reviewed the way local items are, so say they are regional reports and give the source link. Anything without those words searches local SVG news only. Search AVA's own database of published local SVG news articles. Use this before web search for questions about recent local news, government announcements, or current happenings in SVG — this is curated, human-reviewed content specific to SVG, more reliable than a general web search for local news. For a specific subject, pass that as the topic. For a general 'what's the latest news' style question, pass a general term like 'latest' — this returns the most recent published articles.",
     input_schema: {
       type: 'object',
       properties: {

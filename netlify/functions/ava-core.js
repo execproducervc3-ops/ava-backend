@@ -268,64 +268,75 @@ function mixNews(rows){
   return pick.map(({ source, ...rest }) => rest);
 }
 
+// Words that mean "Caribbean-wide news" rather than a local subject. A search containing one of them reads from the
+// regional feeds; every other news search reads only local (SVG) news, so the two never mix.
+const REGIONAL_WORDS = /\b(regional|region|caribbean|caricom|oecs|west indies|west indian|eastern caribbean)\b/gi;
+
 async function queryNewsDB(topic){
   const t = (topic || '').trim().toLowerCase();
-  const isBrowseRequest = !t || ['news', 'latest', 'latest news', 'all', 'everything', 'general', 'recent', 'local news', 'current events', 'what\'s new'].includes(t);
+  const isRegional = new RegExp(REGIONAL_WORDS.source, 'i').test(t);
+  // For a regional search, what is left after removing the "regional" words is the subject ("regional news" -> "news").
+  const subject = isRegional ? t.replace(REGIONAL_WORDS, ' ').replace(/\s+/g, ' ').trim() : t;
+  const BROWSE = ['', 'news', 'latest', 'latest news', 'all', 'everything', 'general', 'recent', 'local news', 'current events', "what's new", 'headlines', 'top stories', 'stories'];
+  const isBrowseRequest = BROWSE.includes(subject);
   const COLS = 'topic, body, source_url, published_at, source';
+  const { REGIONAL_TAGS } = require('./news-sources');
+  const scopeLabel = isRegional ? 'regional (Caribbean)' : 'local';
+
+  // Every query is limited to its own scope: regional searches read only the regional feeds, local ones exclude them
+  // (a missing source counts as local).
+  const scoped = (q) => isRegional
+    ? q.in('source', REGIONAL_TAGS)
+    : q.or(`source.is.null,source.not.in.(${REGIONAL_TAGS.join(',')})`);
 
   try{
     let data, error;
     let specificSearchFailed = false;
+    const original = (isRegional ? subject : topic || '').trim();
 
     if(!isBrowseRequest){
-      // This is the actual enforcement point for the human-review gate designed
-      // from the very first architecture session: no matter what the query is,
-      // articles still sitting in draft/pending_review can never be returned here.
+      // This is the actual enforcement point for the human-review gate designed from the very first architecture
+      // session: no matter what the query is, articles still sitting in draft/pending_review can never be returned.
       // Characters that have a meaning in the search syntax are removed so a comma or bracket cannot break it.
-      const clean = topic.trim().replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim();
-      ({ data, error } = await supabase
+      const clean = original.replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim();
+      ({ data, error } = await scoped(supabase
         .from('knowledge_articles')
         .select(COLS)
         .eq('review_status', 'published')
-        .or(`topic.ilike.%${clean}%,body.ilike.%${clean}%`)
+        .or(`topic.ilike.%${clean}%,body.ilike.%${clean}%`))
         .order('published_at', { ascending: false, nullsFirst: false })
-        .limit(60));
+        .limit(40));
       if(error) throw error;
       // Nothing for the exact phrase: try articles that contain every word of it (any order).
       const words = clean.split(' ').filter(w => w.length >= 3).slice(0, 5);
       if((!data || !data.length) && words.length > 1){
-        let qy = supabase.from('knowledge_articles').select(COLS).eq('review_status', 'published');
+        let qy = scoped(supabase.from('knowledge_articles').select(COLS).eq('review_status', 'published'));
         for(const w of words) qy = qy.or(`topic.ilike.%${w}%,body.ilike.%${w}%`);
-        ({ data, error } = await qy.order('published_at', { ascending: false, nullsFirst: false }).limit(60));
+        ({ data, error } = await qy.order('published_at', { ascending: false, nullsFirst: false }).limit(40));
         if(error) throw error;
       }
       if(!data || !data.length) specificSearchFailed = true;
     }
 
-    // Fall back to "most recent published" ONLY for a genuine browse-style
-    // ask ("what's the latest news"), where showing recent general news is
-    // literally what was requested. A specific, named-topic search that
-    // came up empty must NOT fall back to this — silently substituting
-    // unrelated recent articles (a real, confirmed production bug: a
-    // "Vincy Mas 2026" search returned articles about land leases, the
-    // NDB, and an unrelated politician's death) is actively misleading,
-    // not a graceful degrade. An honest "nothing found" is the correct
-    // answer for a failed specific search.
+    // Fall back to "most recent published" ONLY for a genuine browse-style ask ("what's the latest news"), where
+    // showing recent general news is literally what was requested. A specific, named-topic search that came up
+    // empty must NOT fall back to this — silently substituting unrelated recent articles (a real, confirmed
+    // production bug) is actively misleading, not a graceful degrade. An honest "nothing found" is correct.
     if(isBrowseRequest){
-      ({ data, error } = await supabase
+      ({ data, error } = await scoped(supabase
         .from('knowledge_articles')
         .select(COLS)
-        .eq('review_status', 'published')
+        .eq('review_status', 'published'))
         .order('published_at', { ascending: false, nullsFirst: false })
         .limit(60));
       if(error) throw error;
     }
 
-    if(specificSearchFailed) await logUnansweredQuery(topic.trim(), 'news');
+    if(specificSearchFailed) await logUnansweredQuery(original, 'news');
 
-    if(specificSearchFailed) return { results: [], note: `No published news articles found on "${topic.trim()}" specifically.` };
-    if(!data || !data.length) return { results: [], note: 'No published articles available yet.' };
-    return { results: mixNews(data) };
+    if(specificSearchFailed) return { results: [], note: `No published ${scopeLabel} news articles found on "${original}" specifically.` };
+    if(!data || !data.length) return { results: [], note: `No published ${scopeLabel} articles available yet.` };
+    return { results: mixNews(data), scope: isRegional ? 'regional' : 'local' };
   } catch(err){
     console.error('queryNewsDB error:', err);
     return { results: [], note: 'Could not reach the news database right now.' };

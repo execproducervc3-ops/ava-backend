@@ -89,3 +89,6 @@
   to = "/job/index.html"
   status = 200
   force = true
+
+[functions."ingest-news-regional"]
+  schedule = "0 */3 * * *"
