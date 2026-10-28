@@ -965,6 +965,7 @@ function renderRetailResults(groups){
         </div>
         <div class="pricevalwrap">
           <div class="priceval">$${Number(r.price).toFixed(2)}${r.unit ? `<span class="priceunit">/${escapeHtml(r.unit)}</span>` : ''}</div>
+          ${canTryOn({ item_name: r.item_name, photo_url: r.photo_url }, { category: r.category }) ? `<button type="button" class="tryonbtn" data-tryon-photo="${escapeHtml(r.photo_url)}" data-tryon-name="${escapeHtml(r.item_name)}">&#128085; See it on you</button>` : ''}
           ${r.listing_id ? `<button class="enquirybtn" data-listing-id="${escapeHtml(r.listing_id)}" data-offer-id="${escapeHtml(r.offer_id || '')}" data-details="${escapeHtml(`${r.item_name} — $${Number(r.price).toFixed(2)}${r.unit ? '/' + r.unit : ''}`)}" data-retailer="${escapeHtml(r.retailer)}">Send enquiry</button>` : ''}
         </div>
       </div>`;
