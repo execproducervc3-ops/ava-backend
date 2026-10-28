@@ -56,7 +56,7 @@ exports.handler = async (event) => {
   if (person.length > MAX_BYTES) return reply(400, { error: 'That photo is too large. Please use a smaller one.' });
   const personType = sniff(person);
   if (!personType) return reply(400, { error: 'Photos must be JPEG, PNG or WebP.' });
-  if (b.consent !== true) return reply(400, { error: 'Please tick the box to confirm you are happy for your photo to be sent to Google for this preview.' });
+  if (b.consent !== true) return reply(400, { error: 'Please tick the box to confirm you are happy for your photo to be sent to our AI image service for this preview.' });
   if (!allowedProductUrl(b.product_url)) return reply(400, { error: 'That item cannot be previewed.' });
 
   const day = new Date().toISOString().slice(0, 10);

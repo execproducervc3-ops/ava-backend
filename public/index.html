@@ -1577,7 +1577,7 @@ function openTryOn(productUrl, itemName){
       + '<div class="tr-pick"><input type="file" id="trFile" accept="image/jpeg,image/png,image/webp">'
       + '<img class="tr-pic" id="trMine" alt="" style="display:none">'
       + '<ul class="tr-tips"><li>One person, standing, full length if you can</li><li>Good light, plain background</li><li>Arms away from the body</li></ul></div></div>'
-      + '<label class="tr-consent"><input type="checkbox" id="trConsent"> <span>I am happy for my photo to be sent to Google to create this preview. AVA does not keep it.</span></label>'
+      + '<label class="tr-consent"><input type="checkbox" id="trConsent"> <span>I am happy for my photo to be sent to a secure AI image service to create this preview. AVA does not keep it.</span></label>'
       + '<div class="tr-err" id="trErr">' + escapeHtml(msg || '') + '</div>'
       + '<button type="button" class="tr-go" id="trGo" disabled>Create my preview</button>';
     const f = body.querySelector('#trFile'), mine = body.querySelector('#trMine'), cb = body.querySelector('#trConsent'), go = body.querySelector('#trGo'), err = body.querySelector('#trErr');
