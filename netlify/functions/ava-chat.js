@@ -43,6 +43,7 @@ Rules:
 - When listing news articles from query_news, every single article you mention MUST include its real source link as a markdown link: [Read more](exact source_url from the tool result). This is not optional for some articles and not others — every article in your list needs one, regardless of which of the three sources it's from. Never omit the link for some articles while including it for others.
 - For voter registration questions: this is real, public information published by SVG's Electoral Office, but as a set of static PDF lists by constituency, not a live searchable tool — set that expectation honestly. Ask which of the 15 constituencies the person is registered in if they haven't said (Central Kingstown, Central Leeward, East Kingstown, East St George, Marriaqua, North Central Windward, North Leeward, North Windward, Northern Grenadines, South Central Windward, South Leeward, South Windward, Southern Grenadines, West Kingstown, West St George), then call get_deep_link with service_type "voter_registration" and location set to their constituency. If they don't know their constituency, call it without a location — this links to the page listing all of them instead.
 - For a shopping list with multiple items (e.g. "milk, rice, chicken tacos"), call query_retail_price once per distinct item, not once with the whole list as a single string — each call should have exactly one product name. It's fine and expected to make several query_retail_price calls in the same turn for a list like this.
+- When someone wants to list, advertise or join their business on AVA, or asks what AVA can do for their business or how it helps businesses, call offer_business_signup and answer from the facts it returns: a short, warm, concrete reply (a few lines or a short list), then point to the button. Never promise sales, customers or traffic numbers, never quote a price, never promise a start date, and never ask for their business details in the chat (the form collects them): the AVA team confirms pricing and next steps personally.
 - Be concise, warm, and specific — like a well-connected local friend, not a corporate chatbot. Avoid filler.
 - For a named place or business AVA's own data doesn't have, you may call search_google_places. Say plainly that it comes from Google Maps, give the link, and never add opening hours, prices, phone numbers or ratings it did not return.
 - For directions (how to get somewhere, how to find a place): if you do not know where they are starting from, ask. Then call get_directions and give them in a friendly local way using only the landmarks returned.
@@ -327,6 +328,11 @@ const TOOLS = [
     }
   },
   {
+    name: 'offer_business_signup',
+    description: "Call this when someone wants to list, add, register, advertise or join their business, shop, service, event or products on AVA, OR asks what AVA can do for their business, how AVA helps businesses, what the benefits of listing are, how businesses get on AVA, or what listing costs. It shows the person a 'List my business' button that opens a short sign-up form, and returns the true facts about what AVA does for businesses. Answer from those facts only. Do not collect their business details in the chat: the form does that.",
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
     name: 'plan_trip',
     description: "Build a complete trip plan — flights, accommodation, car rental, and food — from one total budget. Splits the budget across categories, gets real live flight prices from Duffel, and pulls accommodation, car rental, and restaurant suggestions from AVA's own verified local directory (not international chains, since those don't serve SVG locally). Use this when someone gives a total trip budget and wants a full plan, not just one category.",
     input_schema: {
@@ -468,6 +474,8 @@ async function callWithBudget(messages, startTime){
   }
 }
 
+// Used only when Claude is unavailable: spot "list my business on AVA" so the form still appears.
+const SIGNUP_INTENT = /\b(what|how)\b[^.?!]{0,30}\bava\b[^.?!]{0,30}\b(do|help|offer|benefit)\b[^.?!]{0,30}\b(business\w*|shops?|stores?|compan\w+|vendors?|restaurants?|us|me)\b|\bbenefits?\b[^.?!]{0,30}\b(listing|ava)\b[^.?!]{0,30}\b(business|shop|store)\b|\b(list|add|register|put|advertis\w*|promote|sign\s*up|join|subscribe)\b[^.?!]{0,50}\b(business|shop|store|company|restaurant|bar|salon|service|products?|stall)\b|\bhow (do|can|could) (i|we) (get|be|become)\b[^.?!]{0,30}\b(on|listed on|part of|found on)\b[^.?!]{0,15}\bava\b|\bwith ava\b[^.?!]{0,30}\b(list|advertis|register|join)|\b(list|advertis\w*|register|join)\b[^.?!]{0,30}\bwith ava\b/i;
 const ON_A_BREAK = "AVA is on a break, brb in a bit \ud83e\udd9c";
 function isClaudeUnavailable(err){
   const st = err && err.status;
@@ -503,6 +511,16 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
   }
 
+  // A real "List my business" form submission: straight to the database, never through Claude, so it
+  // keeps working when Claude is down and no details depend on the model remembering them.
+  if(body.action === 'business_signup'){
+    const avaCore = require('./ava-core.js');
+    const h = event.headers || {};
+    const ip = String(h['x-nf-client-connection-ip'] || h['x-forwarded-for'] || '').split(',')[0].trim();
+    const result = await avaCore.submitBusinessLead(body, { ip });
+    return { statusCode: result.ok ? 200 : 400, headers: CORS, body: JSON.stringify(result) };
+  }
+
   const incoming = body.messages;
   const deviceId = body.deviceId || null;
   if(!Array.isArray(incoming) || !incoming.length){
@@ -520,6 +538,7 @@ exports.handler = async (event) => {
     let deepDives = null;
     let placeCards = null;
     let routeMap = null;
+    let signupCard = false;
     // Photo cards (free-licence photos only; the credit is always shown with the picture).
     const addPlaceCard = (name, sub, url, credit, source) => {
       if(!url || !credit) return;
@@ -573,7 +592,7 @@ exports.handler = async (event) => {
     // combined-size problem this was built to prevent, just spread across
     // several tool calls instead of one.
     let deepDiveFullTextCount = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'query_events', 'search_google_places', 'get_directions', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'query_events', 'search_google_places', 'get_directions', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification', 'offer_business_signup'];
 
     while(loops < 4){
       loops++;
@@ -713,6 +732,11 @@ exports.handler = async (event) => {
             const dir = await avaCore.queryDirections(toolUse.input.origin, toolUse.input.destination);
             if(dir.map) routeMap = dir.map;
             content = dir.steps ? `${dir.summary}\n\n${dir.steps.join('\n')}\n\nUse ONLY these landmarks. Where it says no mapped landmark, do not invent one.` : (dir.note || 'No directions available.');
+          }
+
+          else if(toolUse.name === 'offer_business_signup'){
+            signupCard = true;
+            content = "A 'List my business' button is now shown under your reply; tapping it opens a short form (business name, contact name, phone or WhatsApp, what they sell or offer) and the AVA team follows up personally. TRUE FACTS about what AVA does for a listed business (use only these; do not add benefits that are not listed): (1) Be found, in front of the right buyers: AVA strategically places a business's products in front of buyers based on price and location, so when people ask in plain words for prices, places, events and services, the business's current prices and details appear in the answer, matched to what the buyer wants and where they are, next to other shops' prices, with photos. Always include this point, in these terms. (2) Easy to update: the owner sends a photo of a price tag, shelf or flyer to AVA's Telegram bot, or uploads a full stock list as an Excel file; AVA reads it and the owner confirms before it goes live. Prices show how recent they are. (3) A business page with address, phone, website, current prices and events, with a share link that shows a neat preview card on WhatsApp and Facebook. (4) Customer enquiries: a 'Send enquiry' button on listings passes the customer's message to the business. (5) Events: businesses and promoters can list events, which appear when people ask what is on. (6) Clothing items can show a 'See it on you' outfit preview so shoppers can see how they might look. (7) Local to Saint Vincent and the Grenadines, and also reachable on Telegram. Limits to be honest about: AVA does not take payments, make bookings or deliver; it connects customers with the business. Do not promise sales, customers or traffic numbers. Listing is a paid monthly subscription: do not quote a price or promise a start date, the AVA team confirms pricing when they get in touch. The same form is at https://askvincy.com/#list for anyone not using the website (for example on Telegram). Reply briefly and warmly, do not ask for their details here.";
           }
 
           else if(toolUse.name === 'query_events'){
@@ -1027,13 +1051,17 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
         if(snap.length < 150000) share = { payload: snap, sig: shareCore.signPayload(snap) };
       }
     } catch(e){ console.error('share snapshot failed (non-fatal):', e.message); }
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards, routeMap, share }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: finalText, linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers, directoryResults, deepDives, placeCards, routeMap, signupCard: signupCard || undefined, share }) };
   } catch(err){
     console.error('ava-chat error:', err);
     await recordUsage(false, err && err.message, startTime, deviceId);
     // Claude itself is unavailable (out of credit, bad key, rate limit, overloaded or down):
     // say so in AVA's own voice instead of a generic error, and let the page keep it out of the conversation history.
     if(isClaudeUnavailable(err)){
+      const lastTxt = (() => { const m = Array.isArray(incoming) ? incoming[incoming.length - 1] : null; return m && m.role === 'user' && typeof m.content === 'string' ? m.content.slice(0, 300) : ''; })();
+      if(SIGNUP_INTENT.test(lastTxt)){
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ text: "AVA helps local businesses get found: AVA strategically places your products in front of buyers based on price and location, so people who ask for prices, places and events in plain words see yours. You can post prices by sending a photo or a stock list, get a business page with a share link, and receive customer enquiries. Fill in the short form below and the AVA team will tell you more. \ud83e\udd9c", signupCard: true }) };
+      }
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ unavailable: true, text: ON_A_BREAK }) };
     }
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Something went wrong. Please try again in a moment.' }) };
