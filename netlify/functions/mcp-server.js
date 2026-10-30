@@ -70,6 +70,24 @@ function getServer() {
   );
 
   server.tool(
+    "query_menu_items",
+    "Search the current menus of restaurants on AVA for a dish or drink, e.g. 'fried chicken', 'roti', 'sorrel'. Returns the restaurants whose menu lists it, with the item, the price in EC dollars as the restaurant typed it, and the restaurant's AVA page (ava_page) where the full menu can be seen and an order placed. Only restaurants that have put their menu on AVA are searched, so an empty result does not mean nobody serves it.",
+    {
+      dish: z.string().describe("The dish or drink to look for, e.g. 'fried chicken'"),
+      island: z.string().optional().describe("Optional island to filter by, e.g. 'Bequia'"),
+    },
+    async ({ dish, island }) => {
+      const r = await ava.queryMenuItems(dish, island);
+      const results = (r.results || []).map(d => ({
+        name: d.name, island: d.island, address: d.address, phone: d.phone,
+        ava_page: `https://askvincy.com/l/${d.id}`,
+        menu_updated_at: d.menu_updated_at, items: d.items.map(i => ({ item: i.name, price: i.price, note: i.note })),
+      }));
+      return asToolResult(results.length ? { results } : { results: [], note: r.note });
+    }
+  );
+
+  server.tool(
     "query_directory",
     "Real local SVG business directory — restaurants, pharmacies, doctors, taxi services, accommodation, car rental, and more. If a specific business is named, always pass business_name — otherwise this returns an unfiltered category list.",
     {
