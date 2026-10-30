@@ -103,7 +103,7 @@ async function listingPage(id){
   const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: l.name, url,
     address: { '@type': 'PostalAddress', streetAddress: l.address || undefined, addressLocality: l.island || undefined, addressCountry: 'VC' },
     telephone: l.phone || undefined, sameAs: site || undefined, image: photo || undefined };
-  return html(200, core.renderPage(template, { title: `${l.name} | AVA`, desc, image: photo || `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
+  return html(200, core.renderPage(template, { title: menuUrl ? `${l.name} menu | AVA` : `${l.name} | AVA`, desc, image: menuUrl || photo || `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
 }
 
 exports.handler = async (event) => {
