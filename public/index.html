@@ -328,6 +328,15 @@
   .tryon .tr-result{width:100%;border-radius:12px;margin:8px 0;display:block;}
   .tryon .tr-note{font-size:12px;color:var(--soft);margin:6px 0 10px;}
   .tryon .tr-wait{font-size:14px;margin:14px 0;text-align:center;color:var(--soft);}
+  .signupcard{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--teal-soft);}
+  .signupcard b{display:block;font-size:15px;margin-bottom:2px;color:var(--teal-dark);}
+  .signupcard span{display:block;font-size:13px;color:var(--soft);margin-bottom:10px;}
+  .signupbtn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;}
+  .signupbtn:hover{background:var(--teal-dark);}
+  .sf{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-size:13px;color:var(--soft);}
+  .sf input,.sf select,.sf textarea{font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);width:100%;box-sizing:border-box;}
+  .sf textarea{min-height:72px;resize:vertical;}
+  .sf.hp{position:absolute;left:-9999px;height:0;overflow:hidden;opacity:0;}
   .dirthumb{flex:0 0 auto;width:52px;height:52px;border-radius:8px;object-fit:cover;}
   .dirmain{flex:1;min-width:0;}
   .dirname{font-size:12.5px;font-weight:600;}
@@ -1232,6 +1241,10 @@ async function handleSend(text){
     if(data.routeMap){
       renderRouteMap(avaWrap && avaWrap.querySelector('.bubble'), data.routeMap);
     }
+    if(data.signupCard){
+      const bubble = avaWrap && avaWrap.querySelector('.bubble');
+      if(bubble) bubble.insertAdjacentHTML('beforeend', renderSignupCard());
+    }
     if(data.deepDives && data.deepDives.length){
       const bubble = avaWrap && avaWrap.querySelector('.bubble');
       if(bubble) bubble.insertAdjacentHTML('beforeend', renderDeepDiveCard(data.deepDives));
@@ -1622,6 +1635,63 @@ document.addEventListener('click', e => {
   const t = e.target.closest && e.target.closest('.tryonbtn');
   if(t){ e.preventDefault(); openTryOn(t.dataset.tryonPhoto, t.dataset.tryonName); }
 });
+
+
+// ---- "List my business": sign-up form (saved straight to AVA's database, never through the chat model) ----
+function renderSignupCard(){
+  return '<div class="signupcard"><b>List your business on AVA</b><span>Post prices, events and products where people are already asking. Tell us about your business and the AVA team will get in touch.</span><button type="button" class="signupbtn">List my business</button></div>';
+}
+function closeBizSignup(){
+  const o = document.getElementById('signupOv'); if(o) o.remove();
+  document.removeEventListener('keydown', signupEsc);
+  if(location.hash === '#list'){ try{ window.history.replaceState(null, '', location.pathname + location.search); }catch(e){} }
+}
+function signupEsc(e){ if(e.key === 'Escape') closeBizSignup(); }
+function openBizSignup(){
+  closeBizSignup();
+  const ov = document.createElement('div');
+  ov.id = 'signupOv'; ov.className = 'tryon-ov';
+  ov.innerHTML = '<div class="tryon" role="dialog" aria-modal="true" aria-label="List your business on AVA"><div class="bp-top"><button type="button" class="bp-close" aria-label="Close">&times;</button></div><div id="suBody"></div></div>';
+  ov.addEventListener('click', e => { if(e.target === ov || e.target.closest('.bp-close')) closeBizSignup(); });
+  document.body.appendChild(ov); document.addEventListener('keydown', signupEsc);
+  const body = ov.querySelector('#suBody');
+  body.innerHTML = '<h3>List your business on AVA</h3><div class="tr-sub">A few details, and the AVA team will contact you to talk it through. Nothing is charged by sending this form.</div>'
+    + '<label class="sf">Business name<input id="suBiz" maxlength="120" autocomplete="organization"></label>'
+    + '<label class="sf">Your name<input id="suName" maxlength="100" autocomplete="name"></label>'
+    + '<label class="sf">Phone or WhatsApp<input id="suPhone" type="tel" maxlength="40" autocomplete="tel" placeholder="e.g. 784 456 1234"></label>'
+    + '<label class="sf">Email (optional)<input id="suEmail" type="email" maxlength="120" autocomplete="email"></label>'
+    + '<label class="sf">Where are you based? (optional)<select id="suIsland"><option value="">Choose</option><option>Saint Vincent</option><option>Bequia</option><option>Canouan</option><option>Mustique</option><option>Mayreau</option><option>Union Island</option><option>Other</option></select></label>'
+    + '<label class="sf">What do you sell or offer?<textarea id="suOffer" maxlength="600" placeholder="e.g. Clothing and shoes in Kingstown. I would like to post my prices and new arrivals."></textarea></label>'
+    + '<label class="sf hp" aria-hidden="true">Website<input id="suWeb" tabindex="-1" autocomplete="off"></label>'
+    + '<label class="tr-consent"><input type="checkbox" id="suConsent"> <span>I am happy for the AVA team to contact me about listing my business.</span></label>'
+    + '<div class="tr-err" id="suErr"></div>'
+    + '<button type="button" class="tr-go" id="suGo">Send</button>';
+  const $ = id => body.querySelector('#' + id);
+  $('suGo').addEventListener('click', async () => {
+    const err = $('suErr'); err.textContent = '';
+    const v = { business_name: $('suBiz').value.trim(), contact_name: $('suName').value.trim(), phone: $('suPhone').value.trim(), email: $('suEmail').value.trim(), island: $('suIsland').value, offering: $('suOffer').value.trim() };
+    if(!v.business_name || !v.contact_name || !v.phone || !v.offering){ err.textContent = 'Please fill in your business name, your name, a phone number and what you sell or offer.'; return; }
+    if(!$('suConsent').checked){ err.textContent = 'Please tick the box to say it is OK for the AVA team to contact you.'; return; }
+    const go = $('suGo'); go.disabled = true; go.textContent = 'Sending…';
+    try{
+      const r = await fetch(AVA_CHAT_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'business_signup', ...v, consent: true, website: $('suWeb').value }) });
+      let d = {}; try{ d = await r.json(); }catch(e){}
+      if(r.ok && d.ok){
+        body.innerHTML = '<h3>Thank you!</h3><div class="tr-sub">We have your details for <b>' + escapeHtml(v.business_name) + '</b>. The AVA team will contact you on ' + escapeHtml(v.phone) + ' soon.</div><button type="button" class="tr-alt" id="suDone">Close</button>';
+        body.querySelector('#suDone').addEventListener('click', closeBizSignup);
+      } else {
+        err.textContent = d.error || 'Something went wrong sending that. Please try again in a moment.';
+        go.disabled = false; go.textContent = 'Send';
+      }
+    }catch(e){ err.textContent = 'Something went wrong sending that. Please try again in a moment.'; go.disabled = false; go.textContent = 'Send'; }
+  });
+  const first = $('suBiz'); if(first) first.focus();
+}
+document.addEventListener('click', e => { if(e.target.closest && e.target.closest('.signupbtn')) openBizSignup(); });
+function checkSignupHash(){ if(location.hash === '#list') openBizSignup(); }
+window.addEventListener('hashchange', checkSignupHash);
+checkSignupHash();
 
 // ---- Business panel: everything one business has posted ----
 function closeBizPanel(){ const o = document.getElementById('bizPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', bizEsc); }

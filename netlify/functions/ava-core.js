@@ -1621,6 +1621,45 @@ async function queryDirections(origin, destination){
   }
 }
 
+// A business asking to be listed on AVA. Saved first (so nothing is lost), then the owner is alerted on
+// Telegram if ADMIN_TELEGRAM_CHAT_ID is set. Called straight from the form, never through Claude.
+async function submitBusinessLead(f, ctx){
+  f = f || {}; ctx = ctx || {};
+  const clean = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+  if(f.website) return { ok: true };                       // hidden trap field: a bot filled it in
+  const lead = {
+    business_name: clean(f.business_name, 120), contact_name: clean(f.contact_name, 100), phone: clean(f.phone, 40),
+    email: clean(f.email, 120), island: clean(f.island, 40), offering: clean(f.offering, 600),
+  };
+  if(!lead.business_name || !lead.contact_name || !lead.phone || !lead.offering){
+    return { ok: false, error: 'Please fill in your business name, your name, a phone number and what you sell or offer.' };
+  }
+  if(lead.phone.replace(/\D/g, '').length < 7) return { ok: false, error: 'Please check the phone number.' };
+  if(lead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) return { ok: false, error: 'Please check the email address.' };
+  if(f.consent !== true) return { ok: false, error: 'Please tick the box to say it is OK for the AVA team to contact you.' };
+  try{
+    const ipHash = ctx.ip ? crypto.createHash('sha256').update('lead|' + ctx.ip + '|' + (process.env.SUPABASE_SERVICE_ROLE_KEY || '').slice(-12)).digest('hex').slice(0, 24) : null;
+    const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    if(ipHash){
+      const { count } = await supabase.from('business_leads').select('id', { count: 'exact', head: true }).eq('ip_hash', ipHash).gte('created_at', dayAgo);
+      if((count || 0) >= 5) return { ok: false, error: 'We already have several requests from you today. The AVA team will be in touch soon.' };
+    }
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const { data: dup } = await supabase.from('business_leads').select('id').eq('phone', lead.phone).eq('business_name', lead.business_name).gte('created_at', weekAgo).limit(1);
+    if(dup && dup.length) return { ok: true, duplicate: true };
+    const { error } = await supabase.from('business_leads').insert({ ...lead, email: lead.email || null, island: lead.island || null, ip_hash: ipHash });
+    if(error) throw error;
+    const chat = process.env.ADMIN_TELEGRAM_CHAT_ID;
+    if(chat){
+      await sendTelegramLead(chat, `New business wants to list on AVA\n\nBusiness: ${lead.business_name}\nContact: ${lead.contact_name}\nPhone/WhatsApp: ${lead.phone}${lead.email ? '\nEmail: ' + lead.email : ''}${lead.island ? '\nIsland: ' + lead.island : ''}\nOffers: ${lead.offering}`);
+    }
+    return { ok: true };
+  } catch(err){
+    console.error('submitBusinessLead error:', err.message);
+    return { ok: false, error: 'Something went wrong sending that. Please try again in a moment.' };
+  }
+}
+
 module.exports = {
   queryDirections, searchGooglePlaces, findPointOfInterestByName, listDeepDives, matchSpeciesPhotos,
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
@@ -1628,5 +1667,5 @@ module.exports = {
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
   queryReferenceKnowledge, queryDeepDive, searchKnowledgeBase, queryPointsOfInterest, queryEvents, formatEventWhen, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,
-  logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness,
+  logProductInterest, logUnansweredQuery, queryPricedListings, requestFromBusiness, submitBusinessLead,
 };

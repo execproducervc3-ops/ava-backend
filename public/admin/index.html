@@ -176,6 +176,17 @@
   </div>
 
   <div class="panel">
+    <h2>Business sign-ups</h2>
+    <div class="empty-note" style="margin-bottom:10px;">Businesses that used "List my business" on AVA. Call or WhatsApp them, then mark where each one is up to.</div>
+    <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+      <button type="button" class="btn-secondary" id="suFilterNew" style="padding:6px 12px;">New</button>
+      <button type="button" class="btn-secondary" id="suFilterAll" style="padding:6px 12px;">All</button>
+    </div>
+    <div class="empty-note" id="suMsg" style="display:none; margin-bottom:8px;"></div>
+    <div id="signupsList"></div>
+  </div>
+
+  <div class="panel">
     <h2>Product interest</h2>
     <div class="empty-note" style="margin-bottom:10px;">Total searches and distinct visitors per product, anonymous — no way to trace back to who searched.</div>
     <div id="interestList"></div>
@@ -655,6 +666,7 @@ async function tryLogin(password, showErrors){
   loadInterest();
   loadPhotoTracker();
   loadEmptyBusinesses();
+  loadSignups();
   return true;
 }
 
@@ -1759,6 +1771,7 @@ async function doRetailSearch(q){
         body: JSON.stringify({ id: btn.dataset.deleteItemId }),
       });
       doRetailSearch(document.getElementById('retailSearchInput').value);
+      loadEmptyBusinesses();
     });
   });
   resultsEl.querySelectorAll('[data-delete-retailer-id]').forEach(btn => {
@@ -1770,6 +1783,7 @@ async function doRetailSearch(q){
         body: JSON.stringify({ listing_id: btn.dataset.deleteRetailerId }),
       });
       doRetailSearch(document.getElementById('retailSearchInput').value);
+      loadEmptyBusinesses();
     });
   });
 }
@@ -2925,7 +2939,7 @@ function atoOpen(card, changeId, srcUrl){
 }
 
 // ---- Admin tabs: one tab per existing panel. Panels are only shown or hidden, never changed. ----
-const ADMIN_TAB_FIRST = ['Jobs awaiting approval','Businesses awaiting approval','Pending review','Agent drafts','Place photos','Source watch'];
+const ADMIN_TAB_FIRST = ['Jobs awaiting approval','Businesses awaiting approval','Business sign-ups','Pending review','Agent drafts','Place photos','Source watch'];
 let adminTabsReady = false;
 function initAdminTabs(){
   const root = document.getElementById('adminPanel');
@@ -2961,6 +2975,65 @@ function setTabCount(name, n){
   const c = b.querySelector('.tabcount'); c.textContent = n; c.style.display = n > 0 ? 'inline-block' : 'none';
 }
 initAdminTabs();
+
+// ---- Business sign-ups ("List my business" form) ----
+const SIGNUPS_API = '/.netlify/functions/admin-leads';
+let signupsAll = [], signupsShow = 'new';
+function waLink(phone){
+  let d = String(phone || '').replace(/\D/g, '');
+  if(d.length === 7) d = '1784' + d; else if(d.length === 10) d = '1' + d;
+  return d.length >= 10 ? 'https://wa.me/' + d : '';
+}
+function renderSignups(){
+  const listEl = document.getElementById('signupsList');
+  const rows = signupsShow === 'new' ? signupsAll.filter(r => r.status === 'new') : signupsAll;
+  document.getElementById('suFilterNew').style.outline = signupsShow === 'new' ? '2px solid var(--accent)' : 'none';
+  document.getElementById('suFilterAll').style.outline = signupsShow === 'all' ? '2px solid var(--accent)' : 'none';
+  if(!rows.length){ listEl.innerHTML = '<div class="empty-note">' + (signupsShow === 'new' ? 'No new sign-ups.' : 'No sign-ups yet.') + '</div>'; return; }
+  listEl.innerHTML = rows.map(r => {
+    const when = new Date(r.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'America/St_Vincent' });
+    const wa = waLink(r.phone);
+    return `<div style="border-top:1px solid var(--line); padding:12px 0;" data-su="${escapeHtml(r.id)}">
+      <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <b>${escapeHtml(r.business_name)}</b><span style="color:var(--soft); font-size:12px;">${escapeHtml(when)}${r.island ? ' · ' + escapeHtml(r.island) : ''}</span>
+      </div>
+      <div style="margin:4px 0;">${escapeHtml(r.contact_name)} · <a href="tel:${escapeHtml(String(r.phone).replace(/[^\d+]/g, ''))}">${escapeHtml(r.phone)}</a>${wa ? ` · <a href="${wa}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ''}${r.email ? ` · <a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>` : ''}</div>
+      <div style="margin:4px 0; color:var(--soft);">${escapeHtml(r.offering)}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:6px;">
+        <select class="susel">${['new', 'contacted', 'onboarded', 'declined'].map(s => `<option value="${s}"${r.status === s ? ' selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select>
+        <input type="text" class="sunotes" maxlength="1000" placeholder="Notes (price agreed, follow-up date…)" value="${escapeHtml(r.notes || '')}" style="flex:1; min-width:180px;">
+        <button type="button" class="btn-secondary susave" style="padding:6px 12px;">Save</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function loadSignups(){
+  const listEl = document.getElementById('signupsList'); if(!listEl) return;
+  try{
+    const res = await fetch(SIGNUPS_API + '?action=list', { headers: { 'X-Admin-Secret': secret } });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Could not load');
+    signupsAll = data.results || [];
+    setTabCount('Business sign-ups', signupsAll.filter(r => r.status === 'new').length);
+    renderSignups();
+  } catch(e){ listEl.innerHTML = '<div class="empty-note">Could not load sign-ups right now.</div>'; }
+}
+document.addEventListener('click', async (e) => {
+  if(e.target.id === 'suFilterNew'){ signupsShow = 'new'; renderSignups(); return; }
+  if(e.target.id === 'suFilterAll'){ signupsShow = 'all'; renderSignups(); return; }
+  const btn = e.target.closest && e.target.closest('.susave'); if(!btn) return;
+  const row = btn.closest('[data-su]'), msg = document.getElementById('suMsg');
+  btn.disabled = true;
+  try{
+    const res = await fetch(SIGNUPS_API + '?action=update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+      body: JSON.stringify({ id: row.dataset.su, status: row.querySelector('.susel').value, notes: row.querySelector('.sunotes').value }) });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error || 'Could not save');
+    msg.style.display = 'block'; msg.textContent = 'Saved.';
+    await loadSignups();
+  } catch(err){ msg.style.display = 'block'; msg.textContent = err.message; }
+  btn.disabled = false;
+});
 </script>
 </body>
 </html>
