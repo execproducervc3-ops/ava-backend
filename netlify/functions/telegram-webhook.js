@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { claimVendorCode } = require('./vendor-codes');
+const menuCore = require('./menu-core');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -68,6 +69,9 @@ exports.handler = async (event) => {
       }
       return ok();
     }
+
+    // --- restaurant menu board: /menu, then YES / NO on the board preview ---
+    if (await menuCore.handleMenu({ supabase, message, fromId, chatId, send: sendMessage, sendPhoto, gate: retailerSubscribedOrReply, anthropicKey: ANTHROPIC_KEY, site: 'https://askvincy.com' })) return ok();
 
     // --- confirmation of a pending submission (checked first — a "yes" should
     // always confirm a real pending draft, regardless of what onboarding
@@ -178,6 +182,14 @@ async function sendMessage(chatId, text) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text }),
   });
+}
+
+async function sendPhoto(chatId, buf, caption) {
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  fd.append('caption', caption);
+  fd.append('photo', new Blob([buf], { type: 'image/png' }), 'menu.png');
+  await fetch(`${TG_API}/sendPhoto`, { method: 'POST', body: fd });
 }
 
 function guessMediaType(filePath) {

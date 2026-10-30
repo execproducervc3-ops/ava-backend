@@ -9,7 +9,7 @@ exports.handler = async (event) => {
   if (!/^[0-9A-Za-z-]{1,64}$/.test(id)) return { statusCode: 404, headers: H, body: JSON.stringify({ error: 'not found' }) };
   try {
     const { data: l, error } = await supabase.from('directory_listings')
-      .select('id, name, address, island, parish, phone, website, category, photo_url, is_top_pick, top_pick_note, subscribed_until')
+      .select('id, name, address, island, parish, phone, website, category, photo_url, is_top_pick, top_pick_note, menu_image_url, menu_updated_at, subscribed_until')
       .eq('id', id).eq('status', 'active').maybeSingle();
     if (error) throw error;
     if (!l) return { statusCode: 404, headers: H, body: JSON.stringify({ error: 'not found' }) };
