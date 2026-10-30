@@ -95,3 +95,6 @@
 
 [functions."tryon"]
   timeout = 26
+
+[functions."telegram-webhook"]
+  timeout = 26
