@@ -83,12 +83,27 @@ async function foodPage(slug) {
 }
 
 // ---------- fares ----------
+function cruiseHtml(rows, h) {
+  if (!rows.length) return '';
+  const label = (t) => String(t || '').replace(/(\d)_(\d)/g, '$1-$2').replace(/_/g, ' ').replace(/\bover\b/i, 'Over').replace(/^./, c => c.toUpperCase());
+  const byPlace = new Map();
+  for (const r of rows) { const k = (r.places || []).join(', '); if (!byPlace.has(k)) byPlace.set(k, []); byPlace.get(k).push(r); }
+  const isReturn = (t) => /return|round/i.test(String(t || ''));
+  const body = [...byPlace.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([place, rs]) => {
+    const tiers = [...new Set(rs.map(r => r.passenger_tier))];
+    return `<tr><th colspan="4" style="padding-top:12px">${esc(place)}</th></tr>` + tiers.map(t => {
+      const one = rs.find(r => r.passenger_tier === t && !isReturn(r.trip_type)), ret = rs.find(r => r.passenger_tier === t && isReturn(r.trip_type));
+      return `<tr><td>${esc(label(t))} passengers</td><td>${one ? esc(money(one.regular_fare)) : ''}</td><td>${one ? esc(money(one.after_hours_fare)) : ''}</td><td>${ret ? esc(money(ret.regular_fare)) : ''}</td></tr>`;
+    }).join('');
+  }).join('');
+  return `<h2>${esc(h)}</h2><p class="note">Fares depend on group size. Return fares are for the round trip; no after-hours rate is published for return trips.</p><div class="card"><table><tr><th>Group</th><th>One way</th><th>After hours</th><th>Return</th></tr>${body}</table></div>`;
+}
 async function taxiPage() {
-  const { data, error } = await supabase.from('taxi_fares_official').select('places, regular_fare, after_hours_fare, origin_type, additional_passenger_fee');
+  const { data, error } = await supabase.from('taxi_fares_official').select('places, regular_fare, after_hours_fare, origin_type, passenger_tier, trip_type, additional_passenger_fee');
   if (error) throw error; if (!data || !data.length) return notFound();
   const groups = { airport: ['From Argyle International Airport (AIA)', 'The fare is for the taxi, for 1 to 3 passengers; each extra passenger adds the fee shown.'], kingstown: ['From Kingstown', 'Fares are per passenger.'], cruise_ship_berth: ['From the cruise ship berth', ''] };
   const body = `<h1>Official taxi fares in Saint Vincent</h1><p class="lead">Official fares for popular trips. After-hours fares apply late at night.</p>` +
-    Object.entries(groups).map(([k, [h, n]]) => { const rows = data.filter(r => r.origin_type === k); if (!rows.length) return ''; return `<h2>${esc(h)}</h2>${n ? `<p class="note">${esc(n)}</p>` : ''}<div class="card"><table><tr><th>To</th><th>Fare</th><th>After hours</th>${k === 'airport' ? '<th>Extra passenger</th>' : ''}</tr>${rows.sort((a, b) => String(a.places[0]).localeCompare(String(b.places[0]))).map(r => `<tr><td>${esc((r.places || []).join(', '))}</td><td>${esc(money(r.regular_fare))}</td><td>${esc(money(r.after_hours_fare))}</td>${k === 'airport' ? `<td>${esc(money(r.additional_passenger_fee))}</td>` : ''}</tr>`).join('')}</table></div>`; }).join('');
+    Object.entries(groups).map(([k, [h, n]]) => { if (k === 'cruise_ship_berth') return cruiseHtml(data.filter(r => r.origin_type === k), h); const rows = data.filter(r => r.origin_type === k); if (!rows.length) return ''; return `<h2>${esc(h)}</h2>${n ? `<p class="note">${esc(n)}</p>` : ''}<div class="card"><table><tr><th>To</th><th>Fare</th><th>After hours</th>${k === 'airport' ? '<th>Extra passenger</th>' : ''}</tr>${rows.sort((a, b) => String(a.places[0]).localeCompare(String(b.places[0]))).map(r => `<tr><td>${esc((r.places || []).join(', '))}</td><td>${esc(money(r.regular_fare))}</td><td>${esc(money(r.after_hours_fare))}</td>${k === 'airport' ? `<td>${esc(money(r.additional_passenger_fee))}</td>` : ''}</tr>`).join('')}</table></div>`; }).join('');
   return page(200, shell({ title: 'Taxi fares in Saint Vincent: airport and Kingstown | AVA', desc: 'Official taxi fares from Argyle airport and Kingstown to places across Saint Vincent, with after-hours fares.', path: '/fares/taxi', body }), 3600);
 }
 async function busPage() {
