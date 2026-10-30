@@ -69,7 +69,7 @@ async function answerPage(id){
 async function listingPage(id){
   if(!/^[0-9A-Za-z-]{1,64}$/.test(id)) return notFound('That listing');
   const { data: l, error: listErr } = await supabase.from('directory_listings')
-    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note, photo_url, menu_image_url, menu_updated_at, subscribed_until').eq('id', id).eq('status', 'active').maybeSingle();
+    .select('id, name, address, island, phone, website, category, is_top_pick, top_pick_note, photo_url, menu_image_url, menu_updated_at, menu_items, subscribed_until').eq('id', id).eq('status', 'active').maybeSingle();
   if(listErr){ console.error('share-page listing error:', listErr.message); throw new Error('read failed: ' + listErr.message); }
   if(!l) return notFound('That listing');
   const cat = String(l.category || '').replace(/_/g, ' ');
@@ -86,6 +86,9 @@ async function listingPage(id){
     + (posts.events.length ? `<div class="bizposts"><h2 style="font-size:15px;margin:18px 0 6px">Upcoming events</h2>${posts.events.map(ev => `<div class="row" style="display:block"><b>${core.esc(ev.title)}</b><br><small style="color:var(--soft)">${core.esc([ev.when, ev.venue].filter(Boolean).join(' · '))}</small></div>`).join('')}</div>` : '');
   const menuUrl = posts.subscribed ? core.safeHttp(l.menu_image_url) : '';
   const menuHtml = menuUrl ? `<div class="bizposts"><h2 style="font-size:15px;margin:18px 0 6px">Menu</h2><img class="listing-photo" style="max-height:none;height:auto;object-fit:contain;width:100%;border-radius:12px" src="${core.esc(menuUrl)}" alt="${core.esc(l.name)} menu"><p style="margin:6px 0 0;font-size:12px"><a href="${core.esc(menuUrl)}" target="_blank" rel="noopener noreferrer">Open full size</a></p><p style="margin:10px 0 0"><a class="sharebtn" style="text-decoration:none;background:var(--teal);color:#fff;border-color:var(--teal)" href="/?order=${encodeURIComponent(l.id)}">Place order</a></p></div>` : '';
+  const menuSecs = posts.subscribed && Array.isArray(l.menu_items) ? l.menu_items.filter(s => s && Array.isArray(s.items) && s.items.length) : [];
+  const menuPrice = (p) => !p ? '' : (/^[\d.]+$/.test(String(p).trim()) ? '$' + String(p).trim() : String(p).trim());
+  const menuTextHtml = menuSecs.length ? `<div class="bizposts"><h2 style="font-size:15px;margin:18px 0 6px">${core.esc(l.name)} menu items</h2>${menuSecs.map(s => `<h3 style="font-size:13px;margin:12px 0 4px;color:var(--soft)">${core.esc(s.title || 'Menu')}</h3>${s.items.map(i => `<div class="row" style="justify-content:space-between;gap:10px"><span>${core.esc(i.name)}${i.note ? `<br><small style="color:var(--soft)">${core.esc(i.note)}</small>` : ''}</span><b>${core.esc(menuPrice(i.price))}</b></div>`).join('')}`).join('')}</div>` : '';
   const staticHtml = `<div class="listing">
     ${photo ? `<img class="listing-photo photo-clickable" src="${core.esc(photo)}" data-full-photo="${core.esc(photo)}" alt="${core.esc(l.name)}">` : ''}
     <h1>${l.is_top_pick ? '<span style="color:var(--gold)">&#9733;</span> ' : ''}${core.esc(l.name)}</h1>
@@ -97,12 +100,14 @@ async function listingPage(id){
     <div class="sharepage-btns"><button type="button" class="sharebtn" id="shareThis">&#128279; Share</button>
       <a class="sharebtn" style="text-decoration:none" href="/">Ask AVA about this place</a></div>
     ${menuHtml}
+    ${menuTextHtml}
     ${postsHtml}
   </div>
   <div class="sharepage-note">Listing details are checked by AVA's team but can change; please confirm before you travel.</div>`;
-  const ld = { '@context': 'https://schema.org', '@type': 'LocalBusiness', name: l.name, url,
+  const ld = { '@context': 'https://schema.org', '@type': l.category === 'restaurant' ? 'Restaurant' : 'LocalBusiness', name: l.name, url,
     address: { '@type': 'PostalAddress', streetAddress: l.address || undefined, addressLocality: l.island || undefined, addressCountry: 'VC' },
     telephone: l.phone || undefined, sameAs: site || undefined, image: photo || undefined };
+  if (menuSecs.length) ld.hasMenu = { '@type': 'Menu', name: `${l.name} menu`, hasMenuSection: menuSecs.map(s => ({ '@type': 'MenuSection', name: s.title || 'Menu', hasMenuItem: s.items.map(i => ({ '@type': 'MenuItem', name: i.name, description: i.note || undefined, offers: /^[\d.]+$/.test(String(i.price || '').trim()) ? { '@type': 'Offer', price: String(i.price).trim(), priceCurrency: 'XCD' } : undefined })) })) };
   return html(200, core.renderPage(template, { title: menuUrl ? `${l.name} menu | AVA` : `${l.name} | AVA`, desc, image: menuUrl || photo || `${core.SITE}/og/l/${l.id}`, url, robots: 'index, follow', staticHtml, data: { kind: 'l' }, ld }));
 }
 
