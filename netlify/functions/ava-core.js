@@ -45,6 +45,9 @@ async function sendTelegramLead(chatId, text){
 // status. AVA makes the introduction; the business owns everything after
 // that, the same as an informal phone inquiry would today.
 async function requestFromBusiness(listingId, offerId, requesterName, requesterContact, details){
+  details = String(details == null ? '' : details).slice(0, 800);
+  requesterName = requesterName ? String(requesterName).slice(0, 80) : requesterName;
+  requesterContact = String(requesterContact == null ? '' : requesterContact).slice(0, 80);
   try{
     const { data: listing } = await supabase.from('directory_listings').select('id, name, subscription_tier, phone').eq('id', listingId).maybeSingle();
     if(!listing){
@@ -69,7 +72,10 @@ async function requestFromBusiness(listingId, offerId, requesterName, requesterC
       return { ok: true, routed: false, note: `${listing.name} isn't reachable through AVA directly yet — here's their contact info: ${listing.phone || 'not on file'}.` };
     }
 
-    const leadMessage = `New customer lead via AVA!\n\n${details}\n\nFrom: ${requesterName || 'A customer'}\nContact: ${requesterContact}`;
+    const isOrder = /^ORDER:/.test(details);
+    const leadMessage = isOrder
+      ? `New ORDER request via AVA!\n\n${details.replace(/^ORDER:\s*/, '')}\n\nFrom: ${requesterName || 'A customer'}\nContact: ${requesterContact}\n\nAVA does not take payment. Please contact the customer to confirm the order and the price.`
+      : `New customer lead via AVA!\n\n${details}\n\nFrom: ${requesterName || 'A customer'}\nContact: ${requesterContact}`;
     const sent = await sendTelegramLead(profile.telegram_user_id, leadMessage);
 
     if(!sent){
@@ -77,7 +83,7 @@ async function requestFromBusiness(listingId, offerId, requesterName, requesterC
       return { ok: true, routed: false, note: `Couldn't reach ${listing.name} directly right now — here's their contact info: ${listing.phone || 'not on file'}.` };
     }
 
-    return { ok: true, routed: true, note: `Passed your request straight to ${listing.name} — they'll follow up with you directly.` };
+    return { ok: true, routed: true, note: isOrder ? `Your order has been sent to ${listing.name}. They will contact you to confirm it and the price. No payment is taken through AVA.` : `Passed your request straight to ${listing.name} — they'll follow up with you directly.` };
   } catch(err){
     console.error('requestFromBusiness error:', err);
     return { ok: false, note: 'Something went wrong sending that request.' };

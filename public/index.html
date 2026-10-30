@@ -1095,7 +1095,7 @@ const AVA_CHAT_ENDPOINT = '/.netlify/functions/ava-chat';
 document.body.addEventListener('click', (e) => {
   const btn = e.target.closest('.enquirybtn');
   if(btn){
-    openEnquiryModal(btn.dataset.listingId, btn.dataset.offerId, btn.dataset.retailer, btn.dataset.details);
+    openEnquiryModal(btn.dataset.listingId, btn.dataset.offerId, btn.dataset.retailer, btn.dataset.details, btn.dataset.order === '1');
     return;
   }
   const photo = e.target.closest('.photo-clickable');
@@ -1120,13 +1120,14 @@ function openPhotoViewer(url){
 function closePhotoViewer(){
   document.getElementById('enquiryModalRoot').innerHTML = '';
 }
-function openEnquiryModal(listingId, offerId, retailer, details){
+function openEnquiryModal(listingId, offerId, retailer, details, isOrder){
   const root = document.getElementById('enquiryModalRoot');
   root.innerHTML = `
     <div class="enquiry-overlay" id="enquiryOverlay">
       <div class="enquiry-modal">
-        <h3>Send enquiry</h3>
-        <div class="enquiry-sub">To ${escapeHtml(retailer)} — ${escapeHtml(details)}</div>
+        <h3>${isOrder ? 'Place order' : 'Send enquiry'}</h3>
+        <div class="enquiry-sub">${isOrder ? 'To ' + escapeHtml(retailer) + '. They will contact you to confirm your order and the price. No payment is taken here.' : 'To ' + escapeHtml(retailer) + ' — ' + escapeHtml(details)}</div>
+        ${isOrder ? '<label>Your order</label><textarea id="enquiryOrder" maxlength="600" rows="4" placeholder="e.g. 2 fried chicken & rice, 1 sorrel. Pick up at 6pm" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;color:var(--ink);background:transparent"></textarea>' : ''}
         <label>Your name</label>
         <input type="text" id="enquiryName" placeholder="e.g. Rohan">
         <label>Phone or WhatsApp</label>
@@ -1146,7 +1147,13 @@ function openEnquiryModal(listingId, offerId, retailer, details){
   document.getElementById('enquirySend').addEventListener('click', async () => {
     const name = document.getElementById('enquiryName').value.trim();
     const contact = document.getElementById('enquiryContact').value.trim();
+    const orderEl = document.getElementById('enquiryOrder');
+    const orderText = orderEl ? orderEl.value.trim() : '';
     const resultBox = document.getElementById('enquiryResultBox');
+    if(isOrder && !orderText){
+      resultBox.innerHTML = `<div class="enquiry-result">Please type what you would like to order.</div>`;
+      return;
+    }
     if(!contact){
       resultBox.innerHTML = `<div class="enquiry-result">Please enter a phone or WhatsApp number.</div>`;
       return;
@@ -1165,13 +1172,14 @@ function openEnquiryModal(listingId, offerId, retailer, details){
           offer_id: offerId || null,
           requester_name: name || null,
           requester_contact: contact,
-          details,
+          details: isOrder ? ('ORDER: ' + orderText) : details,
         }),
       });
       const data = await res.json();
       resultBox.innerHTML = `<div class="enquiry-result">${escapeHtml(data.note || 'Something went wrong.')}</div>`;
       document.getElementById('enquiryName').style.display = 'none';
       document.getElementById('enquiryContact').style.display = 'none';
+      if(document.getElementById('enquiryOrder')) document.getElementById('enquiryOrder').style.display = 'none';
       document.querySelectorAll('.enquiry-modal label').forEach(l => l.style.display = 'none');
       document.getElementById('enquiryCancel').textContent = 'Close';
       sendBtn.style.display = 'none';
@@ -1692,6 +1700,17 @@ document.addEventListener('click', e => { if(e.target.closest && e.target.closes
 function checkSignupHash(){ if(location.hash === '#list') openBizSignup(); }
 window.addEventListener('hashchange', checkSignupHash);
 checkSignupHash();
+(async function checkOrderParam(){
+  try{
+    const id = new URLSearchParams(location.search).get('order');
+    if(!id || !/^[0-9A-Za-z-]{1,64}$/.test(id)) return;
+    window.history.replaceState(null, '', location.pathname);
+    const r = await fetch('/.netlify/functions/business-info?id=' + encodeURIComponent(id));
+    if(!r.ok) return;
+    const d = await r.json();
+    if(d.subscribed && d.business) openEnquiryModal(id, '', d.business.name, '', true);
+  } catch(e){}
+})();
 
 // ---- Business panel: everything one business has posted ----
 function closeBizPanel(){ const o = document.getElementById('bizPanelOv'); if(o) o.remove(); document.removeEventListener('keydown', bizEsc); }
@@ -1721,7 +1740,7 @@ async function openBizPanel(id){
       + (b.phone ? `<div class="bp-row">&#128222; <a href="tel:${escapeHtml(String(b.phone).replace(/[^\d+]/g,''))}">${escapeHtml(b.phone)}</a></div>` : '')
       + (site ? `<div class="bp-row">&#127760; <a href="${escapeHtml(site)}" target="_blank" rel="noopener noreferrer">${escapeHtml(site.replace(/^https?:\/\//i,'').replace(/\/$/,''))}</a></div>` : '')
       + `<div class="bp-top" style="justify-content:flex-start;margin:10px 0 0"><button type="button" class="sharebtn" id="bpShare">&#128279; Share this business</button></div>`
-      + (d.subscribed && b.menu_image_url && /^https?:\/\//i.test(b.menu_image_url) ? `<div class="bp-h">Menu</div><img class="bp-photo photo-clickable" src="${escapeHtml(b.menu_image_url)}" data-full-photo="${escapeHtml(b.menu_image_url)}" alt="${escapeHtml(b.name)} menu"><div style="font-size:12px;color:var(--soft);margin-top:4px">Menu updated ${escapeHtml(b.menu_updated_at ? new Date(b.menu_updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')}</div>` : '')
+      + (d.subscribed && b.menu_image_url && /^https?:\/\//i.test(b.menu_image_url) ? `<div class="bp-h">Menu</div><img class="bp-photo photo-clickable" src="${escapeHtml(b.menu_image_url)}" data-full-photo="${escapeHtml(b.menu_image_url)}" alt="${escapeHtml(b.name)} menu"><div style="font-size:12px;color:var(--soft);margin-top:4px">Menu updated ${escapeHtml(b.menu_updated_at ? new Date(b.menu_updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')}</div><button type="button" class="enquirybtn" style="margin-top:10px;width:100%;padding:10px" data-order="1" data-listing-id="${escapeHtml(b.id)}" data-retailer="${escapeHtml(b.name)}" data-details="">Place order</button>` : '')
       + (d.offers.length ? `<div class="bp-h">Current prices</div>` + d.offers.map(o => {
           const price = '$' + Number(o.price).toFixed(2) + (o.unit ? '/' + o.unit : '');
           const thumb = o.photo_url && /^https?:\/\//i.test(o.photo_url)

@@ -71,7 +71,7 @@ exports.handler = async (event) => {
     }
 
     // --- restaurant menu board: /menu, then YES / NO on the board preview ---
-    if (await menuCore.handleMenu({ supabase, message, fromId, chatId, send: sendMessage, sendPhoto, gate: retailerSubscribedOrReply, anthropicKey: ANTHROPIC_KEY, site: 'https://askvincy.com' })) return ok();
+    if (await menuCore.handleMenu({ supabase, message, fromId, chatId, send: sendMessage, sendPhoto, gate: retailerSubscribedOrReply, anthropicKey: ANTHROPIC_KEY, getPhoto: getTelegramFileBase64, site: 'https://askvincy.com' })) return ok();
 
     // --- confirmation of a pending submission (checked first — a "yes" should
     // always confirm a real pending draft, regardless of what onboarding
