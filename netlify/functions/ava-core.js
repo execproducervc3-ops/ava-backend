@@ -1012,6 +1012,52 @@ async function queryDirectory(category, island, businessName){
   }
 }
 
+// Searches the saved text menus (directory_listings.menu_items) for a dish, e.g. "fried chicken".
+// Matches every word of the search (ignoring plural s), in the item name or its note.
+function menuStem(w){ return w.length > 3 ? w.replace(/(es|s)$/, '') : w; }
+function menuTokens(s){
+  const stop = new Set(['and','the','with','of','a','an','in','on','for','some','any','where','can','get','buy','eat','find','i','to']);
+  return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w && !stop.has(w)).map(menuStem);
+}
+async function queryMenuItems(dish, island){
+  try{
+    const qt = menuTokens(dish);
+    if(!qt.length) return { results: [], note: 'No dish given.' };
+    let q = supabase.from('directory_listings')
+      .select('id, name, address, island, phone, category, photo_url, menu_items, menu_updated_at')
+      .eq('status', 'active').not('menu_items', 'is', null);
+    if(island && island.trim()) q = q.ilike('island', `%${island.trim()}%`);
+    const { data, error } = await q.limit(500);
+    if(error) throw error;
+    const phrase = qt.join(' ');
+    const results = [];
+    for(const l of (data || [])){
+      const hits = [];
+      for(const sec of (Array.isArray(l.menu_items) ? l.menu_items : [])){
+        for(const it of (sec && Array.isArray(sec.items) ? sec.items : [])){
+          const toks = menuTokens(`${it.name || ''} ${it.note || ''}`);
+          if(!qt.every(t => toks.includes(t))) continue;
+          const exact = menuTokens(it.name).join(' ').includes(phrase);
+          hits.push({ name: it.name, price: it.price || null, note: it.note || null, section: sec.title || null, exact });
+        }
+      }
+      if(hits.length){
+        hits.sort((a, b) => (b.exact ? 1 : 0) - (a.exact ? 1 : 0));
+        results.push({ id: l.id, name: l.name, address: l.address, island: l.island, phone: l.phone, category: l.category, photo_url: l.photo_url, menu_updated_at: l.menu_updated_at, items: hits.slice(0, 3), exact: hits.some(h => h.exact) });
+      }
+    }
+    results.sort((a, b) => (b.exact ? 1 : 0) - (a.exact ? 1 : 0) || String(b.menu_updated_at || '').localeCompare(String(a.menu_updated_at || '')));
+    if(!results.length){
+      await logUnansweredQuery(`menu item: ${dish}${island ? ' in ' + island : ''}`, 'menu_item');
+      return { results: [], note: `No restaurant menu on AVA lists "${dish}" yet. Only restaurants that have put their menu on AVA are searched.` };
+    }
+    return { results: results.slice(0, 12) };
+  } catch(err){
+    console.error('queryMenuItems error:', err);
+    return { results: [], note: 'Could not search menus right now.' };
+  }
+}
+
 const WHO_COUNTRY_CODE = 'VCT'; // WHO GHO uses ISO3 codes, same as World Bank/IMF
 const WHO_INDICATOR_MAP = {
   'life expectancy': { code: 'WHOSIS_000001', label: 'Life expectancy at birth (years)' },
@@ -1669,7 +1715,7 @@ async function submitBusinessLead(f, ctx){
 module.exports = {
   queryDirections, searchGooglePlaces, findPointOfInterestByName, listDeepDives, matchSpeciesPhotos,
   queryRetailPriceDB, queryMultipleRetailPrices, queryNewsDB, queryEconomicData, queryImfData,
-  queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryHealthData,
+  queryFerrySchedule, generateLuckyNumbers, queryDirectory, queryMenuItems, queryHealthData,
   queryFuelContext, queryWeather, queryMarineConditions, queryScholarships,
   queryReferenceKnowledge, queryDeepDive, searchKnowledgeBase, queryPointsOfInterest, queryEvents, formatEventWhen, planTrip, queryTaxiFare,
   queryBusFare, querySettlementClassification, buildDeepLink,

@@ -328,6 +328,18 @@ const TOOLS = [
     }
   },
   {
+    name: 'query_menu_items',
+    description: "Search the saved menus of restaurants on AVA for a dish or drink, e.g. 'fried chicken', 'roti', 'sorrel'. Use this FIRST when someone asks where they can get, eat or order a particular dish or drink (before query_directory or web search). It returns the restaurants whose current menu lists that item, with the item's name and price as the restaurant typed it. Only restaurants that have put their menu on AVA are searched, so an empty result does NOT mean nobody serves it: say AVA has no menu listing it yet, and you may then offer the wider restaurant directory. Report only the items and prices returned; never invent items, prices or opening hours. Tell the person they can open the restaurant's AVA page to see the full menu and place an order.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish: { type: 'string', description: 'The dish or drink, e.g. "fried chicken"' },
+        island: { type: 'string', description: 'Optional island, e.g. "Bequia". Omit to search all islands.' },
+      },
+      required: ['dish']
+    }
+  },
+  {
     name: 'offer_business_signup',
     description: "Call this when someone wants to list, add, register, advertise or join their business, shop, service, event or products on AVA, OR asks what AVA can do for their business or for a kind of business or worker (taxi drivers, restaurants, farmers, vendors, tour guides and so on), how AVA helps businesses, what the benefits of listing are, how businesses get on AVA, or what listing costs. It shows the person a 'List my business' button that opens a short sign-up form, and returns the true facts about what AVA does for businesses. Answer from those facts only. Do not collect their business details in the chat: the form does that.",
     input_schema: { type: 'object', properties: {} }
@@ -592,7 +604,7 @@ exports.handler = async (event) => {
     // combined-size problem this was built to prevent, just spread across
     // several tool calls instead of one.
     let deepDiveFullTextCount = 0;
-    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'query_events', 'search_google_places', 'get_directions', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification', 'offer_business_signup'];
+    const CUSTOM_TOOL_NAMES = ['get_deep_link', 'query_retail_price', 'query_multiple_retail_prices', 'query_news', 'query_economic_data', 'query_imf_data', 'query_ferry_schedule', 'generate_lucky_numbers', 'query_directory', 'query_health_data', 'query_scholarships', 'query_reference_knowledge', 'query_deep_dive', 'search_knowledge_base', 'query_weather', 'query_marine_conditions', 'query_fuel_context', 'query_points_of_interest', 'query_events', 'search_google_places', 'get_directions', 'plan_trip', 'query_taxi_fare', 'query_bus_fare', 'query_settlement_classification', 'offer_business_signup', 'query_menu_items'];
 
     while(loops < 4){
       loops++;
@@ -708,6 +720,15 @@ exports.handler = async (event) => {
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}${d.is_top_pick ? ` [REAL ADMIN-CURATED TOP PICK: ${d.top_pick_note || 'no reason given'}]` : ''}`).join('; ') +
                 (dirData.results.length >= 50 ? '\n\nNote: this hit the 50-result display limit — there may be more not shown. If relevant, tell the person you can narrow by island.' : '')
               : (dirData.note || 'No listings found.');
+          }
+
+          else if(toolUse.name === 'query_menu_items'){
+            const mData = await avaCore.queryMenuItems(toolUse.input.dish, toolUse.input.island);
+            if(mData.results && mData.results.length) directoryResults = mData.results;
+            noteShown('directory', (mData.results || []).slice(0, 10).map(d => d.id));
+            content = mData.results && mData.results.length
+              ? `Found ${mData.results.length} restaurant menu(s): ` + mData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''} lists ${d.items.map(i => `${i.name}${i.price ? ' EC$' + String(i.price).replace(/^EC\$?/i, '') : ''}`).join('; ')}`).join(' | ')
+              : (mData.note || 'No menu lists that item.');
           }
 
           else if(toolUse.name === 'query_points_of_interest'){
