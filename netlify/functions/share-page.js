@@ -5,6 +5,25 @@
 const { createClient } = require('@supabase/supabase-js');
 const core = require('./share-core');
 const { getBusinessPostings, ageText } = require('./business-data');
+
+// Price answers get a preview that says what the offer is, e.g.
+// "Lettuce from RB SALES, $5.00/lb, on AVA". Returns null for anything else.
+function priceAnswerPreview(d){
+  const groups = Array.isArray(d.retailResults) ? d.retailResults.filter(g => g && Array.isArray(g.results) && g.results.length) : [];
+  if (groups.length !== 1) return null;            // shopping lists and other answers keep the normal title
+  const g = groups[0];
+  const offers = g.results.filter(r => r && r.retailer && Number(r.price) > 0);
+  if (!offers.length) return null;
+  const cheapest = offers.reduce((a, b) => (Number(b.price) < Number(a.price) ? b : a));
+  const price = '$' + Number(cheapest.price).toFixed(2) + (cheapest.unit ? '/' + String(cheapest.unit).slice(0, 12) : '');
+  const raw = String(g.product || cheapest.item_name || '').replace(/\s+/g, ' ').trim().slice(0, 50);
+  if (!raw) return null;
+  const product = raw[0].toUpperCase() + raw.slice(1);
+  const vendors = new Set(offers.map(r => String(r.retailer).trim().toLowerCase())).size;
+  return vendors === 1
+    ? { title: `${product} from ${String(cheapest.retailer).trim().slice(0, 60)}, ${price}, on AVA`, desc: 'Prices from vendors on AVA. Tap to see the vendor and send an enquiry.' }
+    : { title: `${product} from ${price} at ${vendors} vendors, on AVA`, desc: 'Prices from vendors on AVA. Tap to compare and send an enquiry.' };
+}
 const template = require('./share-template');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -34,15 +53,15 @@ async function answerPage(id){
   const retailFlat = (Array.isArray(d.retailResults) ? d.retailResults : []).flatMap(r => Array.isArray(r && r.results) ? r.results : [r]);
   const retailPhoto = retailFlat.find(r => r && core.safeHttp(r.photo_url));
   const shareImage = photo ? photo.photo_url : retailPhoto ? retailPhoto.photo_url : `${core.SITE}/og/a/${id}`;
-  const preview = core.answerPreview(d);
-  const title = preview ? (/\bon AVA$|\| AVA$/.test(preview.title) ? preview.title : preview.title + ' | AVA') : core.answerTitle(d.q) + ' | AVA';
+  const pricePreview = priceAnswerPreview(d);
+  const title = pricePreview ? pricePreview.title : core.answerTitle(d.q) + ' | AVA';
   const url = `${core.SITE}/a/${id}`;
   const staticHtml = `${d.q ? `<div class="msg user"><div class="bubble">${core.esc(d.q)}</div></div>` : ''}<div class="msg ava"><div class="bubble">${String(d.text || '').split(/\n{2,}/).map(p => `<p>${core.esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</div></div>
     <div class="sharepage-note">Answered by AVA${whenTxt ? ' on ' + core.esc(whenTxt) : ''}. Prices, schedules and opening details can change, so check before you go.</div>
-    <div class="sharepage-btns" style="justify-content:center"><button type="button" class="sharebtn" id="shareThis">&#128279; Share</button></div>`;
+    <div class="sharepage-btns" style="justify-content:center">${(d.signupCard || /askvincy\.com\/#list/.test(String(d.text || ''))) ? `<a class="sharebtn" href="${core.SITE}/#list" style="text-decoration:none">List my business</a>` : ''}<button type="button" class="sharebtn" id="shareThis">&#128279; Share</button></div>`;
   // The client script re-renders the cards; keep the note and share button after it.
   return html(200, core.renderPage(template, {
-    title, desc: (preview && preview.desc) || core.plainText(d.text, 180), image: shareImage, url,
+    title, desc: pricePreview ? pricePreview.desc : core.plainText(d.text, 180), image: shareImage, url,
     robots: 'noindex, follow', staticHtml, data: { kind: 'a', data: d },
   }));
 }

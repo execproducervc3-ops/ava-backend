@@ -1046,7 +1046,7 @@ IMPORTANT — how to use this: report the most recently announced rate as a fact
         const snap = JSON.stringify({
           v: 1, q, text: finalText, at: new Date().toISOString(),
           linkCard, retailResults: retailResults.length ? retailResults : null, newsResults, ferryResults, luckyNumbers,
-          directoryResults, placeCards, routeMap,
+          directoryResults, placeCards, routeMap, signupCard: signupCard || undefined,
         });
         if(snap.length < 150000) share = { payload: snap, sig: shareCore.signPayload(snap) };
       }
