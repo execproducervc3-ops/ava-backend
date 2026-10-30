@@ -329,7 +329,7 @@ const TOOLS = [
   },
   {
     name: 'query_menu_items',
-    description: "Search the saved menus of restaurants on AVA for a dish or drink, e.g. 'fried chicken', 'roti', 'sorrel'. Use this FIRST when someone asks where they can get, eat or order a particular dish or drink (before query_directory or web search). It returns the restaurants whose current menu lists that item, with the item's name and price as the restaurant typed it. Only restaurants that have put their menu on AVA are searched, so an empty result does NOT mean nobody serves it: say AVA has no menu listing it yet, and you may then offer the wider restaurant directory. Report only the items and prices returned; never invent items, prices or opening hours. Tell the person they can open the restaurant's AVA page to see the full menu and place an order.",
+    description: "Search the saved menus of restaurants on AVA for a dish or drink, e.g. 'fried chicken', 'roti', 'sorrel'. Use this FIRST when someone asks where they can get, eat or order a particular dish or drink (before query_directory or web search). It returns the restaurants whose current menu lists that item, with the item's name and price as the restaurant typed it. Only restaurants that have put their menu on AVA are searched, so an empty result does NOT mean nobody serves it: say AVA has no menu listing it yet, and you may then offer the wider restaurant directory. Report only the items and prices returned; never invent items, prices or opening hours. Always link each restaurant you mention to its AVA page, and tell the person they can open it to see the full menu and place an order. Put restaurants that matched the dish first and do not bury them under a long directory list; if you also use query_directory, keep these matches at the top of your answer.",
     input_schema: {
       type: 'object',
       properties: {
@@ -594,6 +594,7 @@ exports.handler = async (event) => {
     let ferryResults = null;
     let luckyNumbers = null;
     let directoryResults = null;
+    let menuHits = null;   // restaurants whose menu matched a dish: kept first in the cards
     let loops = 0;
     // Request-scoped, not module-level — a warm function instance can
     // serve different users' concurrent requests, so this must reset for
@@ -714,7 +715,7 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_directory'){
             const dirData = await avaCore.queryDirectory(toolUse.input.category, toolUse.input.island, toolUse.input.business_name);
-            if(dirData.results && dirData.results.length) directoryResults = dirData.results;
+            if(dirData.results && dirData.results.length) directoryResults = menuHits ? [...menuHits, ...dirData.results.filter(d => !menuHits.some(m => m.id === d.id))] : dirData.results;
             noteShown('directory', (dirData.results || []).slice(0, 10).map(d => d.id));
             content = dirData.results && dirData.results.length
               ? `Found ${dirData.results.length}: ` + dirData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''}${d.is_top_pick ? ` [REAL ADMIN-CURATED TOP PICK: ${d.top_pick_note || 'no reason given'}]` : ''}`).join('; ') +
@@ -724,10 +725,10 @@ exports.handler = async (event) => {
 
           else if(toolUse.name === 'query_menu_items'){
             const mData = await avaCore.queryMenuItems(toolUse.input.dish, toolUse.input.island);
-            if(mData.results && mData.results.length) directoryResults = mData.results;
+            if(mData.results && mData.results.length){ menuHits = mData.results; directoryResults = [...mData.results]; }
             noteShown('directory', (mData.results || []).slice(0, 10).map(d => d.id));
             content = mData.results && mData.results.length
-              ? `Found ${mData.results.length} restaurant menu(s): ` + mData.results.map(d => `${d.name} (listing_id: ${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''} lists ${d.items.map(i => `${i.name}${i.price ? ' EC$' + String(i.price).replace(/^EC\$?/i, '') : ''}`).join('; ')}`).join(' | ')
+              ? `Found ${mData.results.length} restaurant menu(s): ` + mData.results.map(d => `${d.name} (listing_id: ${d.id}, AVA page: https://askvincy.com/l/${d.id})${d.island ? ` (${d.island})` : ''}${d.phone ? `, ${d.phone}` : ''} lists ${d.items.map(i => `${i.name}${i.price ? ' EC$' + String(i.price).replace(/^EC\$?/i, '') : ''}`).join('; ')}`).join(' | ') + '\n\nIn your reply, link each restaurant you name to its AVA page as a markdown link, like [Name](the AVA page URL above), so the person can open the full menu and place an order. The restaurant is already shown as a card below your answer.'
               : (mData.note || 'No menu lists that item.');
           }
 
