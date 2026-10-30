@@ -98,3 +98,65 @@
 
 [functions."telegram-webhook"]
   timeout = 26
+
+# Google-searchable pages (seo-pages)
+[[redirects]]
+  from = "/food"
+  to = "/.netlify/functions/seo-pages/food"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/food/:dish"
+  to = "/.netlify/functions/seo-pages/food/:dish"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/fares/taxi"
+  to = "/.netlify/functions/seo-pages/fares/taxi"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/fares/bus"
+  to = "/.netlify/functions/seo-pages/fares/bus"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/ferry"
+  to = "/.netlify/functions/seo-pages/ferry"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/prices"
+  to = "/.netlify/functions/seo-pages/prices"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/prices/:item"
+  to = "/.netlify/functions/seo-pages/prices/:item"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/directory"
+  to = "/.netlify/functions/seo-pages/directory"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/directory/:cat"
+  to = "/.netlify/functions/seo-pages/directory/:cat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/seo-pages/sitemap.xml"
+  status = 200
+  force = true
+
