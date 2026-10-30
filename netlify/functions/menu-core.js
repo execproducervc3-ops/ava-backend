@@ -248,7 +248,7 @@ async function metaFor(listing) {
 }
 
 // ---------- Telegram conversation ----------
-const HELP = 'Send your menu as text and I will draw a menu board for your AVA page.\n\nSend /menu followed by your menu, one item per line with the price. Put a heading on its own line to make sections. For example:\n\n/menu\nMains\nFried chicken & rice 18\nStew fish & provisions 22\nDrinks\nSorrel 5\nPassion fruit juice 6\n\nI will show you the board first. Reply YES to publish it (it replaces your current menu) or send /menu again with changes.\n\nMore options:\n/menu style : choose a look (teal, chalk, cream, sunset)\n/logo : add your logo, then send the photo\n/menu contact your phone, address or hours : the line at the bottom of the board\n/menu remove : take your menu down';
+const HELP = 'Send your menu as text and I will draw a menu board for your AVA page.\n\nSend /menu followed by your menu, one item per line with the price. Put a heading on its own line to make sections. For example:\n\n/menu\nMains\nFried chicken & rice 18\nStew fish & provisions 22\nDrinks\nSorrel 5\nPassion fruit juice 6\n\nI will show you the board first. Reply YES to publish it (it replaces your current menu) or send /menu again with changes.\n\nMore options:\n/menu style : choose a look (teal, chalk, cream, sunset)\n/logo : add your logo, then send the photo\n/poster : get a printable poster with a QR code to your page\n/menu contact your phone, address or hours : the line at the bottom of the board\n/menu remove : take your menu down';
 const STYLE_HELP = 'Choose a look by sending, for example, /menu style cream\n\n' + THEME_KEYS.map(k => `${k}: ${THEMES[k].label}`).join('\n');
 const LISTING_COLS = 'id, name, island, address, phone, website, menu_image_path, menu_items, menu_style, menu_contact, logo_url, logo_path';
 
@@ -259,11 +259,12 @@ async function handleMenu(ctx) {
   if (!text && !isPhoto) return false;
   const cmd = !isPhoto ? /^\/menu(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text) : null;
   const logoCmd = /^\/logo(?:@\w+)?(?:\s+(\S+))?\s*$/i.exec(text);
+  const posterCmd = !isPhoto && /^\/poster(?:@\w+)?\s*$/i.test(text);
   const { data: draft } = await supabase.from('menu_draft').select('*').eq('telegram_user_id', fromId).maybeSingle();
   const fresh = draft && Date.now() - new Date(draft.created_at).getTime() < DRAFT_MINUTES * 60000;
   const isYes = !isPhoto && /^(yes|y|confirm)$/i.test(text), isNo = !isPhoto && /^(no|n|cancel)$/i.test(text);
 
-  const claims = cmd || logoCmd
+  const claims = cmd || logoCmd || posterCmd
     || (isPhoto && fresh && draft.status === 'awaiting_logo')
     || (!isPhoto && fresh && draft.status === 'awaiting' && !text.startsWith('/'))
     || (fresh && draft.status === 'pending' && (isYes || isNo));
@@ -289,6 +290,31 @@ async function handleMenu(ctx) {
     await setDraft({ status: 'pending', raw_text: null, board: board.sections });
     await sendPhoto(chatId, png, `${intro} (${board.count} items). Reply YES to publish it on AVA, replacing your current menu, or send /menu again with changes.`);
   };
+
+  // ----- poster: a printable "scan to see us on AVA" sheet with a QR code -----
+  if (posterCmd) {
+    try {
+      const { renderPoster } = require('./poster-core');
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      const hasPrices = ((await supabase.from('retail_offers').select('id', { count: 'exact', head: true }).eq('listing_id', listing.id).in('review_status', ['auto_published', 'approved'])).count || 0) > 0;
+      const info = { id: listing.id, name: listing.name, logo_url: listing.logo_url, hasMenu: !!listing.menu_image_path, hasPrices };
+      await send(chatId, 'Making your posters now...');
+      for (const [size, label] of [['a4', 'A4 poster for printing'], ['square', 'Square version for social media']]) {
+        const png = await renderPoster(info, size);
+        const fd = new FormData();
+        fd.append('chat_id', String(chatId));
+        fd.append('caption', label);
+        fd.append('document', new Blob([png], { type: 'image/png' }), `ava-poster-${size}.png`);
+        const r = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: fd });
+        if (!r.ok) throw new Error('sendDocument ' + r.status);
+      }
+      await send(chatId, 'Print the A4 one and put it by the till or on the door. Customers scan the code with their phone camera and land on your AVA page.');
+    } catch (e) {
+      console.error('poster error:', e.message);
+      await send(chatId, 'I could not make your poster right now. Please try again in a moment.');
+    }
+    return true;
+  }
 
   // ----- logo -----
   if (logoCmd || (isPhoto && fresh && draft.status === 'awaiting_logo')) {

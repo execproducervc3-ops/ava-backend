@@ -9,6 +9,7 @@
     "bcryptjs": "^2.4.3",
     "fast-xml-parser": "^5.11.0",
     "fetch-to-node": "^2.1.0",
+    "qrcode": "^1.5.4",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   }
