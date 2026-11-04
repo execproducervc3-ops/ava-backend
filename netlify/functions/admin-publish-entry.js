@@ -59,8 +59,18 @@ async function publish(type, f, sourceUrl, changeId, confirmReplace) {
   if (type === 'news') {
     const topic = clip(f.topic, 200), body = clip(f.body, 4000);
     if (topic.length < 5 || body.length < 40) return bad('News needs a headline and at least 40 characters of text.');
-    const { error } = await supabase.from('knowledge_articles').insert({
-      topic, body, sensitivity_tier: 'low', review_status: 'published', source: 'admin:source-watch', source_url: src, published_at: now });
+    // news-dup-check: source_url is unique, but one page can hold several news items.
+    // A different headline from the same link is stored under link#headline-tag.
+    const tag = topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    const key = src.split('#')[0];
+    const keys = [key, key + '#' + tag];
+    const { data: found } = await supabase.from('knowledge_articles').select('id, topic, source_url').in('source_url', keys);
+    const same = (found || []).find(r => String(r.topic || '').trim().toLowerCase() === topic.toLowerCase());
+    if (same && confirmReplace !== true) return reply(409, { needs_confirm: true, error: `AVA already has this news item ("${same.topic}"). Publishing will replace its text.` });
+    const row = { topic, body, sensitivity_tier: 'low', review_status: 'published', source: 'admin:source-watch', source_url: same ? same.source_url : ((found || []).length ? key + '#' + tag : key), published_at: now };
+    const { error } = same
+      ? await supabase.from('knowledge_articles').update(row).eq('id', same.id)
+      : await supabase.from('knowledge_articles').insert(row);
     if (error) throw error;
     label = topic;
   } else if (type === 'scholarship') {
