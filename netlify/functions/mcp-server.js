@@ -57,7 +57,7 @@ function getServer() {
     "Real inter-island ferry schedules for SVG.",
     {
       destination: z.string().describe("Ferry destination, e.g. 'Bequia'"),
-      day_of_week: z.string().optional().describe("Optional day of week to filter by"),
+      day_of_week: z.string().optional().describe("Optional day: a name (e.g. 'Thursday'), 'today', 'tomorrow', or 0 (Sunday) to 6 (Saturday). Defaults to today in St Vincent."),
     },
     async ({ destination, day_of_week }) => asToolResult(await ava.queryFerrySchedule(destination, day_of_week))
   );

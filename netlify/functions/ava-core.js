@@ -457,9 +457,71 @@ async function queryImfData(indicatorKey){
 // know" still leaves the person somewhere useful to go, not a dead end.
 const FERRY_OPERATOR_CONTACTS = 'Bequia Express (bequiaexpress.com), Admiral Ferries ((784) 458-3348, WhatsApp (784) 534-7707), Jaden Sun Fast Ferry (jadensunferry.com, (784) 451-2192)';
 
+// Day of the week as 0 (Sunday) to 6 (Saturday). AVA's chat passes a number; the MCP tool may pass a
+// name ("Thursday", "thu"), "today", "tomorrow", a numeric string, or nothing (= today in St Vincent).
+const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+function svgNow(){ return new Date(Date.now() - 4 * 3600 * 1000); }   // St Vincent is UTC-4 all year
+function normaliseDay(dayOfWeek){
+  if(typeof dayOfWeek === 'number' && Number.isInteger(dayOfWeek) && dayOfWeek >= 0 && dayOfWeek <= 6) return dayOfWeek;
+  const v = String(dayOfWeek == null ? '' : dayOfWeek).trim().toLowerCase();
+  const today = svgNow().getUTCDay();
+  if(!v || v === 'today') return today;
+  if(v === 'tomorrow') return (today + 1) % 7;
+  if(/^[0-6]$/.test(v)) return Number(v);
+  const i = DAY_NAMES.indexOf(v.slice(0, 3));
+  return i >= 0 ? i : null;
+}
+// The next date (today or later, St Vincent time) falling on that day of the week, as YYYY-MM-DD.
+function nextDateFor(day){
+  const now = svgNow(), ahead = (day - now.getUTCDay() + 7) % 7;
+  return new Date(now.getTime() + ahead * 864e5).toISOString().slice(0, 10);
+}
+
+// Live sailings from Travel Pal (travelpal784.netlify.app), for the ferry companies that agreed to
+// share with AVA: real times, whether a sailing is boarding, at sea or cancelled, and adult fares.
+// Returns null when Travel Pal isn't set up, has nothing for this trip, or doesn't answer in time,
+// so AVA falls back to its own confirmed table.
+const TRAVELPAL_API = process.env.TRAVELPAL_API_URL || 'https://gtxmvazfuetokwyevxim.supabase.co/functions/v1/ava-api';
+async function travelPalSailings(dest, date){
+  const key = process.env.TRAVELPAL_API_KEY;
+  if(!key) return null;
+  try{
+    const url = `${TRAVELPAL_API}/sailings?to=${encodeURIComponent(dest)}&date=${date}`;
+    const res = await fetch(url, { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(4000) });
+    if(!res.ok){ console.error('Travel Pal sailings:', res.status); return null; }
+    const data = await res.json();
+    if(!data || !Array.isArray(data.sailings) || !data.sailings.length) return null;
+    return {
+      results: data.sailings.map(s => ({
+        operator: s.company,
+        vessel: s.vessel,
+        origin: s.from,
+        destination: s.to,
+        departure_time: s.leaves_here_about || s.sails_from_first_stop,
+        status: s.status,                 // scheduled, boarding, at sea, finished or cancelled
+        cancel_reason: s.cancel_reason || undefined,
+        fare_economy: s.adult_fare_ec,
+      })),
+      date: data.date,
+      source: 'Travel Pal (live from the ferry companies)',
+      as_of: data.as_of,
+      note: 'Live from Travel Pal. Times after a sailing\'s first stop are estimates.',
+    };
+  } catch(err){
+    console.error('Travel Pal sailings failed (falling back):', err.message);
+    return null;
+  }
+}
+
 async function queryFerrySchedule(destination, dayOfWeek){
   const dest = (destination || '').trim();
   if(!dest) return { results: [], note: 'No destination given.' };
+  const day = normaliseDay(dayOfWeek);
+  if(day === null) return { results: [], note: 'Give the day as a name (e.g. Thursday) or a number from 0 (Sunday) to 6 (Saturday).' };
+
+  const live = await travelPalSailings(dest, nextDateFor(day));
+  if(live) return live;
+
   try{
     const { data: routes, error: routeErr } = await supabase
       .from('ferry_routes')
@@ -477,11 +539,11 @@ async function queryFerrySchedule(destination, dayOfWeek){
       .from('ferry_schedules')
       .select('route_id, departure_time, fare_economy, last_verified_at')
       .in('route_id', routeIds)
-      .eq('day_of_week', dayOfWeek)
+      .eq('day_of_week', day)
       .order('departure_time', { ascending: true });
     if(schedErr) throw schedErr;
     if(!schedules || !schedules.length){
-      await logUnansweredQuery(`ferry schedule: ${dest} on day_of_week ${dayOfWeek}`, 'ferry_schedule');
+      await logUnansweredQuery(`ferry schedule: ${dest} on day_of_week ${day}`, 'ferry_schedule');
       return { results: [], note: `No sailings found for ${dest} on that day in AVA's database. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
     }
 
