@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>AVA Ferry Check</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f6f8;color:#1c2330;line-height:1.45}
+header{background:#0b3d5c;color:#fff;padding:14px 16px}
+header h1{margin:0;font-size:18px}
+header p{margin:4px 0 0;font-size:13px;opacity:.85}
+main{max-width:900px;margin:0 auto;padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #c5ccd6;background:#fff;cursor:pointer}
+button.primary{background:#0b3d5c;color:#fff;border-color:#0b3d5c}
+button.danger{color:#a12b2b;border-color:#e2b4b4}
+button:disabled{opacity:.5;cursor:default}
+.tab.active{background:#0b3d5c;color:#fff;border-color:#0b3d5c}
+input{font:inherit;width:100%;padding:8px;border:1px solid #c5ccd6;border-radius:8px}
+.card{background:#fff;border:1px solid #dde2ea;border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:16px}
+.meta{font-size:13px;color:#5b6677;margin-bottom:6px}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#e8eef5;margin-right:6px}
+.badge.ok{background:#d9f2e0}.badge.warn{background:#fdecc8}
+table{border-collapse:collapse;font-size:13px;margin:6px 0}
+td,th{border:1px solid #e3e7ee;padding:4px 8px;text-align:left;vertical-align:top}
+th{background:#f0f3f8}
+.ev{font-size:13px;border-top:1px solid #eef0f4;padding-top:8px;margin-top:8px}
+.ev a{word-break:break-all}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#login{max-width:340px;margin:60px auto;padding:16px}
+#msg{padding:10px 12px;border-radius:8px;margin-bottom:12px;display:none;font-size:14px}
+#msg.ok{display:block;background:#d9f2e0}#msg.err{display:block;background:#f8d7d7}
+.empty{text-align:center;color:#5b6677;padding:40px 0}
+label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
+</style></head><body>
+<header><h1>AVA Ferry Check</h1><p>The weekly check only proposes. A timetable changes only when you approve it here.</p></header>
+<div id="login"><label for="pw">Admin password</label><input id="pw" type="password" autocomplete="off"><div class="actions"><button class="primary" id="go">Sign in</button></div></div>
+<main id="app" style="display:none">
+  <div id="msg"></div>
+  <div class="card" id="status">Loading...</div>
+  <div class="bar">
+    <button class="tab active" data-s="pending">Pending</button>
+    <button class="tab" data-s="approved">Approved</button>
+    <button class="tab" data-s="rejected">Rejected</button>
+    <span style="flex:1"></span>
+    <button id="run">Run ferry check now</button>
+  </div>
+  <div id="list"></div>
+</main>
+<script>
+(function(){
+  var API='/.netlify/functions/admin-ferry';
+  var pw='', status='pending';
+  var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var $=function(id){return document.getElementById(id)};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function say(t,ok){var m=$('msg');m.textContent=t;m.className=ok?'ok':'err'}
+  function api(action,method,body,qs){
+    return fetch(API+'?action='+action+(qs||''),{method:method,headers:{'X-Admin-Secret':pw,'Content-Type':'application/json'},body:method==='POST'?JSON.stringify(body||{}):undefined})
+      .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('Error '+r.status));return j})});
+  }
+  function when(s){return s?new Date(s).toLocaleString():'never'}
+  function days(s){if(!s)return 0;return Math.floor((Date.now()-new Date(s).getTime())/864e5)}
+  function t(x){return String(x||'').slice(0,5)+(x&&x.fare!=null?'':'')}
+  function sail(list){return (list||[]).map(function(x){return esc(String(x.time).slice(0,5))+(x.fare!=null?' (EC$'+esc(x.fare)+')':'')}).join(', ')||'none'}
+  function evidence(list){
+    return (list||[]).map(function(e){
+      return '<div class="ev"><span class="badge '+(e.verified?'ok':'warn')+'">'+(e.verified?'quote found on the page':'quote NOT confirmed on the page')+'</span>'+
+        '&ldquo;'+esc(e.quote)+'&rdquo;'+(e.source_url?'<br><a href="'+esc(e.source_url)+'" target="_blank" rel="noopener">'+esc(e.source_url)+'</a>':'')+'</div>';
+    }).join('');
+  }
+  function body(p){
+    if(p.type==='operator_status'){
+      return '<div class="meta">'+esc(p.note)+'</div><div class="meta">Approving switches off '+(p.route_ids||[]).length+' route(s) so AVA stops quoting them.</div>';
+    }
+    if(p.type==='new_route'){
+      var rows=Object.keys(p.after||{}).map(function(d){return '<tr><td>'+DAYS[d]+'</td><td>'+sail(p.after[d])+'</td></tr>'}).join('');
+      return '<div class="meta">Not in AVA yet. Approving adds the route and these sailings.</div><table><tr><th>Day</th><th>Sailings</th></tr>'+rows+'</table>';
+    }
+    var rows2=Object.keys(p.changed||{}).map(function(d){var c=p.changed[d];return '<tr><td>'+DAYS[d]+'</td><td>'+sail(c.before)+'</td><td>'+sail(c.after)+'</td></tr>'}).join('');
+    return '<div class="meta">Approving replaces the stored sailings on these days.</div><table><tr><th>Day</th><th>AVA has now</th><th>Source says</th></tr>'+rows2+'</table>';
+  }
+  function load(){
+    api('status','GET').then(function(s){
+      var sum=s.summary, sh='<h3>Last check</h3><div class="meta">Started '+esc(when(s.last_started))+(s.last_finished?', finished '+esc(when(s.last_finished)):' (not finished or never run)')+'</div>';
+      sh+='<div class="meta">'+s.stored_sailings+' sailings stored. Oldest confirmation: '+esc(when(s.oldest_verified))+' ('+days(s.oldest_verified)+' days ago). Newest: '+esc(when(s.newest_verified))+'.</div>';
+      if(sum){sh+='<div class="meta">Proposals raised: '+sum.proposals+'. Rows re-confirmed automatically: '+sum.stamped+'.'+((sum.skipped_live||[]).length?' Covered live by Travel Pal: '+esc(sum.skipped_live.join(', '))+'.':'')+((sum.errors||[]).length?' Problems: '+esc(sum.errors.join('; ')):'')+'</div>';}
+      $('status').innerHTML=sh;
+    }).catch(function(e){$('status').textContent=e.message});
+    api('list','GET',null,'&status='+status).then(function(r){
+      var d=r.drafts||[];
+      if(!d.length){$('list').innerHTML='<div class="empty">Nothing '+status+'.</div>';return}
+      $('list').innerHTML=d.map(function(x){
+        var p=x.payload||{};
+        var h='<div class="card"><h3>'+esc(p.title||x.subject)+'</h3><div class="meta">'+esc(new Date(x.created_at).toLocaleString())+'</div>'+body(p)+evidence(p.evidence);
+        if(status==='pending')h+='<div class="actions"><button class="primary" data-a="approve" data-id="'+esc(x.id)+'">Approve</button><button class="danger" data-a="reject" data-id="'+esc(x.id)+'">Reject</button></div>';
+        return h+'</div>';
+      }).join('');
+    }).catch(function(e){say(e.message)});
+  }
+  $('go').onclick=function(){
+    pw=$('pw').value;
+    api('list','GET',null,'&status=pending').then(function(){$('login').style.display='none';$('app').style.display='block';load()}).catch(function(){alert('Wrong password')});
+  };
+  $('pw').addEventListener('keydown',function(e){if(e.key==='Enter')$('go').click()});
+  document.querySelectorAll('.tab').forEach(function(b){b.onclick=function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});b.classList.add('active');status=b.dataset.s;load();
+  }});
+  $('run').onclick=function(){
+    api('run','POST',{}).then(function(r){say(r.message,true)}).catch(function(e){say(e.message)});
+  };
+  $('list').onclick=function(e){
+    var b=e.target.closest('button[data-a]');if(!b)return;
+    if(b.dataset.a==='approve'&&!confirm('Apply this change to the live ferry timetable?'))return;
+    b.disabled=true;
+    api(b.dataset.a,'POST',{id:b.dataset.id}).then(function(){say(b.dataset.a==='approve'?'Applied.':'Rejected.',true);load()}).catch(function(err){say(err.message);b.disabled=false});
+  };
+})();
+</script></body></html>

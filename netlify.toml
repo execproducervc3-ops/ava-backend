@@ -160,3 +160,7 @@
   status = 200
   force = true
 
+
+# Weekly ferry recheck (Mondays 06:00 St Vincent time). Drafts changes for review at /admin-ferry.html
+[functions."agent-ferry"]
+  schedule = "0 10 * * 1"
