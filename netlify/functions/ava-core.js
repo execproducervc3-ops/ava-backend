@@ -455,7 +455,7 @@ async function queryImfData(indicatorKey){
 // Real, verified operator contact info — used only as a fallback when a
 // destination has no confirmed schedule in the database yet, so "we don't
 // know" still leaves the person somewhere useful to go, not a dead end.
-const FERRY_OPERATOR_CONTACTS = 'Bequia Express (bequiaexpress.com), Admiral Ferries ((784) 458-3348, WhatsApp (784) 534-7707), Jaden Sun Fast Ferry (jadensunferry.com, (784) 451-2192)';
+const FERRY_OPERATOR_CONTACTS = 'Bequia Express (bequiaexpress.com) or Bequia Fast Ferries; the Grenadines Ferry Terminal in Kingstown can confirm which boats are running today. (Admiral Ferries reportedly stopped operating in February 2026 and the Jaden Sun was badly damaged by fire in August 2025, so do not rely on either.)';
 
 // Day of the week as 0 (Sunday) to 6 (Saturday). AVA's chat passes a number; the MCP tool may pass a
 // name ("Thursday", "thu"), "today", "tomorrow", a numeric string, or nothing (= today in St Vincent).
