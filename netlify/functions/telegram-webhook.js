@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { claimVendorCode } = require('./vendor-codes');
 const menuCore = require('./menu-core');
+const ferryMenu = require('./ferry-menu-core');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -35,6 +36,9 @@ exports.handler = async (event) => {
   try {
     let { data: profile } = await supabase
       .from('retailer_profile').select('*').eq('telegram_user_id', fromId).maybeSingle();
+
+    // --- a ferry concession's menu in Travel Pal (linked from Travel Pal with /start TP…) ---
+    if (await ferryMenu.handleFerry({ message, chatId, profile, send: sendMessage, getPhoto: getTelegramFileBase64, anthropicKey: ANTHROPIC_KEY })) return ok();
 
     // --- /start <code>: a business you added in admin connects to this Telegram account ---
     const codeMatch = message.text && message.text.match(/^\/start(?:@\w+)?\s+(\S+)/i);
