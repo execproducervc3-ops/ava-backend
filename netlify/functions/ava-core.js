@@ -482,11 +482,11 @@ function nextDateFor(day){
 // Returns null when Travel Pal isn't set up, has nothing for this trip, or doesn't answer in time,
 // so AVA falls back to its own confirmed table.
 const TRAVELPAL_API = process.env.TRAVELPAL_API_URL || 'https://gtxmvazfuetokwyevxim.supabase.co/functions/v1/ava-api';
-async function travelPalSailings(dest, date){
+async function travelPalSailings(dest, date, origin){
   const key = process.env.TRAVELPAL_API_KEY;
   if(!key) return null;
   try{
-    const url = `${TRAVELPAL_API}/sailings?to=${encodeURIComponent(dest)}&date=${date}`;
+    const url = `${TRAVELPAL_API}/sailings?to=${encodeURIComponent(dest)}${origin ? `&from=${encodeURIComponent(origin)}` : ''}&date=${date}`;
     const res = await fetch(url, { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(4000) });
     if(!res.ok){ console.error('Travel Pal sailings:', res.status); return null; }
     const data = await res.json();
@@ -513,25 +513,33 @@ async function travelPalSailings(dest, date){
   }
 }
 
-async function queryFerrySchedule(destination, dayOfWeek){
-  const dest = (destination || '').trim();
+// Ports as people say them ("St Vincent", "Clifton", "union") to the names the timetable uses.
+const ferryPlace = s => { const raw = String(s || '').trim(); return (raw && require('./ferry-core').place(raw)) || raw; };
+
+// destination: where the person is going (Kingstown too); origin (optional): where they leave from.
+// With an origin, only that direction is returned: "Bequia to Kingstown" never shows the boats to Bequia.
+async function queryFerrySchedule(destination, dayOfWeek, origin){
+  const dest = ferryPlace(destination);
+  const from = ferryPlace(origin);
   if(!dest) return { results: [], note: 'No destination given.' };
   const day = normaliseDay(dayOfWeek);
   if(day === null) return { results: [], note: 'Give the day as a name (e.g. Thursday) or a number from 0 (Sunday) to 6 (Saturday).' };
 
-  const live = await travelPalSailings(dest, nextDateFor(day));
+  const live = await travelPalSailings(dest, nextDateFor(day), from || null);
   if(live) return live;
 
   try{
-    const { data: routes, error: routeErr } = await supabase
+    let q = supabase
       .from('ferry_routes')
       .select('id, operator_name, origin_port, destination_port')
       .eq('active', true)
       .ilike('destination_port', `%${dest}%`);
+    if(from) q = q.ilike('origin_port', `%${from}%`);
+    const { data: routes, error: routeErr } = await q;
     if(routeErr) throw routeErr;
     if(!routes || !routes.length){
-      await logUnansweredQuery(`ferry schedule: ${dest}`, 'ferry_schedule');
-      return { results: [], note: `No confirmed ferry schedule for ${dest} in AVA's database yet. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
+      await logUnansweredQuery(`ferry schedule: ${from ? from + ' to ' : ''}${dest}`, 'ferry_schedule');
+      return { results: [], note: `No confirmed ferry schedule ${from ? `from ${from} ` : ''}to ${dest} in AVA's database yet. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
     }
 
     const routeIds = routes.map(r => r.id);
@@ -544,7 +552,7 @@ async function queryFerrySchedule(destination, dayOfWeek){
     if(schedErr) throw schedErr;
     if(!schedules || !schedules.length){
       await logUnansweredQuery(`ferry schedule: ${dest} on day_of_week ${day}`, 'ferry_schedule');
-      return { results: [], note: `No sailings found for ${dest} on that day in AVA's database. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
+      return { results: [], note: `No sailings found ${from ? `from ${from} ` : ''}to ${dest} on that day in AVA's database. Known operators to contact directly: ${FERRY_OPERATOR_CONTACTS}.` };
     }
 
     const routeMap = Object.fromEntries(routes.map(r => [r.id, r]));
