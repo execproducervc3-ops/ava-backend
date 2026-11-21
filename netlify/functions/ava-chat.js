@@ -143,11 +143,12 @@ const TOOLS = [
   },
   {
     name: 'query_ferry_schedule',
-    description: "Look up real ferry sailing times between Kingstown, St. Vincent and a Grenadine island. Coverage is limited to routes AVA has confirmed — if nothing comes back, say so honestly rather than guessing at a time, since giving a wrong ferry time could genuinely strand someone.",
+    description: "Look up real ferry sailing times between Kingstown (St. Vincent), Bequia, Canouan, Mayreau, Union Island and Mustique, in either direction. Always give the origin when the person says where they're leaving from, so only that direction comes back: 'Bequia to Kingstown' is origin Bequia, destination Kingstown. Coverage is limited to routes AVA has confirmed — if nothing comes back, say so honestly rather than guessing at a time, since giving a wrong ferry time could genuinely strand someone.",
     input_schema: {
       type: 'object',
       properties: {
-        destination: { type: 'string', description: 'Destination island, e.g. "Bequia", "Canouan", "Union Island"' },
+        origin: { type: 'string', description: 'Where the person is leaving from, e.g. "Bequia" for "Bequia to Kingstown". Leave out only if they did not say.' },
+        destination: { type: 'string', description: 'Where the person is going: "Kingstown" (St. Vincent) or an island, e.g. "Bequia", "Canouan", "Union Island"' },
         day_of_week: { type: 'integer', description: 'Day to check: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday. Compute this from the current date given in the system prompt and the relative term the person used.' },
       },
       required: ['destination', 'day_of_week']
@@ -690,7 +691,7 @@ exports.handler = async (event) => {
           }
 
           else if(toolUse.name === 'query_ferry_schedule'){
-            const ferryData = await avaCore.queryFerrySchedule(toolUse.input.destination, toolUse.input.day_of_week);
+            const ferryData = await avaCore.queryFerrySchedule(toolUse.input.destination, toolUse.input.day_of_week, toolUse.input.origin);
             if(ferryData.results && ferryData.results.length) ferryResults = ferryData.results;
             content = ferryData.results && ferryData.results.length
               ? `Sailings found: ` + ferryData.results.map(s => `${s.operator}: ${s.origin} → ${s.destination} at ${s.departure_time}${s.fare_economy ? `, $${s.fare_economy} EC` : ''}`).join('; ') + '. Remind the person schedules can change — worth confirming directly before travel.'

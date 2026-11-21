@@ -54,12 +54,13 @@ function getServer() {
 
   server.tool(
     "query_ferry_schedule",
-    "Real inter-island ferry schedules for SVG.",
+    "Real inter-island ferry schedules for SVG, in either direction between Kingstown (St. Vincent), Bequia, Canouan, Mayreau, Union Island and Mustique. Give origin to get one direction only.",
     {
-      destination: z.string().describe("Ferry destination, e.g. 'Bequia'"),
+      origin: z.string().optional().describe("Where the trip starts, e.g. 'Bequia' for Bequia to Kingstown. Optional."),
+      destination: z.string().describe("Where the trip ends: 'Kingstown' or an island, e.g. 'Bequia'"),
       day_of_week: z.string().optional().describe("Optional day: a name (e.g. 'Thursday'), 'today', 'tomorrow', or 0 (Sunday) to 6 (Saturday). Defaults to today in St Vincent."),
     },
-    async ({ destination, day_of_week }) => asToolResult(await ava.queryFerrySchedule(destination, day_of_week))
+    async ({ origin, destination, day_of_week }) => asToolResult(await ava.queryFerrySchedule(destination, day_of_week, origin))
   );
 
   server.tool(
