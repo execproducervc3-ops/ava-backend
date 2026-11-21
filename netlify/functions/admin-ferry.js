@@ -46,6 +46,17 @@ exports.handler = async (event) => {
       });
     }
 
+    // the timetable as stored, every route with its sailings (for adding and switching by hand)
+    if (event.httpMethod === 'GET' && action === 'timetable') {
+      return json(200, { routes: await ferry.timetable(store), operators: ferry.OPERATORS.map(o => o.name) });
+    }
+    if (event.httpMethod === 'POST' && ['add_sailing', 'route_active', 'remove_sailing'].includes(action)) {
+      const body = JSON.parse(event.body || '{}');
+      if (action === 'add_sailing') return json(200, await ferry.addSailing(store, body));
+      if (action === 'route_active') return json(200, await ferry.setRoute(store, body.id, body.active));
+      return json(200, await ferry.removeSailing(store, body.id));
+    }
+
     if (event.httpMethod === 'POST' && ['run', 'approve', 'reject'].includes(action)) {
       const body = JSON.parse(event.body || '{}');
       if (action === 'run') {
