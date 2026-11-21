@@ -33,6 +33,13 @@ th{background:#f0f3f8}
 #msg.ok{display:block;background:#d9f2e0}#msg.err{display:block;background:#f8d7d7}
 .empty{text-align:center;color:#5b6677;padding:40px 0}
 label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
+select{font:inherit;width:100%;padding:8px;border:1px solid #c5ccd6;border-radius:8px;background:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px}
+.days{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}.days label{display:flex;align-items:center;gap:4px;font-size:14px;color:#1c2330;border:1px solid #c5ccd6;border-radius:8px;padding:6px 10px;margin:0;cursor:pointer}
+.days input{width:auto}
+.route.off{opacity:.6}.route .sl{display:inline-flex;align-items:center;gap:4px;background:#f0f3f8;border-radius:6px;padding:2px 4px 2px 8px;margin:2px 4px 2px 0;font-size:13px}
+.sl button{border:0;background:none;padding:0 4px;color:#a12b2b;font-size:15px}
+.badge.off{background:#f8d7d7}
 </style></head><body>
 <header><h1>AVA Ferry Check</h1><p>The weekly check only proposes. A timetable changes only when you approve it here.</p></header>
 <div id="login"><label for="pw">Admin password</label><input id="pw" type="password" autocomplete="off"><div class="actions"><button class="primary" id="go">Sign in</button></div></div>
@@ -43,6 +50,7 @@ label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
     <button class="tab active" data-s="pending">Pending</button>
     <button class="tab" data-s="approved">Approved</button>
     <button class="tab" data-s="rejected">Rejected</button>
+    <button class="tab" data-s="timetable">Timetable</button>
     <span style="flex:1"></span>
     <button id="run">Run ferry check now</button>
   </div>
@@ -81,13 +89,38 @@ label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
     var rows2=Object.keys(p.changed||{}).map(function(d){var c=p.changed[d];return '<tr><td>'+DAYS[d]+'</td><td>'+sail(c.before)+'</td><td>'+sail(c.after)+'</td></tr>'}).join('');
     return '<div class="meta">Approving replaces the stored sailings on these days.</div><table><tr><th>Day</th><th>AVA has now</th><th>Source says</th></tr>'+rows2+'</table>';
   }
+  var PLACES=['Kingstown','Bequia','Canouan','Mayreau','Union Island','Mustique'];
+  function opts(sel){return PLACES.map(function(p){return '<option'+(p===sel?' selected':'')+'>'+p+'</option>'}).join('')}
+  // The timetable as AVA stores it: add sailings by hand (boats with no timetable online, like the
+  // Gem Star II), switch a route off or back on, remove a sailing.
+  function loadTimetable(){
+    api('timetable','GET').then(function(r){
+      var ops=(r.operators||[]).map(function(o){return '<option value="'+esc(o)+'">'}).join('');
+      var h='<div class="card"><h3>Add a sailing</h3><div class="meta">For boats with no timetable the weekly check can confirm, from the terminal board or a phone call. It shows in AVA straight away.</div>'+
+        '<div class="grid"><div><label for="a-op">Operator or boat</label><input id="a-op" list="a-ops" placeholder="e.g. MV Gem Star 2"><datalist id="a-ops">'+ops+'</datalist></div>'+
+        '<div><label for="a-from">From</label><select id="a-from">'+opts('Kingstown')+'</select></div><div><label for="a-to">To</label><select id="a-to">'+opts('Union Island')+'</select></div>'+
+        '<div><label for="a-time">Leaves at</label><input id="a-time" type="time"></div><div><label for="a-fare">Fare EC$ (optional)</label><input id="a-fare" type="number" min="0" step="0.01" inputmode="decimal"></div></div>'+
+        '<label>Days</label><div class="days">'+DAYS.map(function(d,i){return '<label><input type="checkbox" value="'+i+'"> '+d+'</label>'}).join('')+'</div>'+
+        '<div class="actions"><button class="primary" id="a-go">Add sailing</button></div></div>';
+      var routes=r.routes||[];
+      h+=routes.map(function(x){
+        return '<div class="card route'+(x.active?'':' off')+'"><h3>'+esc(x.operator)+': '+esc(x.from)+' &rarr; '+esc(x.to)+' <span class="badge '+(x.active?'ok':'off')+'">'+(x.active?'shown in AVA':'switched off')+'</span></h3>'+
+          '<div>'+(x.sailings.length?x.sailings.map(function(s){return '<span class="sl">'+DAYS[s.day]+' '+esc(s.time)+(s.fare!=null?' · EC$'+esc(s.fare):'')+'<button title="Remove this sailing" data-rm="'+esc(s.id)+'" aria-label="Remove '+DAYS[s.day]+' '+esc(s.time)+'">&times;</button></span>'}).join(''):'<span class="meta">No sailings stored.</span>')+'</div>'+
+          '<div class="actions"><button data-route="'+esc(x.id)+'" data-on="'+(x.active?'0':'1')+'">'+(x.active?'Switch off':'Switch back on')+'</button></div></div>';
+      }).join('')||'<div class="empty">No routes stored.</div>';
+      $('list').innerHTML=h;
+      $('a-go').onclick=function(){
+        var days=[].slice.call(document.querySelectorAll('.days input:checked')).map(function(c){return Number(c.value)});
+        var b=this;b.disabled=true;
+        api('add_sailing','POST',{operator:$('a-op').value,from:$('a-from').value,to:$('a-to').value,time:$('a-time').value,fare:$('a-fare').value,days:days})
+          .then(function(r){say('Added '+r.added+' sailing'+(r.added===1?'':'s')+(r.already_there?' ('+r.already_there+' already there)':'')+(r.new_route?', on a new route':'')+(r.reactivated?'. The route was switched off; it is shown in AVA again':'')+'.',true);loadTimetable()})
+          .catch(function(e){say(e.message);b.disabled=false});
+      };
+    }).catch(function(e){say(e.message)});
+  }
   function load(){
-    api('status','GET').then(function(s){
-      var sum=s.summary, sh='<h3>Last check</h3><div class="meta">Started '+esc(when(s.last_started))+(s.last_finished?', finished '+esc(when(s.last_finished)):' (not finished or never run)')+'</div>';
-      sh+='<div class="meta">'+s.stored_sailings+' sailings stored. Oldest confirmation: '+esc(when(s.oldest_verified))+' ('+days(s.oldest_verified)+' days ago). Newest: '+esc(when(s.newest_verified))+'.</div>';
-      if(sum){sh+='<div class="meta">Proposals raised: '+sum.proposals+'. Rows re-confirmed automatically: '+sum.stamped+'.'+((sum.skipped_live||[]).length?' Covered live by Travel Pal: '+esc(sum.skipped_live.join(', '))+'.':'')+((sum.errors||[]).length?' Problems: '+esc(sum.errors.join('; ')):'')+'</div>';}
-      $('status').innerHTML=sh;
-    }).catch(function(e){$('status').textContent=e.message});
+    loadStatus();
+    if(status==='timetable')return loadTimetable();
     api('list','GET',null,'&status='+status).then(function(r){
       var d=r.drafts||[];
       if(!d.length){$('list').innerHTML='<div class="empty">Nothing '+status+'.</div>';return}
@@ -98,6 +131,14 @@ label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
         return h+'</div>';
       }).join('');
     }).catch(function(e){say(e.message)});
+  }
+  function loadStatus(){
+    api('status','GET').then(function(s){
+      var sum=s.summary, sh='<h3>Last check</h3><div class="meta">Started '+esc(when(s.last_started))+(s.last_finished?', finished '+esc(when(s.last_finished)):' (not finished or never run)')+'</div>';
+      sh+='<div class="meta">'+s.stored_sailings+' sailings stored. Oldest confirmation: '+esc(when(s.oldest_verified))+' ('+days(s.oldest_verified)+' days ago). Newest: '+esc(when(s.newest_verified))+'.</div>';
+      if(sum){sh+='<div class="meta">Proposals raised: '+sum.proposals+'. Rows re-confirmed automatically: '+sum.stamped+'.'+((sum.skipped_live||[]).length?' Covered live by Travel Pal: '+esc(sum.skipped_live.join(', '))+'.':'')+((sum.errors||[]).length?' Problems: '+esc(sum.errors.join('; ')):'')+'</div>';}
+      $('status').innerHTML=sh;
+    }).catch(function(e){$('status').textContent=e.message});
   }
   $('go').onclick=function(){
     pw=$('pw').value;
@@ -111,6 +152,11 @@ label{font-size:12px;color:#5b6677;display:block;margin-bottom:2px}
     api('run','POST',{}).then(function(r){say(r.message,true)}).catch(function(e){say(e.message)});
   };
   $('list').onclick=function(e){
+    var rm=e.target.closest('button[data-rm]'), rt=e.target.closest('button[data-route]');
+    if(rm){if(!confirm('Remove this sailing from AVA?'))return;
+      api('remove_sailing','POST',{id:rm.dataset.rm}).then(function(){say('Sailing removed.',true);loadTimetable()}).catch(function(err){say(err.message)});return}
+    if(rt){var on=rt.dataset.on==='1';if(!confirm(on?'Show this route in AVA again?':'Stop AVA quoting this route?'))return;
+      api('route_active','POST',{id:rt.dataset.route,active:on}).then(function(){say(on?'Route shown in AVA again.':'Route switched off.',true);loadTimetable()}).catch(function(err){say(err.message)});return}
     var b=e.target.closest('button[data-a]');if(!b)return;
     if(b.dataset.a==='approve'&&!confirm('Apply this change to the live ferry timetable?'))return;
     b.disabled=true;

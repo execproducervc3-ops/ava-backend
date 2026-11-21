@@ -27,11 +27,12 @@ const MAX_BYTES = 1500000;
 const OPERATORS = [
   { name: 'Bequia Express', hint: 'Bequia Express ferry (bequiaexpress.com): Kingstown to Bequia and any Southern Grenadines runs' },
   { name: 'Bequia Fast Ferries', hint: 'Bequia Fast Ferries: Kingstown to Bequia' },
-  { name: 'MV Gem Star 2', hint: 'MV Gem Star 2: Kingstown to Canouan, Mayreau and Union Island' },
+  { name: 'MV Gem Star 2', hint: 'MV Gem Star 2 (Gem Star II): Kingstown to Canouan, Mayreau and Union Island; it has no website of its own, but tourism sites such as discoversvg.com publish its timetable' },
   { name: 'MV Barracuda', hint: 'MV Barracuda (government-linked ferry): Kingstown to Canouan, Mayreau and Union Island' },
   { name: 'Mustique ferry', hint: 'passenger boat service to Mustique (from Bequia or Kingstown)' },
   { name: 'Admiral Ferries', hint: 'Admiral Ferries (Admiralty Transport), Kingstown to Bequia', statusOnly: true },
-  { name: 'Jaden Sun Fast Ferry', hint: 'Jaden Sun fast ferry, Kingstown to Bequia, Canouan, Mayreau and Union Island', statusOnly: true },
+  // The Jaden Sun announced a maintenance pause (19 Sep to 14 Nov 2026), not a closure: check its timetable again.
+  { name: 'Jaden Sun Fast Ferry', hint: 'Jaden Sun fast ferry (jadensunferry.com): Kingstown to Bequia, Canouan, Mayreau and Union Island; it announced a maintenance pause from 19 September to 14 November 2026' },
 ];
 
 const PLACES = [
@@ -347,6 +348,63 @@ async function run({ store, claude, fetchFn = fetch, travelPal = async () => fal
 
 // ------------------------------------------------- applying an approval ---
 
+// ------------------------------------------------ manual timetable ---
+// For boats with no timetable the weekly check can verify (the Gem Star II, for one): the admin
+// enters sailings by hand from the terminal board or a phone call. They are stored like any other
+// sailing, stamped as confirmed now, and the weekly check keeps comparing them with sources.
+
+async function timetable(store){
+  const routes = await store.routes();
+  const rows = await store.schedules(routes.map(r => r.id));
+  return routes.map(r => ({
+    id: r.id, operator: r.operator_name, from: r.origin_port, to: r.destination_port, active: r.active !== false,
+    sailings: rows.filter(x => x.route_id === r.id)
+      .map(x => ({ id: x.id, day: x.day_of_week, time: String(x.departure_time || '').slice(0, 5), fare: x.fare_economy, verified: x.last_verified_at }))
+      .sort((a, b) => a.day - b.day || a.time.localeCompare(b.time)),
+  })).sort((a, b) => a.operator.localeCompare(b.operator) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+}
+
+async function addSailing(store, input){
+  const operator = String(input.operator || '').trim().replace(/\s+/g, ' ');
+  if(operator.length < 2 || operator.length > 60) throw new ApplyError(400, 'Give the operator or boat name.');
+  const from = place(input.from), to = place(input.to);
+  if(!from || !to) throw new ApplyError(400, 'Choose where the boat leaves from and where it goes.');
+  if(from === to) throw new ApplyError(400, 'The boat must go somewhere else.');
+  const days = [...new Set((Array.isArray(input.days) ? input.days : []).map(Number))].filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
+  if(!days.length) throw new ApplyError(400, 'Tick at least one day.');
+  const time = parseTime(input.time);
+  if(!time) throw new ApplyError(400, 'Enter the departure time, like 07:00 or 11:30.');
+  let fare = null;
+  if(input.fare !== undefined && input.fare !== null && String(input.fare).trim() !== ''){
+    fare = Number(input.fare);
+    if(!(fare >= 0 && fare < 10000)) throw new ApplyError(400, 'Enter the fare in EC dollars, or leave it empty.');
+  }
+  const routes = await store.routes();
+  let route = routes.find(r => norm(r.operator_name) === norm(operator) && place(r.origin_port) === from && place(r.destination_port) === to);
+  let reactivated = false;
+  if(route && route.active === false){ await store.setRouteActive(route.id, true); reactivated = true; }
+  const id = route ? route.id : await store.insertRoute({ operator_name: operator, origin_port: from, destination_port: to, active: true });
+  const have = route ? await store.schedules([id]) : [];
+  const at = new Date().toISOString();
+  const rows = days.filter(d => !have.some(x => x.day_of_week === d && String(x.departure_time).slice(0, 5) === time.slice(0, 5)))
+    .map(d => ({ route_id: id, day_of_week: d, departure_time: time, fare_economy: fare, last_verified_at: at }));
+  await store.insertSchedules(rows);
+  return { route_id: id, added: rows.length, already_there: days.length - rows.length, new_route: !route, reactivated };
+}
+
+async function setRoute(store, id, active){
+  const routes = await store.routes();
+  if(!routes.some(r => r.id === id)) throw new ApplyError(404, 'Route not found.');
+  await store.setRouteActive(id, !!active);
+  return { ok: true };
+}
+
+async function removeSailing(store, id){
+  if(!id) throw new ApplyError(400, 'Which sailing?');
+  await store.deleteSchedules([id]);
+  return { ok: true };
+}
+
 class ApplyError extends Error { constructor(status, message){ super(message); this.status = status; } }
 
 async function applyProposal(store, draft){
@@ -421,4 +479,4 @@ function makeClaude(apiKey, fetchFn = fetch){
   };
 }
 
-module.exports = { run, applyProposal, ApplyError, makeStore, makeClaude, makeTravelPalCheck, lockedFor, compare, parseDays, parseTime, place, safeUrl, verifyQuote, OPERATORS, AGENT, LOCK, LOCK_HOURS };
+module.exports = { run, applyProposal, timetable, addSailing, setRoute, removeSailing, ApplyError, makeStore, makeClaude, makeTravelPalCheck, lockedFor, compare, parseDays, parseTime, place, safeUrl, verifyQuote, OPERATORS, AGENT, LOCK, LOCK_HOURS };
