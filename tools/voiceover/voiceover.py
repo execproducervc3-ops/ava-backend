@@ -12,7 +12,7 @@ collection). Set PIPER_MODEL to its path.
 THE RULES (each one was learned the hard way, keep them):
   1. Pronunciation: AVA is "AY-vuh" like the name Ava. "live" (a live show, livestream) rhymes with
      "five" (the plain "live" of real time, not stretched), never "liv". "shake-to-win" is read as three
-     words. "fete" is "fet" (rhymes with bet), never "faith". VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words.
+     words. "fete" is "fet" (rhymes with bet), never "faith". "PIN" is the word "pin", not spelled out. VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words.
   2. Record each passage as ONE take. Never split a sentence at commas: comma-ended pieces lift in
      pitch at the end, which sounds unnatural. Never pitch-shift words for expression.
   3. Steadier delivery: noise_scale 0.45, noise_w 0.5 (fewer rising phrase endings).
@@ -34,7 +34,7 @@ MODEL = os.environ.get('PIPER_MODEL', '/tmp/voice/lt/en-us-libritts-high.onnx')
 VOICES = {'B': '847', 'F': '784', 'AVA': '408', 'X': '408'}   # approved: B (main male), F (alternate male), AVA = female voice X
 
 PRON = [(r'\b[Ll]ivestream\b', '[[ lˈaɪvstɹiːm ]]'), (r'\b[Ll]ive\b', '[[ lˈaɪv ]]'),
-        (r'\b([Ss]hake)-to-win\b', r'\1 to win'), (r'\b[Ff]etes\b', '[[ fˈɛts ]]'), (r'\b[Ff]ete\b', '[[ fˈɛt ]]'),
+        (r'\b([Ss]hake)-to-win\b', r'\1 to win'), (r'\b[Ff]etes\b', '[[ fˈɛts ]]'), (r'\b[Ff]ete\b', '[[ fˈɛt ]]'), (r'\bPINs\b', 'pins'), (r'\bPIN\b', 'pin'),
         (r"\bAVA's\b", '[[ ˈeɪvəz ]]'), (r'\bAVA\b', '[[ ˈeɪvə ]]'),
         (r'\bVIP\b', 'V I P'), (r'\bN\.D\.I\.', 'N D I'), (r'\bNDI\b', 'N D I'),
         (r'\bQR\b', 'Q R'), (r'\bLED\b', 'L E D'), (r'\bEC\$', 'E C dollars ')]
