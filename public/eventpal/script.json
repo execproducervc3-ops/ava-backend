@@ -83,6 +83,11 @@
    "text": "Now, tickets. Early bird, general, VIP, comps, all-inclusive, each with its own price, and its own limit. Sold online by card, or at the box office for cash. Every ticket carries our own secured QR code. On the phone, it keeps changing every few seconds. On paper, it's a signed, one-time code."
   },
   {
+   "id": "outlets",
+   "title": "Ticket outlets",
+   "text": "Selling through outlets? Each shop gets its own sales page, or a sales device from us, if they don't have one. When they sell a printed ticket, they scan it, and that's what activates it. Until then, it won't open a gate. So if a bundle of tickets is lost or stolen before it's sold, every one of them is worthless. Each outlet can only sell its own batch, even with no signal. And you see every sale in real time, outlet by outlet, with exactly what each one owes you."
+  },
+  {
    "id": "passes",
    "title": "Guest lists and passes",
    "text": "Guest lists and comps go in by name. Artists, vendors, media, security and staff, they all get passes that only open the areas they need. Backstage, the vendor gate, the VIP deck. And every pass scans just like a ticket, so you know exactly who's on site."
