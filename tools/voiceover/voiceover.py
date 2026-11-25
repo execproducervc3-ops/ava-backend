@@ -30,7 +30,7 @@ import argparse, os, re, subprocess, sys, tempfile, wave
 import numpy as np
 
 MODEL = os.environ.get('PIPER_MODEL', '/tmp/voice/lt/en-us-libritts-high.onnx')
-VOICES = {'B': '847', 'F': '784'}   # approved voices: B (main), F (alternate)
+VOICES = {'B': '847', 'F': '784', 'AVA': '408', 'X': '408'}   # approved: B (main male), F (alternate male), AVA = female voice X
 
 PRON = [(r'\b[Ll]ivestream\b', '[[ lˈaːɪvstɹiːm ]]'), (r'\b[Ll]ive\b', '[[ lˈaːɪv ]]'),
         (r"\bAVA's\b", '[[ ˈeɪvəz ]]'), (r'\bAVA\b', '[[ ˈeɪvə ]]'),
@@ -115,7 +115,7 @@ def render(text, out_mp3, voice='B', snappy_opener=False):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('text', nargs='?'); ap.add_argument('out')
-    ap.add_argument('--file'); ap.add_argument('--voice', default='B', help='B (default) or F, or a Piper speaker number')
+    ap.add_argument('--file'); ap.add_argument('--voice', default='B', help='B (default), F, or AVA (her female voice), or a Piper speaker number')
     ap.add_argument('--snappy-opener', action='store_true', help='tighten a quick first word like "Alright,"')
     a = ap.parse_args()
     text = open(a.file).read() if a.file else a.text

@@ -10,7 +10,7 @@ python3 voiceover.py --snappy-opener "Alright, so this is Event Pal..." out.mp3
 python3 voiceover.py --file script.txt out.mp3 --voice F
 ```
 
-- **Voices:** B = LibriTTS speaker 847 (main), F = speaker 784 (alternate).
+- **Voices:** B = LibriTTS speaker 847 (main), F = speaker 784 (alternate), **AVA = speaker 408** (her female voice, chosen as "Voice X"; reference: `reference-ava.mp3`). Use `--voice AVA`.
 - **Pronunciation:** AVA = "AY-vuh"; "live" rhymes with "five"; VIP/NDI/QR/LED spelled out; "Event Pal" two words.
 - **Delivery:** one take per passage (never split at commas), steadier settings, pauses lengthened, 8% slower, never rushed.
 - **Sound:** dead booth plus a hint of short reverb; no bass boost; de-essed; gentle compression.
