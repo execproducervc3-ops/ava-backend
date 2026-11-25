@@ -96,6 +96,7 @@ input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);
 <input id="q" aria-label="Ask AVA" maxlength="500" placeholder="Ask AVA about anything on this screen…" style="flex:1;background:transparent;border:0;color:var(--ink);font:15px Inter,sans-serif;outline:none;min-width:0">
 </label>
 <button class="btn acc" style="min-height:46px;padding:0 18px">Ask</button>
+<button class="btn" type="button" id="cadm" style="min-height:46px" title="Send the administrator a message or voice note">📞 Contact admin</button>
 </form>
 <div style="display:flex;gap:6px;flex-wrap:wrap" id="chips">
 <button class="btn chip">What needs me right now?</button>
@@ -331,9 +332,27 @@ function md(t) {
 }
 async function askAva(question, target) {
   target.hidden = false; target.textContent = 'Thinking…';
-  try { const j = await api('?action=ask', { method: 'POST', body: JSON.stringify({ question, box }) }); target.innerHTML = md(j.answer); }
+  try { const j = await api('?action=ask', { method: 'POST', body: JSON.stringify({ question, box }) }); target.innerHTML = md(j.answer);
+    if (j.action && j.action.type === 'contact_admin') {   // AVA drafted a message to the admin: confirm, then she sends it
+      target.insertAdjacentHTML('beforeend', `<div class="tile" style="margin-top:8px"><div class="ans">${esc(j.action.message)}</div><div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn acc" data-ca="send">Send</button><button class="btn" data-ca="edit">Edit or add a voice note</button><span class="muted" data-ca="msg" style="font-size:13px;align-self:center"></span></div></div>`);
+      const card = target.lastElementChild, note = card.querySelector('[data-ca="msg"]');
+      card.querySelector('[data-ca="send"]').onclick = async ev => { ev.target.disabled = true; note.textContent = 'Sending…';
+        try { const r = await sendToAdmin({ screen: 'Pal Monitor · asked AVA', text: j.action.message, voice: null }); note.textContent = r.ok ? '✓ Sent. The admin has it on Telegram.' : (r.error || "It didn't go through."); if (!r.ok) ev.target.disabled = false; }
+        catch (e) { note.textContent = e.message; ev.target.disabled = false; } };
+      card.querySelector('[data-ca="edit"]').onclick = () => openContact(j.action.message);
+    }
+  }
   catch (e) { target.textContent = "Couldn't ask AVA: " + e.message; }
 }
+
+// "Contact admin": a message or voice note to the administrator's Telegram
+async function sendToAdmin(p) {
+  const r = await fetch('/api/contact-admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+    body: JSON.stringify({ app: 'Pal Monitor', from: { name: 'Pal Monitor', role: 'Admin view' }, ...p }) });
+  const j = await r.json().catch(() => ({})); return r.ok ? { ok: true, ...j } : { ok: false, error: j.error || 'Error ' + r.status };
+}
+async function openContact(prefill) { const { contactAdmin } = await import('/admin/contact-admin.js'); contactAdmin({ app: 'Pal Monitor', screen: 'Pal Monitor', prefill: prefill || '', send: sendToAdmin }); }
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#cadm')) openContact(''); });
 
 function start() {
   $('login').hidden = true; $('app').hidden = false;

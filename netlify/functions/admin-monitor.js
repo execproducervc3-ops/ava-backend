@@ -23,6 +23,7 @@ async function ask(question, snap, extra, view) {
     'Answer only from the snapshot below. It holds counts and health only: no customer names and no money. If something isn\'t in it, say you can\'t see that from the monitor yet.',
     'Be brief and plain: a few short sentences, most important first. Say what needs attention and the simplest next step. Times are in St Vincent time (UTC-4). Don\'t invent numbers.',
     'open_issues are what your own watch has found and investigated; use them.',
+    'If the person asks you to contact, message, call or tell the admin (the administrator), reply with ONE line only: CONTACT_ADMIN: followed by the message to send, written clearly for the admin in the first person of the person asking, including anything relevant from the snapshot. Do not add anything else.',
     pal.MONITOR_NOTES,
   ].join('\n');
   const issues = view ? view.incidents.filter(i => !i.resolved).map(i => ({ sev: i.sev, title: i.title, finding: i.finding, ackBy: i.ackBy })) : undefined;
@@ -50,7 +51,10 @@ exports.handler = async (event) => {
         sendingFps: Number(x.sendingFps) || 0, receivers: Number(x.receivers) || 0 })) } : null;
       const snap = await snapshot();
       let view = null; try { view = await watch.watchView(watch.blobStore(getStore)); } catch (e) {}
-      return json(200, { answer: await ask(q, snap, box, view), at: snap.at });
+      const answer = await ask(q, snap, box, view);
+      const m = /^\s*CONTACT_ADMIN:\s*([\s\S]+)$/.exec(answer || '');
+      if (m) return json(200, { answer: "Here's what I'll send the admin. Check it, then tap Send.", action: { type: 'contact_admin', message: m[1].trim().slice(0, 1000) }, at: snap.at });
+      return json(200, { answer, at: snap.at });
     }
     // ---- AVA's watch
     if (event.httpMethod === 'GET' && action === 'watch') return json(200, await watch.watchView(watch.blobStore(getStore)));

@@ -110,6 +110,13 @@
   status = 200
   force = true
 
+# "Contact admin" from owners and managers (Pal Monitor, Restaurant Pal, Travel Pal).
+[[redirects]]
+  from = "/api/contact-admin"
+  to = "/.netlify/functions/contact-admin"
+  status = 200
+  force = true
+
 # AVA's watch bot on Telegram.
 [[redirects]]
   from = "/api/watch-telegram"
