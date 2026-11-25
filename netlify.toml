@@ -1,6 +1,8 @@
 [build]
   functions = "netlify/functions"
   publish = "public"
+  # Skip a deploy when only the voice-over tool changed (it isn't part of the site); saves Netlify credits.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)tools'"
 
 # mcp-server.js is a CommonJS (v1) function, which doesn't support the
 # export const config = { path } mechanism the earlier .mjs version used —
