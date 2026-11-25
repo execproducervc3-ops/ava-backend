@@ -11,7 +11,8 @@ collection). Set PIPER_MODEL to its path.
 
 THE RULES (each one was learned the hard way, keep them):
   1. Pronunciation: AVA is "AY-vuh" like the name Ava. "live" (a live show, livestream) rhymes with
-     "five", never "liv". VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words.
+     "five" (the plain "live" of real time, not stretched), never "liv". "shake-to-win" is read as three
+     words. VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words.
   2. Record each passage as ONE take. Never split a sentence at commas: comma-ended pieces lift in
      pitch at the end, which sounds unnatural. Never pitch-shift words for expression.
   3. Steadier delivery: noise_scale 0.45, noise_w 0.5 (fewer rising phrase endings).
@@ -19,7 +20,7 @@ THE RULES (each one was learned the hard way, keep them):
      phrase breaks up to +220 ms) and slow the whole take 8% with atempo 0.92 (pitch untouched).
      Never push lines faster than natural conversation.
   5. Expression comes from phrasing, pace and punctuation. A quick interjection ("Alright,") can be
-     tightened ~20% with atempo 1.22 (--snappy-opener), keeping its natural short gap.
+     tightened ~20% with atempo 1.22 (--snappy-opener), followed by a clear 0.3 s gap.
   6. Sound: dead booth with a hint (~10% wet) of short reverb, like a Top 40 radio announcer.
      No bass boost (it went muddy). Rumble filtered, low-mid mud cut, light presence and air,
      dynamic de-esser at medium strength, room tail gated, gentle compression.
@@ -32,7 +33,8 @@ import numpy as np
 MODEL = os.environ.get('PIPER_MODEL', '/tmp/voice/lt/en-us-libritts-high.onnx')
 VOICES = {'B': '847', 'F': '784', 'AVA': '408', 'X': '408'}   # approved: B (main male), F (alternate male), AVA = female voice X
 
-PRON = [(r'\b[Ll]ivestream\b', '[[ lˈaːɪvstɹiːm ]]'), (r'\b[Ll]ive\b', '[[ lˈaːɪv ]]'),
+PRON = [(r'\b[Ll]ivestream\b', '[[ lˈaɪvstɹiːm ]]'), (r'\b[Ll]ive\b', '[[ lˈaɪv ]]'),
+        (r'\b([Ss]hake)-to-win\b', r'\1 to win'),
         (r"\bAVA's\b", '[[ ˈeɪvəz ]]'), (r'\bAVA\b', '[[ ˈeɪvə ]]'),
         (r'\bVIP\b', 'V I P'), (r'\bN\.D\.I\.', 'N D I'), (r'\bNDI\b', 'N D I'),
         (r'\bQR\b', 'Q R'), (r'\bLED\b', 'L E D'), (r'\bEC\$', 'E C dollars ')]
@@ -76,7 +78,7 @@ def voiced(a, sr):
     return fr, np.array([np.abs(a[i:i + fr]).mean() for i in range(0, len(a), fr)]) > 300
 
 
-def pace(a, sr, snappy_opener=False):
+def pace(a, sr, snappy_opener=False, opener_gap=0.3):
     """Approved pacing: optional snappy first word, longer pauses, whole take 8% slower."""
     fr, on = voiced(a, sr)
     head = np.zeros(0, np.float32); body = a
@@ -88,7 +90,7 @@ def pace(a, sr, snappy_opener=False):
             i += 1
         e = i - q + 1; p = i
         while p < len(on) and not on[p]: p += 1
-        head = np.concatenate([a[:s * fr], ff(a[s * fr:e * fr], sr, 'atempo=1.22'), a[e * fr:p * fr][:int(sr * .08)]])
+        head = np.concatenate([a[:s * fr], ff(a[s * fr:e * fr], sr, 'atempo=1.22'), np.zeros(int(sr * opener_gap), np.float32)])
         body = a[p * fr:]
     fr, on = voiced(body, sr)
     out = []; i = 0
