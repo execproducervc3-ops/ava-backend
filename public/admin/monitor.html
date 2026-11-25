@@ -43,6 +43,11 @@ input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);
 .screens{display:flex;flex-wrap:wrap;gap:6px}
 .muted{color:var(--mute)}
 .ans{white-space:pre-wrap;color:#dcdce2;font-size:14px}
+.inc{background:var(--deep);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;border-left:3px solid #5a5a66}
+.inc.urgent{border-left-color:var(--down)}.inc.warn{border-left-color:var(--warn)}.inc.done{opacity:.6;border-left-color:var(--ok)}
+.inc details summary{cursor:pointer;color:var(--mute);font-size:13px}
+.inc ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:#c9c9d1}
+.code{font:700 28px/1 'Barlow Condensed',Inter,sans-serif;letter-spacing:3px;color:var(--acc)}
 @media (max-width:620px){header{padding:12px 14px}main{padding:14px}.top>div{padding:12px 14px}.cols{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
@@ -105,6 +110,8 @@ input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);
 <div style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:4px"><span class="dot warn"></span>Needs a look</div>
 <div id="warns"></div>
 </section>
+
+<section class="card" id="watch" aria-label="AVA watch"></section>
 
 <div class="cols">
 <section class="card" data-p="ep" id="ep"></section>
@@ -175,15 +182,61 @@ function drawEP() {
   h += `<div><div class="k" style="margin-bottom:4px">Sports · last 6 hours</div>${(d.matches || []).length ? d.matches.map(m =>
       row(secs(m.updated_at) < 900 ? 'ok' : '', `<b>${esc(m.code)}</b> · ${esc(m.sport)} · ${esc(m.home)} ${m.h ?? 0}–${m.a ?? 0} ${esc(m.away)}`, 'updated ' + ago(m.updated_at))).join('')
     : row('', '<span class="muted">No live matches</span>')}</div>`;
-  h += `<div><div class="k" style="margin-bottom:4px">Boxes (NDI)</div>${box ? (() => {
-      const slow = (box.sources || []).filter(s => s.sendingFps < s.fps * 0.95).length;
-      const watching = (box.sources || []).reduce((a, s) => a + (s.receivers || 0), 0);
-      return row(box.ndi && !slow ? 'ok' : 'warn', `<b>${esc(box.box)}</b> · ${(box.sources || []).length} source(s) · ${watching} watching`, slow ? `<span style="color:#f7c948">${slow} slow</span>` : 'all at speed')
-        + (box.sources || []).map(s => row(s.sendingFps >= s.fps * 0.95 ? 'ok' : 'warn', esc(s.name) + ` <span class="muted">· ${esc(s.size)}</span>`, `${s.sendingFps} of ${s.fps} fps`)).join('');
-    })() : row('', '<span class="muted">No box on this computer</span>', '<span title="Boxes report from the computer they run on. Reporting from anywhere comes with cloud pairing.">ⓘ</span>')}</div>`;
+  h += `<div><div class="k" style="margin-bottom:4px">Boxes (NDI)</div>${boxRows()}</div>`;
   h += `<div><div class="k" style="margin-bottom:4px">Behind the scenes</div>${sitesFor('ep')}${row('ok', 'Live server', 'answered in ' + f.ms + ' ms')}</div>`;
   $('ep').innerHTML = h;
 }
+
+// boxes report in to AVA every 30 s, so they show from anywhere; the box on this computer is read directly too
+function boxRows() {
+  const list = ((WV && WV.boxes) || []).filter(b => secs(b.last) < 24 * 3600).map(b => ({ ...(b.status || {}), box: b.name, last: b.last, cloud: true }));
+  if (box && !list.some(b => b.box === box.box)) list.push({ ...box, last: new Date().toISOString() });
+  if (!list.length) return row('', '<span class="muted">No box has reported in</span>', '<span title="A box reports in every 30 s once it runs the latest version.">ⓘ</span>');
+  return list.map(b => {
+    const quiet = secs(b.last) > 90, srcs = (b.sources || []).filter(s => s.id !== '__setup');
+    const slow = srcs.filter(s => s.sendingFps < s.fps * 0.95).length, watching = srcs.reduce((a, s) => a + (s.receivers || 0), 0);
+    return row(quiet ? 'down' : b.ndi && !slow ? 'ok' : 'warn', `<b>${esc(b.box)}</b> · ${srcs.length} source(s) · ${watching} watching`,
+        quiet ? `<span style="color:var(--down)">quiet since ${ago(b.last)}</span>` : slow ? `<span style="color:#f7c948">${slow} slow</span>` : 'all at speed')
+      + (quiet ? '' : srcs.map(s => row(s.sendingFps >= s.fps * 0.95 ? 'ok' : 'warn', esc(s.name) + ` <span class="muted">· ${esc(s.size)}</span>`, `${s.sendingFps} of ${s.fps} fps · ${s.receivers} watching`)).join(''))
+      + (!quiet && b.host && b.host.cpus ? `<div class="muted" style="font-size:12px;padding:0 0 6px 19px">computer load ${b.host.load} on ${b.host.cpus} cores · memory ${b.host.memUsed}% used</div>` : '');
+  }).join('');
+}
+
+// ---- AVA's watch: what she found, why, and what to do
+let WV = null, wcode = null;
+async function refreshWatch() { try { WV = await api('?action=watch'); drawWatch(); if (S) drawEP(); } catch (e) { if (!WV) $('watch').innerHTML = head('AVA watch', '<span class="pill p-off">…</span>') + `<div class="muted">${esc(e.message)}</div>`; } }
+function drawWatch() {
+  const w = WV, open = w.incidents.filter(i => !i.resolved), done = w.incidents.filter(i => i.resolved);
+  const ran = w.lastRun ? secs(w.lastRun.at) : Infinity;
+  const pill = ran > 600 ? `<span class="pill p-warn">Not running</span>` : open.length ? `<span class="pill p-warn">${open.length} open</span>` : `<span class="pill p-ok">All clear</span>`;
+  let h = head('AVA watch', pill);
+  h += `<div class="muted" style="font-size:13px;margin-top:-6px">Checks everything every 2 min, investigates anything off, and alerts on Telegram. ${w.lastRun ? 'Last check ' + ago(w.lastRun.at) + '.' : 'No check has run yet.'}${w.mute ? ` · 🔕 quiet until ${new Date(w.mute.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${esc(w.mute.by)})` : ''}</div>`;
+  const card = i => `<div class="inc ${i.resolved ? 'done' : i.sev}">
+      <div style="display:flex;gap:10px;align-items:flex-start"><span class="pill ${i.sev === 'urgent' ? 'p-warn' : 'p-off'}" style="${i.sev === 'urgent' ? 'color:var(--down)' : ''}">${i.resolved ? 'fixed' : i.sev}</span>
+        <b style="flex:1">${esc(i.title)}</b><span class="muted" style="font-size:12px;white-space:nowrap">${i.resolved ? 'fixed ' + ago(i.resolved) : 'since ' + ago(i.opened)}</span></div>
+      ${i.resolved ? '' : `<div class="ans">${md(i.text || '')}</div>`}
+      ${i.finding ? `<details><summary>How AVA worked it out</summary><ul>${(i.finding.evidence || []).map(e => `<li>${esc(e)}</li>`).join('')}<li><b>Likely:</b> ${esc(i.finding.cause)} (${esc(i.finding.confidence)} confidence)</li><li><b>Fix:</b> ${esc(i.finding.fix)}</li></ul></details>` : ''}
+      ${i.resolved ? '' : `<div style="display:flex;gap:8px;align-items:center">${i.ackBy ? `<span class="muted" style="font-size:13px">👍 ${esc(i.ackBy)} has it</span>` : `<button class="btn" data-ack="${esc(i.id)}">Got it</button>`}${i.escalated ? '<span class="muted" style="font-size:12px">escalated ' + ago(i.escalated) + '</span>' : ''}</div>`}
+    </div>`;
+  h += open.length ? open.map(card).join('') : `<div class="tile muted" style="font-size:14px">Nothing needs you. AVA is watching.</div>`;
+  if (done.length) h += `<details><summary class="muted" style="cursor:pointer;font-size:13px">Fixed in the last 24 h (${done.length})</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${done.map(card).join('')}</div></details>`;
+  if (w.log.length) h += `<details><summary class="muted" style="cursor:pointer;font-size:13px">Timeline</summary><div style="margin-top:6px">${w.log.slice(0, 30).map(l => row(l.kind === 'resolved' ? 'ok' : l.sev === 'urgent' ? 'down' : l.kind === 'opened' || l.kind === 'worse' ? 'warn' : '',
+      `<span class="muted">${esc(l.kind)}</span> · ${esc(l.text)}`, new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))).join('')}</div></details>`;
+  // Telegram
+  h += `<div><div class="k" style="margin-bottom:6px">Telegram</div>`;
+  if (!w.bot) h += `<div class="muted" style="font-size:13px">Off. Make a bot with @BotFather in Telegram, add its token in Netlify as <b>WATCH_BOT_TOKEN</b> (Production), redeploy, then come back here.</div>`;
+  else h += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" id="tgset">Connect the bot</button><button class="btn acc" id="tglink">Link a Telegram</button><span class="muted" style="font-size:13px" id="tgmsg"></span></div>
+      ${wcode ? `<div class="tile" style="margin-top:8px"><div class="code">${esc(wcode.code)}</div><div class="muted" style="font-size:13px;margin-top:6px">Send <b>/link ${esc(wcode.code)}</b> to the bot within 10 minutes: in a private chat for alerts to you, or in a group (add the bot first) for the whole team. One use only.</div></div>` : ''}
+      ${w.chats.length ? w.chats.map(c => row('ok', esc(c.title) + ` <span class="muted">· ${esc(c.kind)}</span>`, 'linked by ' + esc(c.by || '') + ' · ' + ago(c.at))).join('') : '<div class="muted" style="font-size:13px;margin-top:6px">No chats linked yet.</div>'}`;
+  h += `</div>`;
+  $('watch').innerHTML = h;
+}
+$('watch').onclick = async e => {
+  const a = e.target.closest('[data-ack]');
+  if (a) { a.disabled = true; try { await api('?action=ack', { method: 'POST', body: JSON.stringify({ id: a.dataset.ack }) }); a.outerHTML = '<span class="muted" style="font-size:13px">👍 Got it. The next check (within 2 min) stops the repeats</span>'; } catch (err) { a.disabled = false; alert(err.message); } return; }
+  if (e.target.id === 'tgset') { $('tgmsg').textContent = 'Connecting…'; try { const j = await api('?action=tg_setup', { method: 'POST', body: '{}' }); $('tgmsg').textContent = 'Connected: @' + j.bot; } catch (err) { $('tgmsg').textContent = err.message; } }
+  if (e.target.id === 'tglink') { try { wcode = await api('?action=link_code', { method: 'POST', body: '{}' }); drawWatch(); setTimeout(() => { wcode = null; WV && drawWatch(); }, 10 * 60000); } catch (err) { $('tgmsg').textContent = err.message; } }
+};
 
 function drawRP() {
   const f = S.rp; let h = head('Restaurant Pal', pillFor('rp'));
@@ -194,7 +247,8 @@ function drawRP() {
     return `<div class="tile" style="padding:12px;display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:center;gap:10px"><b class="cond" style="font-size:22px;flex:1">${esc(b.name)}</b><span class="muted" style="font-size:13px">${b.service_open ? 'phone ordering on' : 'phone ordering off'}</span></div>
       <div class="g3"><div><div class="k">Open bills</div><div class="n">${b.open_tabs}</div></div><div><div class="k">Orders today</div><div class="n">${b.orders_today}</div></div><div><div class="k">Staff on</div><div class="n">${b.staff_on}</div></div></div>
-      ${row(b.tills ? (tillOk ? 'ok' : 'warn') : '', 'Till' + (b.tills > 1 ? 's (' + b.tills + ')' : ''), b.tills ? 'last seen ' + ago(b.till_seen) : 'none registered')}
+      ${(b.devices || []).length ? b.devices.map(d => row(secs(d.last_seen) < 120 ? 'ok' : secs(d.last_seen) < 3 * 3600 ? 'warn' : '', 'Till · ' + esc(d.name) + (d.station ? ` <span class="muted">· ${esc(d.station)}</span>` : ''), 'last seen ' + ago(d.last_seen))).join('')
+        : row(b.tills ? (tillOk ? 'ok' : 'warn') : '', 'Till' + (b.tills > 1 ? 's (' + b.tills + ')' : ''), b.tills ? 'last seen ' + ago(b.till_seen) : 'none registered')}
       ${row(secs(b.app_seen) < 300 ? 'ok' : '', 'Restaurant Pal open', 'last seen ' + ago(b.app_seen))}
       ${row(b.guest_waiting ? 'warn' : 'ok', 'Guest orders waiting', b.guest_waiting)}
       ${row(b.late_lines ? 'warn' : 'ok', 'Kitchen items late (25 min+)', b.late_lines)}
@@ -237,7 +291,7 @@ function drawShared() {
 function draw() {
   // the box is read from this computer, so its warning is added here
   const W = (S.warnings || []).slice();
-  if (box) for (const x of box.sources || []) if (x.sendingFps < x.fps * 0.95) W.push({ product: 'ep', level: 'warn', text: `${x.name} on Event Pal Box (${box.box}) is sending ${x.sendingFps} of ${x.fps} fps` });
+  if (box && !(WV && WV.boxes.some(b => b.name === box.box && secs(b.last) < 90))) for (const x of box.sources || []) if (x.sendingFps < x.fps * 0.95) W.push({ product: 'ep', level: 'warn', text: `${x.name} on Event Pal Box (${box.box}) is sending ${x.sendingFps} of ${x.fps} fps` });
   const feeds = ['ep', 'rp', 'tp'].filter(id => S[id].ok).length;
   const down = W.some(w => w.level === 'down') || feeds < 3;
   $('ov').textContent = down ? 'Problem' : W.length ? 'Up, with warnings' : 'All up';
@@ -284,6 +338,7 @@ async function askAva(question, target) {
 function start() {
   $('login').hidden = true; $('app').hidden = false;
   refresh().then(() => askAva('', $('brief')));
+  refreshWatch(); setInterval(() => !document.hidden && refreshWatch(), 30000);
   clearInterval(timer); timer = setInterval(refresh, 10000);
   setInterval(() => !document.hidden && askAva('', $('brief')), 15 * 60 * 1000);
 }

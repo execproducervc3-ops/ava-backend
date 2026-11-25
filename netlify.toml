@@ -99,6 +99,28 @@
 [functions."telegram-webhook"]
   timeout = 26
 
+# AVA's watch: look at everything every 2 minutes, investigate, report or alert.
+[functions."watch-run"]
+  schedule = "*/2 * * * *"
+
+# Event Pal Boxes report in here every 30 s.
+[[redirects]]
+  from = "/api/box-beat"
+  to = "/.netlify/functions/box-beat"
+  status = 200
+  force = true
+
+# AVA's watch bot on Telegram.
+[[redirects]]
+  from = "/api/watch-telegram"
+  to = "/.netlify/functions/watch-telegram"
+  status = 200
+  force = true
+
+# AVA's watch bot (Pal Monitor alerts) answers questions with AI, which can take more than 10 s.
+[functions."watch-telegram"]
+  timeout = 26
+
 # Google-searchable pages (seo-pages)
 [[redirects]]
   from = "/food"
