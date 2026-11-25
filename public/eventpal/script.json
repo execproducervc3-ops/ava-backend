@@ -1,0 +1,186 @@
+{
+ "note": "Narration script for this video. Voice: saved recipe in ava-backend/tools/voiceover (Voice B). Intro lines play in order at the cue times in index.html.",
+ "intro": [
+  {
+   "key": "title",
+   "text": "Alright, so this is Event Pal. One system that runs your whole event, from the first ticket you sell, to the report on your desk the next morning."
+  },
+  {
+   "key": "access",
+   "text": "It starts with Access Pal. Sell every ticket type online, or at the box office. Guest lists, comps, and passes for artists, vendors, media and staff. Every ticket and pass carries our own secured QR code, and every gate checks it in a second."
+  },
+  {
+   "key": "control",
+   "text": "Each code is digitally signed, and on the phone it keeps changing. So it can't be forged, edited, or screenshotted. A ticket works once, pass-backs get turned away, and every scan is tracked. You just watch the crowd count climb, live, gate by gate."
+  },
+  {
+   "key": "screens",
+   "text": "On the big screens, Event Pal runs the show, in full N.D.I., to any LED wall and to the livestream. Fetes and concerts, sports, awards, graduations, weddings and services, each one gets its own template, from countdowns to live scoreboards."
+  },
+  {
+   "key": "crowd",
+   "text": "And your crowd becomes part of the show. One scan, no app. Photos in your event's own frame, shared everywhere, and sent up to the big screen. Live reactions, polls, shake-to-win games, and a light show on every phone. Even for people watching from home."
+  },
+  {
+   "key": "pack",
+   "text": "Every event gets its own graphics pack. Custom effects and transitions, made from your branding, so your screens look like your event, and nobody else's."
+  },
+  {
+   "key": "sponsors",
+   "text": "Your sponsors get the slots they paid for. Enforced, counted, and proven. And one announcement reaches every screen and every phone, in seconds."
+  },
+  {
+   "key": "fnb",
+   "text": "At the bars and food stations, every till works as one, whether you run the bar, or an outside provider does. Cash, card, drink tickets, prepaid wristbands. Or all-inclusive, where staff scan the wristband and tap to serve, and every serving still gets counted, against limits you set."
+  },
+  {
+   "key": "stock",
+   "text": "Stock goes out to each bar, gets topped up when they ask, and gets counted at close. So you know what was sold, and what went missing."
+  },
+  {
+   "key": "staff",
+   "text": "Everybody on your team signs in with their own PIN and role. Gates, bars, the control desk. And everything they do is logged."
+  },
+  {
+   "key": "offline",
+   "text": "And if the signal drops, nothing stops. Gates keep scanning, tills keep selling, and the screens keep playing. It all catches up when the connection's back."
+  },
+  {
+   "key": "monitor",
+   "text": "It all comes together on Pal Monitor. Gates, bars, kitchens and screens, live, right on your phone."
+  },
+  {
+   "key": "ava",
+   "text": "And watching over all of it is AVA. She checks every part of your event, every two minutes. When something's off, she works out why, and she tells the right person, on Telegram, or right there on the till."
+  },
+  {
+   "key": "ask",
+   "text": "Ask her anything. How many are in? Which bar's busiest? Play the next sponsor. She answers, and with your say-so, she acts."
+  },
+  {
+   "key": "protocol",
+   "text": "Every event runs to one protocol. Brief. Build. Rehearse. Doors. Show. Close. Report."
+  },
+  {
+   "key": "finale",
+   "text": "One event. One system. Powered by AVA."
+  }
+ ],
+ "steps": [
+  {
+   "id": "brief",
+   "title": "The event brief",
+   "text": "First up, the event brief. One form, online, or as a PDF. Tickets and access, food and drink, screens, sponsors, all in one place. AVA reads it, and sets the whole event up, and tells you what's still missing, before anybody builds a thing."
+  },
+  {
+   "id": "venue",
+   "title": "Your venue, mapped",
+   "text": "Next, your venue. Every bar, food station and cashier goes on the map, each with its own tills, selling only what it should. Bottle bar, mixed drinks, VIP, the grill. You mark which ones are yours, and which ones an outside provider runs."
+  },
+  {
+   "id": "tickets",
+   "title": "Tickets on sale",
+   "text": "Now, tickets. Early bird, general, VIP, comps, all-inclusive, each with its own price, and its own limit. Sold online by card, or at the box office for cash. Every ticket carries our own secured QR code. On the phone, it keeps changing every few seconds. On paper, it's a signed, one-time code."
+  },
+  {
+   "id": "passes",
+   "title": "Guest lists and passes",
+   "text": "Guest lists and comps go in by name. Artists, vendors, media, security and staff, they all get passes that only open the areas they need. Backstage, the vendor gate, the VIP deck. And every pass scans just like a ticket, so you know exactly who's on site."
+  },
+  {
+   "id": "gates",
+   "title": "Gates open",
+   "text": "Doors open. Your gate staff scan with any phone. Green means in. Every gate counts, and you watch the crowd number climb, live."
+  },
+  {
+   "id": "access",
+   "title": "Access control",
+   "text": "Here's where it gets serious. Every code is our own secured QR code. It's digitally signed, so a fake or an edited code gets turned away, even with no signal. On the phone it keeps changing, so a screenshot won't work either. A ticket works once. Pass it back over the fence, and it's rejected. And every scan is tracked, by gate, by time, by staff member. Get close to capacity, and AVA gives you a heads-up."
+  },
+  {
+   "id": "screens",
+   "title": "The big screens",
+   "text": "Now, the big screens. The Event Pal Box sends the show in full N.D.I., up to 4K, to the LED walls, the switcher, and the livestream. Each output can be the show, the show with reactions, a clean overlay for the cameras, or a green screen. And if the internet drops, the show keeps playing."
+  },
+  {
+   "id": "templates",
+   "title": "Screens for any event",
+   "text": "Every kind of event gets its own look. Fete or concert, sports, awards, a graduation, a wedding, a funeral service, a conference. Line-ups and countdowns, live scoreboards for cricket, football and netball, winners' cards, even a tribute loop. One control screen runs it all, and your helpers get their own PIN."
+  },
+  {
+   "id": "pack",
+   "title": "Your own graphics pack",
+   "text": "And this one's fun. AVA builds your event its own graphics pack, straight from your logo, your colours, and your flyer. Openers, lower thirds, custom effects and transitions. No two events look the same."
+  },
+  {
+   "id": "crowd",
+   "title": "The crowd's photos",
+   "text": "Your crowd joins with one scan. No app. They take photos in your event's own frame, share them with your hashtag, or send them up to the big screen. You approve every one, first. And people watching from home, they get a spot on the wall too."
+  },
+  {
+   "id": "games",
+   "title": "Crowd games and moments",
+   "text": "Then it gets loud. Emoji reactions float up the screen, live polls count every vote, and shake-to-win games let the whole crowd power the moment. Every phone turns into a light show. And your big moments hit right on cue, with a countdown for the fireworks crew."
+  },
+  {
+   "id": "sponsors",
+   "title": "Sponsors, enforced",
+   "text": "Sponsors. Their slots run on a rotation that's actually enforced. An overlay during a set, a full takeover between acts. Pause it, and the count keeps going. Missed slots get worked back in, with your approval, and the MC can play one on the spot. Every play is logged, as proof."
+  },
+  {
+   "id": "announce",
+   "title": "Announcements",
+   "text": "Got something everybody needs to hear, a lost child, a car blocking the gate, last orders. Type it once, and it's on every screen, and every phone, in seconds. Urgent ones flash, and phones vibrate."
+  },
+  {
+   "id": "bars",
+   "title": "Bars and food stations",
+   "text": "Now, the bars. Every bar, food station and cashier gets its own till. Cash or card, and the change is worked out for you. Drink tickets, per drink or by value. Prepaid wristbands, topped up at the cashier. And the tills keep selling, even offline."
+  },
+  {
+   "id": "inclusive",
+   "title": "The all-inclusive flow",
+   "text": "All-inclusive works a little differently. The ticket is the tab. At the gate, each inclusive guest gets a wristband, linked to their ticket. At the bar, staff scan it, and tap to serve. No money changes hands, but every drink, and every plate, still gets counted, against stock, and against that guest's limit, per night or per hour, your call. Over the limit, a manager can allow one more, with their PIN. Food stations call out collection numbers, and the kitchen screen shows what to make. And the next morning, you see servings per head, and what the night really cost."
+  },
+  {
+   "id": "outside",
+   "title": "Outside bars",
+   "text": "If an outside provider runs a bar, they still sell on Event Pal tills. You see their takings and their stock, right next to yours. And afterwards, you choose what goes in their report, and you approve it, before it's sent."
+  },
+  {
+   "id": "stock",
+   "title": "Stock control",
+   "text": "Stock control. The store sends stock to each bar, and the bar confirms it, on its own till. Need a top-up. One tap. At close, the bar counts blind, and Event Pal shows you exactly what's missing, in dollars, bar by bar."
+  },
+  {
+   "id": "staff",
+   "title": "Staff and roles",
+   "text": "Your team. Everybody signs in with their own PIN and role, gate staff, bar staff, cashiers, managers, screen operators. Each person only sees what their job needs. Managers approve voids and overrides with their PIN, and everything's logged, by name, and time."
+  },
+  {
+   "id": "watch",
+   "title": "AVA on watch",
+   "text": "And here's AVA, at work. She checks everything, every two minutes. Say a till at bar two drops off. She sees the till right beside it is fine, so it's that tablet, not the wifi. She puts a note on the till next door, and sends you a Telegram alert. Tap Got it, and she stops. And every hour, she sends you a quick update."
+  },
+  {
+   "id": "ask",
+   "title": "Ask AVA, live",
+   "text": "Pal Monitor puts the whole event on your phone, live. Or, just ask AVA. How many are in, which bar's busiest, play the next sponsor. She answers in seconds, reads every instruction back before she acts, and people can only ask for what their role allows."
+  },
+  {
+   "id": "offline",
+   "title": "Built for a bad signal",
+   "text": "Let's be honest, venue internet fails. Event Pal is built for that. Gates keep scanning, tills keep selling, and the screens keep playing. Everything's saved on the device, and it all catches up, when the signal's back."
+  },
+  {
+   "id": "report",
+   "title": "The morning-after report",
+   "text": "The next morning, your report's waiting. Tickets sold and scanned, the crowd by the hour, takings by bar, inclusive servings, stock, crowd engagement, and sponsor proof of play. It downloads as a spreadsheet, with a pack for your accountant. Counts only. Guests' names and photos are never shared."
+  },
+  {
+   "id": "protocol",
+   "title": "The event protocol",
+   "text": "And every event runs to the same protocol. Brief, and build. A full rehearsal, before the day. AVA's walk-around, before the doors open. Live watch, through the show. A counted close. And your report, the next morning."
+  }
+ ]
+}

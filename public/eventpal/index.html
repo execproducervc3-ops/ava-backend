@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event Pal for promoters</title>
+<meta name="description" content="One system for your whole event: tickets and gates, big screens and crowd, bars and food, all watched over by AVA.">
+<meta property="og:title" content="Event Pal · powered by AVA">
+<meta property="og:description" content="One system for your whole event: tickets and gates, big screens and crowd, bars and food, all watched over by AVA.">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--y:#FFE000;--c:#3FD0FF;--bg:#0b0b10;--card:#15151c;--ink:#f4f4f6;--mut:#a3a3ad;--ok:#4be38a;--amb:#ffb020;--ev1:#ff3d8b;--ev2:#ff9a3d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:24px 16px 40px}
+h1{font-family:Anton,Impact,sans-serif;font-weight:400;letter-spacing:1px;font-size:clamp(28px,4vw,46px);margin:0;color:var(--y)}
+h1 span{color:var(--c)}
+.lead{color:var(--mut);margin:6px 0 16px;font-size:16px}
+.big{font-family:Anton,Impact,sans-serif;font-weight:400;letter-spacing:.5px}
+.vp{position:relative;width:100%;aspect-ratio:16/9;background:radial-gradient(ellipse at 50% 60%,#16161f,#07070b 75%);border:1px solid #23232c;border-radius:18px;overflow:hidden}
+.st{position:absolute;left:0;top:0;width:1280px;height:720px;transform-origin:0 0}
+.lbl{position:absolute;font-size:13px;font-weight:800;letter-spacing:2px;color:var(--mut);text-transform:uppercase}
+@keyframes pop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pulse{50%{opacity:.55}}
+/* promoter tablet */
+.tab{position:absolute;left:36px;top:150px;width:330px;height:430px;background:#121218;border:10px solid #2a2a33;border-radius:22px;overflow:hidden}
+.tab .hd{display:flex;justify-content:space-between;align-items:center;padding:12px 14px 8px}
+.pill{font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:#0d3b1e;color:var(--ok)}
+.pill.warn{background:#3b2e05;color:var(--amb)}
+.sts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:0 12px}
+.sts div{background:#1c1c24;border-radius:10px;padding:8px}
+.sts span{display:block;font-size:10px;color:var(--mut)}
+.sts b{font-size:18px}
+.tb{position:absolute;left:12px;right:12px;top:114px;bottom:10px;display:flex;flex-direction:column;gap:5px;font-size:12px}
+.tb .h{font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--mut);text-transform:uppercase;margin-top:2px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1c24;border-radius:9px;padding:6px 10px}
+.row b{font-size:13px}.row i{font-style:normal;color:var(--mut);font-size:11px}
+.row.on{outline:2px solid var(--y)}.row.ok{outline:2px solid var(--ok)}.row.amb{outline:2px solid var(--amb)}
+.row.new{animation:pop .35s both}
+.bar{height:8px;border-radius:4px;background:#26262f;overflow:hidden}.bar i{display:block;height:100%;background:var(--y);transition:width .8s}
+.btnr{display:flex;gap:6px}.btnr div{flex:1;text-align:center;padding:8px 4px;border-radius:9px;background:#22222c;border:1px solid #33333d;font-weight:800;font-size:12px;transition:background .25s,color .25s}
+.btnr div.on{background:var(--y);color:#111}
+.ck{color:var(--ok);font-weight:800}
+.ava-msg{background:#0c2733;border:1px solid #1d5a73;color:#cdeefa;border-radius:10px;padding:8px 10px;font-size:11.5px;line-height:1.35;animation:pop .35s both}
+.ava-msg b{color:var(--c)}
+.bub{max-width:88%;padding:7px 10px;border-radius:12px;font-size:11.5px;line-height:1.35;animation:pop .3s both}
+.bub.me{align-self:flex-end;background:#2b2b36}.bub.ava{align-self:flex-start;background:#0c2733;border:1px solid #1d5a73;color:#d7f3ff}
+.kp{display:grid;grid-template-columns:1fr 1fr;gap:6px}.kp div{background:#f7f7f2;color:#15151c;border-radius:9px;padding:7px}.kp b{display:block;font-size:17px}.kp span{font-size:10px;color:#55555c}
+.proto{display:flex;flex-direction:column;gap:5px}
+.proto div{display:flex;gap:8px;align-items:center;padding:6px 9px;border-radius:9px;background:#1c1c24;opacity:.35;transition:opacity .4s,background .4s}
+.proto div.lit{opacity:1;background:#2a2610}.proto div b{width:20px;height:20px;border-radius:50%;background:var(--y);color:#111;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.proto div span{font-weight:800}.proto div i{font-style:normal;color:var(--mut);font-size:10.5px;margin-left:auto;text-align:right}
+/* AVA core */
+.ava{position:absolute;left:540px;top:300px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#1d6e8f,#0a2433 70%);border:3px solid #3fb6e0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.ava.hot{animation:avah 1.2s ease-in-out infinite}
+@keyframes avah{50%{box-shadow:0 0 44px 8px rgba(63,208,255,.4)}}
+.ava b{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:34px;letter-spacing:2px;color:#fff;line-height:1}.ava span{font-size:10.5px;color:#bfefff;margin-top:4px;line-height:1.25}
+.think{position:absolute;left:520px;top:458px;width:190px;text-align:center;font-size:11.5px;font-weight:700;color:#bfefff;opacity:0;transition:opacity .3s}
+.think.show{opacity:1}
+/* big screen */
+.bs{position:absolute;left:770px;top:40px;width:480px;height:277px;background:#000;border:8px solid #2a2a33;border-radius:10px;overflow:hidden}
+.legs{position:absolute;left:990px;top:325px;width:40px;height:16px;background:#2a2a33}
+.sc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;animation:fade .4s both;overflow:hidden}
+.evbg{background:radial-gradient(ellipse at 30% 20%,#3a0d2a,#0a0410 70%)}
+.evt{font-family:Anton,Impact,sans-serif;font-size:50px;line-height:.95;background:linear-gradient(90deg,var(--ev1),var(--ev2));-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:1px}
+.evs{font-weight:800;font-size:12px;letter-spacing:4px;color:#ffd7e8;margin-top:6px}
+.wipe{position:absolute;inset:0;z-index:5;background:linear-gradient(100deg,var(--ev1),var(--ev2));transform:translateX(-110%) skewX(-12deg);animation:wipe .9s cubic-bezier(.7,0,.3,1) forwards}
+@keyframes wipe{50%{transform:translateX(0) skewX(-12deg)}100%{transform:translateX(110%) skewX(-12deg)}}
+.l3{position:absolute;left:4%;bottom:8%;display:flex;align-items:stretch;animation:l3in .6s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes l3in{from{transform:translateX(-120%)}}
+.l3 i{width:8px;background:linear-gradient(var(--ev1),var(--ev2))}.l3 div{background:rgba(10,4,16,.85);padding:6px 12px;text-align:left}.l3 b{display:block;font:400 20px Anton,Impact,sans-serif;color:#fff;letter-spacing:.5px}.l3 span{font-size:10px;font-weight:800;color:#ffc2da;letter-spacing:2px}
+.stage{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 110%,#ff3d8b55,transparent 60%),radial-gradient(ellipse at 20% 0%,#3fd0ff33,transparent 50%),#07040c}
+.beam{position:absolute;top:-20%;width:60px;height:140%;background:linear-gradient(#fff3,transparent);transform-origin:top;animation:beam 3s ease-in-out infinite alternate}
+@keyframes beam{from{transform:rotate(-25deg)}to{transform:rotate(25deg)}}
+.spb{position:absolute;right:3%;top:5%;padding:4px 9px;border-radius:6px;background:#fff;color:#111;font:800 11px Inter,sans-serif;animation:pop .4s both;z-index:6}
+.spb.wl{background:#0d47ff;color:#fff}
+.tko{position:absolute;inset:0;z-index:7;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:fade .4s both}
+.tko b{font:400 54px/1 Anton,Impact,sans-serif;letter-spacing:1px}.tko span{font-weight:800;font-size:13px;letter-spacing:3px;margin-top:6px}
+.pwg{position:absolute;inset:34px 14px 10px;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-content:start}
+.pwg div{animation:pop .45s both}
+.poll{width:80%;display:flex;flex-direction:column;gap:8px;text-align:left}
+.poll div{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px}.poll span{width:110px}.poll em{flex:1;height:18px;border-radius:9px;background:#22142a;overflow:hidden}.poll em i{display:block;height:100%;background:linear-gradient(90deg,var(--ev1),var(--ev2));transition:width 1.2s}
+.meter{width:80%;height:26px;border-radius:13px;background:#22142a;overflow:hidden;border:2px solid #4a2a4a}.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ev1),var(--ev2),#fff3a0);transition:width 5s cubic-bezier(.3,.1,.2,1)}
+.bsa{position:absolute;left:3%;right:3%;bottom:3%;z-index:8;border-radius:6px;padding:7px 10px;font:800 12.5px/1.3 Inter,sans-serif;display:flex;gap:8px;align-items:center;animation:bsain .45s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes bsain{from{transform:translateY(160%);opacity:0}}
+.bsa.n{background:var(--y);color:#111}.bsa.u{background:#e8560a;color:#fff;animation:bsain .45s both,bsap 1.2s ease-in-out infinite}
+.bsa i{font-style:normal;font-family:Anton,Impact,sans-serif;font-weight:400;font-size:10px;padding:2px 6px;border-radius:3px;flex:none;background:#111;color:#fff}
+@keyframes bsap{50%{box-shadow:0 0 0 3px rgba(255,255,255,.5)}}
+.bse{position:absolute;bottom:-34px;font-size:24px;z-index:7;pointer-events:none;animation:bseu 3.4s linear forwards}
+@keyframes bseu{0%{transform:translateY(0) scale(.3)}10%{transform:translateY(-34px) scale(1)}85%{transform:translateY(-250px) scale(1)}100%{transform:translateY(-290px) scale(0)}}
+.ndi{position:absolute;left:770px;top:345px;font-size:11px;font-weight:800;color:var(--c);letter-spacing:1px;opacity:0;transition:opacity .4s}
+/* devices */
+.dev{position:absolute;top:400px;background:#0b0b0f;border:6px solid #2a2a33;overflow:hidden}
+.ph{width:126px;height:258px;border-radius:20px}
+.till{left:910px;top:420px;width:210px;height:238px;border-radius:14px}
+.dev .in{position:absolute;inset:0}
+.dlbl{position:absolute;top:664px;font-size:10.5px;font-weight:800;letter-spacing:1.5px;color:var(--mut);text-transform:uppercase}
+.vf{position:absolute;inset:26px 14px 70px;border:2px solid #ffffff55;border-radius:12px}
+.vf:before{content:'';position:absolute;left:8%;right:8%;height:3px;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:sc 1.4s ease-in-out infinite}
+@keyframes sc{0%,100%{top:10%}50%{top:85%}}
+.res{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;animation:pop .3s both}
+.res.ok{background:#0f5a2c}.res.amb{background:#6a3c00}
+.res b{font:400 30px/1 Anton,Impact,sans-serif;color:#fff}.res span{font-size:10px;font-weight:700;color:#e6ffe9;margin-top:4px;padding:0 6px}
+.gcount{position:absolute;left:8px;right:8px;bottom:10px;background:#1c1c24;border-radius:10px;padding:5px 8px;font-size:9px;color:var(--mut);display:flex;justify-content:space-between}.gcount b{color:#fff;font-size:12px}
+.offb{position:absolute;left:4px;right:4px;top:4px;z-index:9;background:#2a1f05;border:2px solid var(--amb);border-radius:8px;padding:4px 5px;font-size:8.5px;line-height:1.25;animation:pop .3s both}
+.tgrid{position:absolute;left:8px;top:28px;width:110px;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.tgrid div{background:#1f1f29;border-radius:6px;padding:5px 4px;font-size:8.5px;font-weight:800;text-align:center;line-height:1.15}.tgrid div small{display:block;color:var(--mut);font-weight:600;font-size:7.5px}
+.tgrid div.hit{background:var(--y);color:#111}.tgrid div.hit small{color:#333}
+.cart{position:absolute;right:8px;top:28px;width:72px;bottom:44px;background:#16161d;border-radius:6px;padding:5px;font-size:8px;display:flex;flex-direction:column;gap:3px}
+.cart b{font-size:13px;margin-top:auto}
+.pays{position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:3px}.pays div{flex:1;text-align:center;font-size:7.5px;font-weight:800;padding:6px 1px;border-radius:6px;background:#22222c;transition:background .25s}
+.pays div.on{background:var(--ok);color:#06270f}
+.thd{position:absolute;left:8px;right:8px;top:6px;display:flex;justify-content:space-between;font-size:9px;font-weight:800;color:var(--mut)}
+.notice{position:absolute;left:0;right:0;top:0;z-index:9;background:#2a2010;color:#fde7b0;font-size:8.5px;font-weight:700;padding:5px 6px;display:flex;gap:5px;align-items:center;animation:ndown .4s both}
+.notice i{font-style:normal;background:var(--y);color:#111;font-size:7px;padding:1px 4px;border-radius:3px}.notice em{margin-left:auto;font-style:normal;background:#3a3a44;padding:2px 6px;border-radius:5px}
+@keyframes ndown{from{transform:translateY(-100%)}}
+.wb{position:absolute;inset:26px 10px 10px;background:#16161d;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;padding:8px;animation:pop .3s both}
+.wb b{font:400 22px Anton,Impact,sans-serif}.wb span{font-size:9px;color:var(--mut)}.wb .go{padding:7px 14px;border-radius:8px;background:var(--ok);color:#06270f;font-weight:800;font-size:11px}
+.wb .lim{display:flex;gap:3px}.wb .lim i{width:12px;height:12px;border-radius:3px;background:#33333d}.wb .lim i.u{background:var(--y)}
+.tk{position:absolute;inset:16px 8px 8px;border-radius:12px;background:linear-gradient(160deg,var(--ev1),var(--ev2));padding:7px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tk b{font:400 14px/1 Anton,Impact,sans-serif;color:#fff;text-align:center}.tk .q{width:74px;height:74px;background:#fff;border-radius:6px;padding:4px}.tk span{font-size:8px;font-weight:800;color:#fff}.tk em{font-style:normal;font-size:9px;font-weight:800;background:#0006;color:#fff;padding:2px 8px;border-radius:999px}
+.tk .sec{display:flex;align-items:center;gap:4px;font-size:7px;letter-spacing:.5px;background:#0008;padding:2px 6px;border-radius:999px}.tk .sec i{width:9px;height:9px;border-radius:50%;border:2px solid #fff6;border-top-color:#fff;animation:spin 2.5s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tgm{position:absolute;inset:0;background:#17212b;display:flex;flex-direction:column;padding:22px 6px 6px;gap:5px}
+.tgm .tgh{position:absolute;left:0;right:0;top:0;height:20px;background:#232e3c;font-size:9px;font-weight:800;display:flex;align-items:center;padding:0 8px;color:#fff}
+.tgm .m{background:#182533;border:1px solid #2b5278;border-radius:9px;padding:6px;font-size:8px;line-height:1.3;color:#e6eef6;animation:pop .35s both}
+.tgm .m b{display:block;font-size:8.5px;margin-bottom:2px}.tgm .m .gi{margin-top:5px;text-align:center;background:#2b5278;border-radius:6px;padding:4px;font-weight:800}
+.tgm .m.me{background:#2b5278;align-self:flex-end}
+.rxrow{position:absolute;left:5px;right:5px;bottom:8px;display:flex;justify-content:space-between;background:#15151b;border:1px solid #2c2c36;border-radius:999px;padding:2px}
+.rxrow span{font-size:9px;width:14px;height:14px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#22222c}
+.fe{position:absolute;font-size:15px;pointer-events:none;z-index:6;animation:feu 1.2s ease-out forwards}
+@keyframes feu{from{transform:translateY(0) scale(.6)}to{transform:translateY(-120px) scale(1.25);opacity:0}}
+/* photo frame */
+.fr{position:relative;width:100%;aspect-ratio:4/5;background:linear-gradient(160deg,var(--ev1),var(--ev2));border-radius:4px;padding:6%}
+.fr .pin{position:relative;width:100%;height:100%;overflow:hidden;border-radius:2px}
+.fr .tt{position:absolute;left:0;right:0;bottom:2%;text-align:center;font:400 13px/1 Anton,Impact,sans-serif;color:#fff;letter-spacing:.5px;text-shadow:0 1px 3px #0008}
+.fr.sm .tt{font-size:6px}
+/* dots/wires */
+.dot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;z-index:20;pointer-events:none}
+.dot.cmd{background:#fff;box-shadow:0 0 10px 3px #fff}
+.dot.up{background:var(--c);box-shadow:0 0 8px 2px var(--c);width:7px;height:7px;margin:-3.5px 0 0 -3.5px}
+.dot.y{background:var(--y);box-shadow:0 0 8px 2px var(--y);width:7px;height:7px;margin:-3.5px 0 0 -3.5px}
+.finger{position:absolute;width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.8);z-index:30;transition:left .5s ease,top .5s ease,opacity .3s;opacity:0;pointer-events:none}
+.cap{position:absolute;left:400px;right:520px;top:40px}
+.cap .n{font-family:Anton,Impact,sans-serif;font-size:20px;color:var(--y);letter-spacing:1px}
+.cap .t{font-family:Anton,Impact,sans-serif;font-size:32px;line-height:1.05;margin:2px 0 8px}
+.cap .d{font-size:13.5px;color:#d4d4da;line-height:1.45;max-height:176px;overflow:hidden}
+/* intro */
+#intro{position:absolute;inset:0;z-index:40;background:radial-gradient(ellipse at 50% 30%,#10293a 0%,#0b0b14 70%);padding:40px 52px;box-sizing:border-box;opacity:0;pointer-events:none;transition:opacity .5s}
+#intro.on{opacity:1;pointer-events:auto}
+#intro .ih h2{margin:0;font:400 54px/1 Anton,Impact,sans-serif;color:var(--y);letter-spacing:1px}#intro .ih h2 span{color:var(--c)}
+#intro .il{margin:8px 0 0;font:500 18px/1.4 Inter,sans-serif;color:#e8e8f0;max-width:1000px}
+#intro .ig{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:22px}
+#intro .gc{background:rgba(255,255,255,.04);border:1px solid #2c4660;border-radius:16px;padding:14px 16px}
+#intro .gc h3{margin:0 0 8px;font:400 19px Anton,Impact,sans-serif;letter-spacing:1.5px;color:var(--y)}
+#intro .fi{display:flex;gap:9px;align-items:flex-start;padding:4px 0}
+#intro .fi i{font-style:normal;font-size:20px;line-height:1;flex:none;width:26px;text-align:center}
+#intro .fi b{display:block;font:800 14px/1.2 Inter,sans-serif;color:#fff}#intro .fi span{display:block;font:500 12px/1.3 Inter,sans-serif;color:#b9c6d6;margin-top:2px}
+#intro .ip{position:absolute;left:52px;bottom:26px;font:800 16px Inter,sans-serif;color:var(--y);letter-spacing:.5px}
+#intro.anim{background:radial-gradient(ellipse at 50% 15%,#0f2c3f 0%,#090a14 65%)}
+#intro.anim>.ih,#intro.anim>.ig,#intro.anim>.ip{display:none}
+#icv{position:absolute;inset:0;width:1280px;height:720px;pointer-events:none}
+#ia{position:absolute;inset:0;pointer-events:none}
+#intro:not(.anim) #icv,#intro:not(.anim) #ia{display:none}
+.ie{position:absolute;opacity:0;transition:opacity .6s,transform .8s cubic-bezier(.2,.8,.2,1),left .8s cubic-bezier(.2,.8,.2,1),top .8s cubic-bezier(.2,.8,.2,1)}
+.ie.on{opacity:1}
+#iTitle{left:50%;top:200px;transform:translate(-50%,0) scale(.85);text-align:center;white-space:nowrap}#iTitle.on{transform:translate(-50%,0) scale(1)}
+#iTitle h2{margin:0;font:400 110px/0.95 Anton,Impact,sans-serif;color:var(--y);letter-spacing:2px;text-shadow:0 6px 30px rgba(0,0,0,.6)}
+#iTitle p{margin:12px 0 0;font:800 20px Inter,sans-serif;letter-spacing:5px;color:#dff4ff;text-transform:uppercase}
+#iTitle.top{left:40px;top:24px;transform:scale(.36);transform-origin:0 0;text-align:left}
+.iscr{width:100%;height:100%;background:#05050a;border:10px solid #202231;border-radius:14px;overflow:hidden;box-shadow:0 0 60px rgba(63,208,255,.2)}
+.iscri{position:relative;width:100%;height:100%}
+.istand{width:90px;height:22px;margin:0 auto;background:#202231}
+#iScr{left:640px;top:110px;width:580px;height:326px;transform:translateY(30px)}#iScr.on{transform:none}
+#iPh{left:170px;top:120px;width:200px;height:400px;border:9px solid #2a2b38;border-radius:30px;background:#0b0b10;overflow:hidden;transform:translateY(30px)}#iPh.on{transform:none}
+#iPh .in{position:absolute;inset:0}
+#iBig{left:410px;top:220px;width:560px;text-align:center;transform:scale(.6)}#iBig.on{transform:none}
+#iBig b{display:block;font:400 84px/1 Anton,Impact,sans-serif;white-space:nowrap}#iBig span{font:800 18px Inter,sans-serif;letter-spacing:3px}
+#iCnt{right:70px;top:96px;text-align:right;transform:translateX(30px)}#iCnt.on{transform:none}
+#iCnt small{display:block;font:800 14px Inter,sans-serif;letter-spacing:3px;color:#aeb3d6}#iCnt b{font:400 72px/1 Anton,Impact,sans-serif;color:#fff}
+#iCards{left:90px;top:150px;width:1100px;display:flex;gap:22px}
+#iCards>div{flex:1;background:#13141e;border:2px solid #2c3260;border-radius:18px;padding:18px;opacity:0;transform:translateY(30px);transition:opacity .5s,transform .6s}
+#iCards>div.on{opacity:1;transform:none}
+#iCards b{display:block;font:400 30px/1.05 Anton,Impact,sans-serif;color:var(--y);letter-spacing:.5px}#iCards span{display:block;font:600 15px/1.4 Inter,sans-serif;color:#cfd8e6;margin-top:8px}#iCards i{font-style:normal;font-size:40px}
+#iStock{left:50%;top:150px;width:760px;transform:translate(-50%,30px);background:#12131c;border:2px solid #2c3260;border-radius:18px;padding:22px 26px}#iStock.on{transform:translate(-50%,0)}
+#iStock .sh{font:400 24px Anton,Impact,sans-serif;color:var(--y);letter-spacing:2px}
+#iStock .sr{display:flex;gap:14px;margin-top:14px}#iStock .sr div{flex:1;background:#1b1d2c;border-radius:12px;padding:12px}#iStock .sr b{display:block;font:400 42px Anton,Impact,sans-serif;color:#fff}#iStock .sr small{font:700 12px Inter,sans-serif;color:#aeb3d6;letter-spacing:1px}
+#iStock .sr div.m{background:#3a2405}#iStock .sr div.m b{color:var(--amb)}
+#iMon{left:50%;top:120px;width:880px;transform:translate(-50%,30px);display:grid;grid-template-columns:repeat(4,1fr);gap:14px}#iMon.on{transform:translate(-50%,0)}
+#iMon div{background:#13141e;border:2px solid #2c3260;border-radius:16px;padding:16px;animation:pop .5s both}#iMon small{font:800 12px Inter,sans-serif;letter-spacing:2px;color:#aeb3d6}#iMon b{display:block;font:400 46px/1.05 Anton,Impact,sans-serif;color:#fff}#iMon span{font:700 13px Inter,sans-serif;color:var(--ok)}
+#iOrb{left:50%;top:150px;width:230px;height:230px;margin-left:-115px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#1d6e8f,#0a2433 70%);border:4px solid #3fb6e0;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:avah 1.4s ease-in-out infinite}
+#iOrb b{font:400 64px/1 Anton,Impact,sans-serif;color:#fff;letter-spacing:4px}#iOrb span{font:700 14px Inter,sans-serif;color:#bfefff;margin-top:4px}
+.ibub{position:absolute;max-width:360px;padding:12px 16px;border-radius:16px;font:600 17px/1.35 Inter,sans-serif;opacity:0;transform:translateY(14px);transition:opacity .4s,transform .4s}
+.ibub.on{opacity:1;transform:none}.ibub.q{background:#2b2b36;color:#fff}.ibub.a{background:#0c2733;border:2px solid #1d5a73;color:#d7f3ff}.ibub.al{background:#3a2405;border:2px solid var(--amb);color:#ffe2b0}
+#iProto{left:50%;top:180px;transform:translateX(-50%);display:flex;gap:12px}
+#iProto div{width:140px;padding:16px 10px;border-radius:16px;background:#13141e;border:2px solid #2c3260;text-align:center;opacity:.2;transform:translateY(14px);transition:opacity .4s,transform .4s,border-color .4s}
+#iProto div.lit{opacity:1;transform:none;border-color:var(--y)}#iProto b{display:block;font:400 34px Anton,Impact,sans-serif;color:var(--y)}#iProto span{font:800 16px Inter,sans-serif;color:#fff}
+#iFin{left:50%;top:190px;transform:translate(-50%,0) scale(.7);text-align:center;white-space:nowrap}#iFin.on{transform:translate(-50%,0) scale(1)}
+#iFin b{display:block;font:400 80px/1.05 Anton,Impact,sans-serif;color:#fff;text-shadow:0 6px 40px rgba(0,0,0,.7)}#iFin b.y{color:var(--y)}#iFin b.c{color:var(--c);font-size:56px;margin-top:10px}
+#iChip{left:50px;bottom:34px;padding:12px 18px;border-radius:14px;background:rgba(10,12,28,.9);border:2px solid var(--y);transform:translateY(20px)}#iChip.on{transform:none}
+#iChip b{display:block;font:800 22px Inter,sans-serif;color:#fff}#iChip span{font:600 15px Inter,sans-serif;color:#cfd3ef}
+/* controls & notes */
+.ctl{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;align-items:center}
+.ctl button{font:inherit;font-size:14px;font-weight:700;padding:9px 14px;border-radius:10px;border:1px solid #33333d;background:#1c1c24;color:var(--ink);cursor:pointer}
+.ctl button.on{background:var(--y);color:#111;border-color:var(--y)}
+.ctl #pp{background:var(--y);color:#111;border-color:var(--y)}
+.sec{margin-top:28px}.sec h2{font-family:Anton,Impact,sans-serif;font-weight:400;letter-spacing:1px;font-size:clamp(22px,3vw,32px);color:var(--y);margin:0}.sec h2 span{color:var(--c)}.sec>p{color:var(--mut);margin:4px 0 14px;font-size:15px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.notes div{background:var(--card);border-radius:12px;padding:14px 16px;font-size:14px;color:var(--mut);line-height:1.45}
+.notes b{color:var(--ink);display:block;margin-bottom:4px}
+.caps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:10px}
+.caps div{background:#0d1c24;border:1px solid #1d4a5e;border-radius:12px;padding:12px 14px;font-size:14px;color:#b9d4df;line-height:1.4}
+.caps b{display:block;color:#fff;margin-bottom:3px}.caps i{font-style:normal;margin-right:6px}
+.protl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px;counter-reset:p}
+.protl div{background:var(--card);border-top:3px solid var(--y);border-radius:10px;padding:12px 14px;font-size:13.5px;color:var(--mut);line-height:1.4}
+.protl b{display:block;color:#fff;font-size:15px;margin-bottom:4px}.protl b:before{counter-increment:p;content:counter(p) ' · ';color:var(--y)}
+.fl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.fl>div{background:var(--card);border-radius:12px;padding:14px 16px}.fl h3{margin:0 0 8px;font:400 19px Anton,Impact,sans-serif;letter-spacing:1px;color:var(--y)}
+.fl ul{margin:0;padding-left:18px;color:#c9c9d1;font-size:13.5px;line-height:1.45}.fl li{margin:3px 0}
+.mcap{display:none}
+.introhtml{display:none}
+.credit{color:#6f6f78;font-size:12px;margin-top:18px}
+html.embed .wrap{padding:6px 6px 10px}html.embed h1,html.embed .lead,html.embed .sec,html.embed .credit{display:none}
+@media (max-width:700px){
+.wrap{padding:10px 8px 24px}h1{font-size:22px}.lead{font-size:13px;margin:4px 0 10px}.vp{border-radius:12px}.cap{display:none}
+.mcap{display:block;background:var(--card);border-radius:12px;padding:12px 14px;margin-top:10px;min-height:130px}
+.mcap .n{font-family:Anton,Impact,sans-serif;color:var(--y);font-size:14px;letter-spacing:1px}.mcap .t{font-family:Anton,Impact,sans-serif;font-size:22px;line-height:1.1;margin:2px 0 6px}.mcap .d{font-size:14px;line-height:1.45;color:#d4d4da}
+.ctl{margin-top:10px;gap:6px}.ctl>span[style*="flex:1"]{display:none}.ctl #pp,.ctl #nb{flex:1;font-size:14px;padding:10px}
+#stepBtns{flex-wrap:nowrap!important;overflow-x:auto;width:100%;padding-bottom:4px;scrollbar-width:none}#stepBtns::-webkit-scrollbar{display:none}#stepBtns button{flex:none;font-size:13px;padding:8px 11px}
+.introhtml{display:block;margin:14px 0 0}.introhtml h3{font:400 18px Anton,Impact,sans-serif;color:var(--y);letter-spacing:1px;margin:14px 0 6px}.introhtml li{margin:5px 0;font-size:14px;color:#dcdce4}.introhtml li b{color:#fff}.introhtml ul{padding-left:0;list-style:none;margin:0}
+}
+@media (prefers-reduced-motion:reduce){.beam,.ava.hot,#iOrb{animation:none}}
+</style>
+<script>if(/[?&]embed/.test(location.search))document.documentElement.classList.add('embed')</script>
+</head>
+<body>
+<div class="wrap">
+<h1>EVENT PAL <span>· POWERED BY AVA</span></h1>
+<p class="lead">One system for your whole event: tickets and gates, big screens and crowd, bars and food, all watched over by AVA.</p>
+<div class="vp" id="vp"><div class="st" id="st">
+<svg id="wires" width="1280" height="720" style="position:absolute;inset:0">
+<g fill="none" stroke="#24384a" stroke-width="3" stroke-dasharray="6 6">
+<path id="w_t" d="M366 380 C 450 380, 470 375, 540 375"/>
+<path id="w_b" d="M690 350 C 740 320, 760 250, 770 200"/>
+<path id="w_g" d="M640 450 C 660 510, 760 520, 833 528"/>
+<path id="w_l" d="M615 450 C 640 560, 900 400, 1015 420"/>
+<path id="w_p" d="M690 395 C 900 370, 1120 360, 1193 400"/>
+</g></svg>
+<div class="lbl" style="left:36px;top:120px">1 · Promoter · Pal Monitor</div>
+<div class="lbl" style="left:770px;top:14px">2 · Big screens</div>
+<div class="tab"><div class="hd"><b class="big" style="font-size:20px;color:var(--y)">EVENT PAL</b><span class="pill" id="pill">● Live</span></div>
+<div class="sts"><div><span>In the venue</span><b id="kIn">0</b></div><div><span>Tickets sold</span><b id="kSold">0</b></div><div><span>Bars EC$</span><b id="kBar">0</b></div></div>
+<div class="tb" id="tb"></div></div>
+<div class="ava" id="ava"><b>AVA</b><span>watches · works it out<br>· tells the right person</span></div>
+<div class="think" id="think"></div>
+<div class="bs" id="bs"></div><div class="legs"></div>
+<div class="ndi" id="ndi">▶ EVENT PAL BOX · FULL NDI → LED WALLS + LIVESTREAM</div>
+<div class="dev ph" id="dg" style="left:770px"><div class="in"></div></div>
+<div class="dev till" id="dt"><div class="in"></div></div>
+<div class="dev ph" id="dp" style="left:1130px"><div class="in"></div></div>
+<div class="dlbl" style="left:776px">Gate phone</div><div class="dlbl" style="left:960px">Bar till</div><div class="dlbl" style="left:1132px" id="dpl">Guest phone</div>
+<div id="intro" class="on"><canvas id="icv" width="1280" height="720"></canvas><div id="ia"></div>
+<div class="ih"><h2>YOUR WHOLE EVENT. <span>ONE SYSTEM.</span></h2><p class="il">From the first ticket sold to the report on your desk next morning: Access Pal at the gates, Event Pal on the screens, every bar and food station on one till system, Pal Monitor in your pocket, and AVA watching over all of it.</p></div>
+<div class="ig">
+<div class="gc"><h3>TICKETS &amp; ACCESS</h3><div class="fi"><i>🎟️</i><div><b>Access Pal</b><span>Every ticket type, online and at the box office</span></div></div><div class="fi"><i>📲</i><div><b>Scan at any gate</b><span>Any phone is a scanner; live count by gate</span></div></div><div class="fi"><i>🔒</i><div><b>Secured QR codes</b><span>Signed and changing: no fakes, edits or screenshots</span></div></div><div class="fi"><i>⭐</i><div><b>Zones &amp; capacity</b><span>VIP checks, limits, re-entry</span></div></div><div class="fi"><i>🪪</i><div><b>Guest lists &amp; passes</b><span>Comps, artists, vendors, media, staff</span></div></div></div>
+<div class="gc"><h3>SCREENS &amp; CROWD</h3><div class="fi"><i>🖥️</i><div><b>Any LED wall</b><span>Full NDI to walls and livestream</span></div></div><div class="fi"><i>✨</i><div><b>Your graphics pack</b><span>Custom effects and transitions per event</span></div></div><div class="fi"><i>📸</i><div><b>Crowd in the show</b><span>Photos, reactions, polls, shake games</span></div></div><div class="fi"><i>📣</i><div><b>Sponsors &amp; announcements</b><span>Enforced rotation, proof of play</span></div></div><div class="fi"><i>🏏</i><div><b>Any event</b><span>Templates, scoreboards, awards</span></div></div></div>
+<div class="gc"><h3>FOOD &amp; DRINK</h3><div class="fi"><i>🍹</i><div><b>Every bar, one system</b><span>Cash, card, drink tickets, wristbands</span></div></div><div class="fi"><i>🎫</i><div><b>All-inclusive</b><span>Scan, tap to serve, limits you set</span></div></div><div class="fi"><i>📦</i><div><b>Stock control</b><span>Issued, topped up, counted blind</span></div></div><div class="fi"><i>🍗</i><div><b>Food stations</b><span>Collection numbers, kitchen screen</span></div></div><div class="fi"><i>🤝</i><div><b>Outside bars</b><span>Their report, your approval</span></div></div></div>
+<div class="gc"><h3>CONTROL &amp; AVA</h3><div class="fi"><i>📊</i><div><b>Pal Monitor</b><span>The whole event live, on your phone</span></div></div><div class="fi"><i>🧠</i><div><b>AVA on watch</b><span>Finds it, works out why, alerts</span></div></div><div class="fi"><i>💬</i><div><b>Ask AVA</b><span>Answers and acts on your say-so</span></div></div><div class="fi"><i>📈</i><div><b>Morning-after report</b><span>Every number, next morning</span></div></div><div class="fi"><i>🔑</i><div><b>Staff, PINs &amp; offline</b><span>Roles for everyone; nothing stops offline</span></div></div></div>
+</div>
+<div class="ip">▶ Press Play to see a whole event, start to finish · 23 steps</div></div>
+<div class="cap" id="cap"><div class="n" id="capN"></div><div class="t" id="capT"></div><div class="d" id="capD"></div></div>
+<div class="finger" id="finger"></div>
+</div></div>
+<div class="mcap" aria-live="polite"><div class="n" id="mN"></div><div class="t" id="mT"></div><div class="d" id="mD"></div></div>
+<div class="ctl"><button id="pp">▶ Play</button><button id="nb" aria-pressed="true">🔊 Voice on</button><span style="flex:1"></span><span id="stepBtns" style="display:flex;flex-wrap:wrap;gap:8px"></span></div>
+<div class="introhtml"><p><b>Your whole event, one system.</b> Tickets and gates, screens and crowd, bars and food, all watched over by AVA.</p>
+<h3>TICKETS &amp; ACCESS</h3><ul><li>🎟️ <b>Access Pal</b>: every ticket type, online and at the box office</li><li>📲 <b>Scan at any gate</b>: any phone is a scanner</li><li>🔒 <b>Secured QR codes</b>: signed and changing, so no fakes, edits or screenshots</li><li>⭐ <b>Zones &amp; capacity</b>: VIP checks, limits, re-entry</li><li>🪪 <b>Guest lists &amp; passes</b>: comps, artists, vendors, media, staff</li></ul>
+<h3>SCREENS &amp; CROWD</h3><ul><li>🖥️ <b>Any LED wall</b>: full NDI to walls and livestream</li><li>✨ <b>Your graphics pack</b>: custom effects and transitions</li><li>📸 <b>Crowd in the show</b>: photos, reactions, polls, games</li><li>📣 <b>Sponsors &amp; announcements</b>: enforced rotation, proof of play</li><li>🏏 <b>Any event</b>: templates, scoreboards, awards</li></ul>
+<h3>FOOD &amp; DRINK</h3><ul><li>🍹 <b>Every bar, one system</b>: cash, card, tickets, wristbands</li><li>🎫 <b>All-inclusive</b>: scan, tap to serve, limits you set</li><li>📦 <b>Stock control</b>: issued, topped up, counted blind</li><li>🍗 <b>Food stations</b>: collection numbers, kitchen screen</li><li>🤝 <b>Outside bars</b>: their report, your approval</li></ul>
+<h3>CONTROL &amp; AVA</h3><ul><li>📊 <b>Pal Monitor</b>: the whole event live</li><li>🧠 <b>AVA on watch</b>: finds it, works out why, alerts</li><li>💬 <b>Ask AVA</b>: answers and acts on your say-so</li><li>📈 <b>Morning-after report</b>: every number, next morning</li><li>🔑 <b>Staff, PINs &amp; offline</b>: roles for everyone; nothing stops offline</li></ul></div>
+
+<div class="sec"><h2>EVERYTHING IN <span>EVENT PAL</span></h2><p>The full list, by part of the night.</p>
+<div class="fl">
+<div><h3>🎟️ Access Pal · tickets &amp; gates</h3><ul><li>Ticket types with their own price and limit: early bird, general, VIP, comps, all-inclusive</li><li>Sales online by card and at the box office for cash</li><li>Our own secured QR codes on every ticket, pass and wristband: digitally signed, so fakes and edited codes fail at the gate, even offline</li><li>On the phone, the code changes every few seconds, so screenshots don't work; printed tickets carry a signed one-time code</li><li>Guest lists and comps by name</li><li>Passes for artists, vendors, media, security and staff, opening only their areas</li><li>Any phone is a gate scanner, signed in per gate</li><li>A ticket works once: pass-backs turned away</li><li>Every scan tracked by gate, time and staff member</li><li>VIP and backstage zones checked at the scan</li><li>Capacity limits, with AVA warning you as you get close</li><li>Re-entry by wristband</li><li>Live count by gate, and gates keep scanning offline</li></ul></div>
+<div><h3>🖥️ Big screens</h3><ul><li>Event Pal Box: the show in full NDI to LED walls, switchers and the livestream</li><li>Up to 4K, with more than one output</li><li>Each output: the show, the show with reactions, a transparent overlay, or a green screen</li><li>Fits any LED wall, and keeps playing if the internet drops</li><li>Templates: fete or concert, sports, awards, graduation, wedding, funeral service, conference</li><li>Countdowns, line-ups, lower thirds and next-up cards</li><li>Live scoreboards for cricket (T20, ODI, Test), football and netball, and tournaments across venues</li><li>Winners' cards for awards, and tribute loops for services</li><li>A custom graphics pack per event, made by AVA from your branding: openers, lower thirds, effects and transitions</li><li>One control screen, with helpers on their own PIN</li></ul></div>
+<div><h3>📸 Crowd interactivity</h3><ul><li>One QR code, no app, on the big screen and on printed signs</li><li>A photo frame in your event's look, with a countdown</li><li>Shared to WhatsApp, Instagram, Facebook, TikTok or X, with your hashtag</li><li>Photos sent to the big screen, approved first</li><li>People watching from home join with their own link and get their own place on the wall</li><li>Emoji reactions floating up the sides of the screen</li><li>Live polls and votes</li><li>Shake-to-win games powered by the whole crowd</li><li>A light show on every phone</li><li>Big moments timed to the second, with a countdown cue for the fireworks crew</li><li>Engagement counts in the report; photos deleted after the event</li></ul></div>
+<div><h3>🎯 Sponsors &amp; announcements</h3><ul><li>Each sponsor's slides and graphics in one place</li><li>A rotation that's enforced when it's on</li><li>An overlay over a set, a full-screen takeover between acts</li><li>Paused, the count keeps going</li><li>Missed slots offered back, with times, for your approval</li><li>Play now, for the MC</li><li>Proof of play for every slot</li><li>Announcements on every screen and phone at once, with urgent ones flashing and phones vibrating</li><li>Saved messages, ready to go</li></ul></div>
+<div><h3>🍹 Food &amp; drink</h3><ul><li>A venue plan with every bar, food station and cashier as a station</li><li>Bottle bars, mixed-drink bars, full bars, food stations and cashiers</li><li>Each station's tills sell only its items</li><li>Promoter bars and outside-provider bars on the same system</li><li>Cash and card, with change worked out</li><li>Drink tickets, per drink or by value</li><li>Prepaid wristbands, topped up at the cashier</li><li>All-inclusive: scan and tap to serve, with limits per night or per hour</li><li>A manager's PIN allows one more, and it's logged</li><li>Collection numbers and a kitchen screen for food</li><li>Tills keep selling offline</li></ul></div>
+<div><h3>📦 Stock &amp; money</h3><ul><li>The store issues stock to each bar</li><li>The receiving side confirms on its own till</li><li>Top-ups requested in one tap</li><li>Usage worked out from sales and recipes</li><li>Blind counts at close, with what's missing shown in dollars, bar by bar</li><li>Every hand-over logged</li><li>Cash counted at close</li><li>Outside bars get their own report, with contents you choose and approve</li><li>An accountant pack for your books</li></ul></div>
+<div><h3>🔑 Staff &amp; control</h3><ul><li>Everyone signs in with their own PIN and role: gate staff, bar staff, cashiers, managers, screen operators</li><li>Each person sees only what their job needs</li><li>Managers approve voids and overrides with their PIN</li><li>Everything logged by name and time</li><li>Pal Monitor: the whole event live on your phone or laptop</li><li>A backup control tablet on its own hotspot</li><li>Built for a bad signal: gates, tills and screens all keep going offline</li></ul></div>
+<div><h3>🧠 AVA</h3><ul><li>Reads the event brief, sets up the event and flags gaps</li><li>Builds the graphics pack</li><li>Checks everything every 2 minutes, and the moment something changes</li><li>Works out why before she alerts, and says how sure she is</li><li>Telegram alerts to the right person, and notes on the right till</li><li>Urgent alerts repeat until someone taps Got it, then escalate</li><li>Running updates every hour while the event is on</li><li>Learns from your team's replies</li><li>Answers questions in plain words</li><li>Acts on instructions by role, reading each one back first</li><li>Keeps sponsor slots whole</li><li>Writes the morning-after report</li></ul></div>
+</div></div>
+<div class="sec"><h2>WHAT <span>AVA</span> DOES FOR YOUR EVENT</h2><p>AVA is the intelligence running through Event Pal. Here's what she handles.</p>
+<div class="caps">
+<div><b><i>📝</i>Reads your event brief</b>Turns one form into the venue plan: gates, bars, tills, screens and sponsor slots, and lists anything still missing.</div>
+<div><b><i>✨</i>Builds your graphics pack</b>From your logo, colours and flyer: openers, lower thirds, custom effects and transitions made for your event.</div>
+<div><b><i>👀</i>Walks the event every 2 minutes</b>Gates, tills, kitchens, screens, boxes, sites and phones, all checked on a schedule and the moment something changes.</div>
+<div><b><i>🔎</i>Works out why</b>Before she alerts, she investigates. One till down while the next is fine means that tablet, not the wifi. She says how sure she is.</div>
+<div><b><i>📨</i>Tells the right person</b>Telegram alerts to you, your manager or your screen operator, and notes on the right till. Urgent ones repeat until someone taps Got it.</div>
+<div><b><i>📈</i>Learns from your team</b>Reply to an alert with what it really was, and she checks that first next time.</div>
+<div><b><i>💬</i>Answers in plain words</b>How many are in? Which bar is busiest? Is the sponsor rotation on time? Ask on Telegram or Pal Monitor.</div>
+<div><b><i>✅</i>Acts on your say-so</b>Play a sponsor now, send stock to bar 2, raise a limit: each instruction read back and logged before it runs, by role.</div>
+<div><b><i>🎯</i>Keeps sponsors whole</b>Counts every slot, works missed ones back in with your approval, and keeps proof of every play.</div>
+<div><b><i>📊</i>Writes your report</b>Tickets, crowd by the hour, takings by bar, inclusive servings, stock and sponsor proof, ready next morning.</div>
+</div></div>
+
+<div class="sec"><h2>THE EVENT <span>PROTOCOL</span></h2><p>Every Event Pal event runs to the same seven stages, so nothing is left to the night.</p>
+<div class="protl">
+<div><b>Brief</b>You fill in the event brief: tickets and access, food and drink, screens and technical needs, sponsors. AVA flags the gaps.</div>
+<div><b>Build</b>Venue plan, ticket types, gates, bars and tills, stock issue, screens, graphics pack and sponsor rotation set up and checked.</div>
+<div><b>Rehearse</b>A full run before the day: every gate phone scans, every till sells, every screen shows, every scene and cue played through.</div>
+<div><b>Doors</b>AVA's walk-around before doors open. Gates go live, the crowd count starts, the first stock is confirmed at every bar.</div>
+<div><b>Show</b>Live watch through the night: alerts, announcements, sponsor rotation, crowd moments and top-ups, on Pal Monitor and Telegram.</div>
+<div><b>Close</b>Bars count blind, cash is counted, stock is returned, and the numbers lock.</div>
+<div><b>Report</b>Next morning: the full report, as a spreadsheet, with sponsor proof of play.</div>
+</div></div>
+
+<div class="sec"><h2>HOW IT FITS <span>TOGETHER</span></h2>
+<div class="notes">
+<div><b>Access Pal · tickets &amp; gates</b>Ticket types with prices and limits; sales online by card and at the box office for cash; Every ticket, pass and wristband carries our own secured QR code: digitally signed, so fakes and edits fail even offline, and changing on the phone so screenshots don't work. Gate staff scan with any phone. A ticket works once and every scan is tracked; VIP areas check the ticket type; capacity limits and re-entry by wristband. Gates keep scanning offline and sync when they reconnect.</div>
+<div><b>Event Pal · screens</b>The Event Pal Box sends the show in full NDI to the LED walls, the screen company's switcher and the livestream. Scenes, countdowns, lower thirds and announcements run from one control screen, with the event's own graphics pack.</div>
+<div><b>Crowd interactivity</b>One QR code, no app: a photo frame in the event's look, photos sent to the big screen (approved first), emoji reactions, live polls and shake-to-win games, at the venue and from home. Counts only in the report.</div>
+<div><b>Sponsors</b>Each sponsor's slides and graphics with a rotation that's enforced when on: an overlay over a set, a takeover between acts. Paused, the count keeps going; missed slots are offered back for approval. Proof of play for every slot.</div>
+<div><b>Food &amp; drink</b>Each bar, food station and cashier is a station with its own till and items. Cash or card, drink tickets (per drink or value), prepaid wristbands topped up at the cashier, or all-inclusive tap to serve with limits per night or per hour.</div>
+<div><b>All-inclusive flow</b>The inclusive ticket is the tab. A wristband linked to the ticket at the gate; at the bar, scan and tap to serve. No money changes hands, but every serving counts against stock and the guest's limit. Over the limit, a manager's PIN allows one more. Food stations call collection numbers to a kitchen screen.</div>
+<div><b>Stock control</b>The store issues stock to each bar; the bar confirms on its own till. Top-ups are requested in one tap and confirmed on arrival. At close the bar counts blind; Event Pal shows usage from sales and what's missing, in dollars, bar by bar. Outside bar providers can be given their own report.</div>
+<div><b>Pal Monitor</b>The whole event live, on your phone or laptop: crowd by gate, takings by bar, kitchens, screens and boxes, with AVA's open issues and her reasoning.</div>
+</div></div>
+<p class="credit">Narration voice: LibriTTS speaker 847 via Piper TTS, licensed CC BY 4.0. Event names, acts and sponsor brands in this demo are made up.</p>
+</div>
+<script>
+const $=id=>document.getElementById(id);let tok=0;const SPEED=+(new URLSearchParams(location.search).get('speed')||1);const sl=(ms,t)=>new Promise((a,b)=>setTimeout(()=>t===tok?a():b('x'),ms/SPEED));
+function fit(){const vp=$('vp'),st=$('st');st.style.transform=`scale(${vp.clientWidth/1280})`}addEventListener('resize',fit);fit();
+const TIMING={"intro": {"dur": 176727, "c": {"title": 600, "access": 8385, "control": 24336, "screens": 40182, "crowd": 55492, "pack": 73476, "sponsors": 84163, "fnb": 93254, "stock": 110353, "staff": 117602, "offline": 125318, "monitor": 134439, "ava": 140788, "ask": 152584, "protocol": 162076, "finale": 172402}}, "steps": [{"id": "brief", "t": "The event brief", "d": "First up, the event brief. One form, online, or as a PDF. Tickets and access, food and drink, screens, sponsors, all in one place. AVA reads it, and sets the whole event up, and tells you what's still missing, before anybody builds a thing.", "ms": 16797}, {"id": "venue", "t": "Your venue, mapped", "d": "Next, your venue. Every bar, food station and cashier goes on the map, each with its own tills, selling only what it should. Bottle bar, mixed drinks, VIP, the grill. You mark which ones are yours, and which ones an outside provider runs.", "ms": 15779}, {"id": "tickets", "t": "Tickets on sale", "d": "Now, tickets. Early bird, general, VIP, comps, all-inclusive, each with its own price, and its own limit. Sold online by card, or at the box office for cash. Every ticket carries our own secured QR code. On the phone, it keeps changing every few seconds. On paper, it's a signed, one-time code.", "ms": 20067}, {"id": "passes", "t": "Guest lists and passes", "d": "Guest lists and comps go in by name. Artists, vendors, media, security and staff, they all get passes that only open the areas they need. Backstage, the vendor gate, the VIP deck. And every pass scans just like a ticket, so you know exactly who's on site.", "ms": 17478}, {"id": "gates", "t": "Gates open", "d": "Doors open. Your gate staff scan with any phone. Green means in. Every gate counts, and you watch the crowd number climb, live.", "ms": 8572}, {"id": "access", "t": "Access control", "d": "Here's where it gets serious. Every code is our own secured QR code. It's digitally signed, so a fake or an edited code gets turned away, even with no signal. On the phone it keeps changing, so a screenshot won't work either. A ticket works once. Pass it back over the fence, and it's rejected. And every scan is tracked, by gate, by time, by staff member. Get close to capacity, and AVA gives you a heads-up.", "ms": 26133}, {"id": "screens", "t": "The big screens", "d": "Now, the big screens. The Event Pal Box sends the show in full N.D.I., up to 4K, to the LED walls, the switcher, and the livestream. Each output can be the show, the show with reactions, a clean overlay for the cameras, or a green screen. And if the internet drops, the show keeps playing.", "ms": 20010}, {"id": "templates", "t": "Screens for any event", "d": "Every kind of event gets its own look. Fete or concert, sports, awards, a graduation, a wedding, a funeral service, a conference. Line-ups and countdowns, live scoreboards for cricket, football and netball, winners' cards, even a tribute loop. One control screen runs it all, and your helpers get their own PIN.", "ms": 18648}, {"id": "pack", "t": "Your own graphics pack", "d": "And this one's fun. AVA builds your event its own graphics pack, straight from your logo, your colours, and your flyer. Openers, lower thirds, custom effects and transitions. No two events look the same.", "ms": 12503}, {"id": "crowd", "t": "The crowd's photos", "d": "Your crowd joins with one scan. No app. They take photos in your event's own frame, share them with your hashtag, or send them up to the big screen. You approve every one, first. And people watching from home, they get a spot on the wall too.", "ms": 14107}, {"id": "games", "t": "Crowd games and moments", "d": "Then it gets loud. Emoji reactions float up the screen, live polls count every vote, and shake-to-win games let the whole crowd power the moment. Every phone turns into a light show. And your big moments hit right on cue, with a countdown for the fireworks crew.", "ms": 16085}, {"id": "sponsors", "t": "Sponsors, enforced", "d": "Sponsors. Their slots run on a rotation that's actually enforced. An overlay during a set, a full takeover between acts. Pause it, and the count keeps going. Missed slots get worked back in, with your approval, and the MC can play one on the spot. Every play is logged, as proof.", "ms": 19347}, {"id": "announce", "t": "Announcements", "d": "Got something everybody needs to hear, a lost child, a car blocking the gate, last orders. Type it once, and it's on every screen, and every phone, in seconds. Urgent ones flash, and phones vibrate.", "ms": 11772}, {"id": "bars", "t": "Bars and food stations", "d": "Now, the bars. Every bar, food station and cashier gets its own till. Cash or card, and the change is worked out for you. Drink tickets, per drink or by value. Prepaid wristbands, topped up at the cashier. And the tills keep selling, even offline.", "ms": 16270}, {"id": "inclusive", "t": "The all-inclusive flow", "d": "All-inclusive works a little differently. The ticket is the tab. At the gate, each inclusive guest gets a wristband, linked to their ticket. At the bar, staff scan it, and tap to serve. No money changes hands, but every drink, and every plate, still gets counted, against stock, and against that guest's limit, per night or per hour, your call. Over the limit, a manager can allow one more, with their PIN. Food stations call out collection numbers, and the kitchen screen shows what to make. And the next morning, you see servings per head, and what the night really cost.", "ms": 33450}, {"id": "outside", "t": "Outside bars", "d": "If an outside provider runs a bar, they still sell on Event Pal tills. You see their takings and their stock, right next to yours. And afterwards, you choose what goes in their report, and you approve it, before it's sent.", "ms": 11687}, {"id": "stock", "t": "Stock control", "d": "Stock control. The store sends stock to each bar, and the bar confirms it, on its own till. Need a top-up. One tap. At close, the bar counts blind, and Event Pal shows you exactly what's missing, in dollars, bar by bar.", "ms": 15473}, {"id": "staff", "t": "Staff and roles", "d": "Your team. Everybody signs in with their own PIN and role, gate staff, bar staff, cashiers, managers, screen operators. Each person only sees what their job needs. Managers approve voids and overrides with their PIN, and everything's logged, by name, and time.", "ms": 16629}, {"id": "watch", "t": "AVA on watch", "d": "And here's AVA, at work. She checks everything, every two minutes. Say a till at bar two drops off. She sees the till right beside it is fine, so it's that tablet, not the wifi. She puts a note on the till next door, and sends you a Telegram alert. Tap Got it, and she stops. And every hour, she sends you a quick update.", "ms": 21488}, {"id": "ask", "t": "Ask AVA, live", "d": "Pal Monitor puts the whole event on your phone, live. Or, just ask AVA. How many are in, which bar's busiest, play the next sponsor. She answers in seconds, reads every instruction back before she acts, and people can only ask for what their role allows.", "ms": 15124}, {"id": "offline", "t": "Built for a bad signal", "d": "Let's be honest, venue internet fails. Event Pal is built for that. Gates keep scanning, tills keep selling, and the screens keep playing. Everything's saved on the device, and it all catches up, when the signal's back.", "ms": 13335}, {"id": "report", "t": "The morning-after report", "d": "The next morning, your report's waiting. Tickets sold and scanned, the crowd by the hour, takings by bar, inclusive servings, stock, crowd engagement, and sponsor proof of play. It downloads as a spreadsheet, with a pack for your accountant. Counts only. Guests' names and photos are never shared.", "ms": 17722}, {"id": "protocol", "t": "The event protocol", "d": "And every event runs to the same protocol. Brief, and build. A full rehearsal, before the day. AVA's walk-around, before the doors open. Live watch, through the show. A counted close. And your report, the next morning.", "ms": 14653}]};
+function qr(seed){seed=seed||0;let c='';const n=21;for(let y=0;y<n;y++)for(let x=0;x<n;x++){const f=(x<7&&y<7)||(x>13&&y<7)||(x<7&&y>13);const fx=x>13?x-14:x,fy=y>13?y-14:y;const v=f?([0,6].includes(fx)||[0,6].includes(fy)||(fx>1&&fx<5&&fy>1&&fy<5)):(((x*7919+y*31+seed*104729)%13)<6);if(v)c+=`<rect x="${x}" y="${y}" width="1" height="1"/>`}return `<svg viewBox="-1 -1 23 23" style="width:100%;height:100%;background:#fff;display:block" shape-rendering="crispEdges"><g fill="#000">${c}</g></svg>`}
+const SELFIE=h=>`<svg viewBox="0 0 200 250" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%;filter:hue-rotate(${h||0}deg)"><defs><radialGradient id="sbg${h||0}" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#7a2d66"/><stop offset="1" stop-color="#120414"/></radialGradient></defs><rect width="200" height="250" fill="url(#sbg${h||0})"/><circle cx="30" cy="70" r="8" fill="#ff9a3d" opacity=".7"/><circle cx="165" cy="60" r="10" fill="#3fd0ff" opacity=".6"/><path d="M40 250 Q44 196 76 184 Q100 176 124 184 Q156 196 160 250Z" fill="#f2f2f2"/><rect x="88" y="150" width="24" height="32" rx="8" fill="#6b4a3a"/><ellipse cx="100" cy="128" rx="30" ry="36" fill="#7a5442"/><path d="M70 120 Q72 88 100 88 Q128 88 130 120 Q122 102 100 102 Q78 102 70 120Z" fill="#1a1110"/><path d="M86 140 Q100 152 114 140" fill="none" stroke="#2a1410" stroke-width="3" stroke-linecap="round"/><ellipse cx="89" cy="124" rx="3" ry="3.5" fill="#1a1110"/><ellipse cx="111" cy="124" rx="3" ry="3.5" fill="#1a1110"/></svg>`;
+const frame=(h,sm)=>`<div class="fr${sm?' sm':''}"><div class="pin">${SELFIE(h)}</div><div class="tt">SUNSET SOCA FETE</div></div>`;
+// ---------- big screen scenes ----------
+const BS={
+idle:()=>`<div class="sc" style="background:#05050a"><div class="big" style="font-size:40px;color:var(--y)">EVENT PAL</div><div style="font-size:11px;color:var(--mut);letter-spacing:3px;margin-top:4px">WAITING FOR THE SHOW</div></div>`,
+opener:()=>`<div class="sc evbg"><div class="evt">SUNSET<br>SOCA FETE</div><div class="evs">SATURDAY · BEACHFRONT · GATES 4PM</div><div class="wipe"></div></div>`,
+qr:()=>`<div class="sc evbg" style="flex-direction:row;gap:24px"><div style="width:120px;height:120px;padding:6px;background:#fff;border-radius:10px">${qr()}</div><div style="text-align:left"><div class="evt" style="font-size:34px">SCAN TO<br>JOIN THE SHOW</div><div class="evs" style="letter-spacing:2px">PHOTOS · REACTIONS · GAMES</div></div></div>`,
+live:()=>`<div class="sc"><div class="stage"><i class="beam" style="left:20%"></i><i class="beam" style="left:70%;animation-delay:1s"></i></div><div class="l3"><i></i><div><b>DJ CORAL B</b><span>ON STAGE NOW · MAIN STAGE</span></div></div></div>`,
+wall:n=>`<div class="sc" style="background:#0a0410;justify-content:flex-start"><div style="margin-top:8px;font:400 15px Anton,Impact,sans-serif;letter-spacing:1px;color:#ffc2da">THE CROWD, LIVE</div><div class="pwg">${Array.from({length:n||12},(_,i)=>`<div style="animation-delay:${i*.08}s">${frame(i*37,1)}</div>`).join('')}</div></div>`,
+poll:()=>`<div class="sc evbg"><div class="big" style="font-size:24px;color:#fff;margin-bottom:10px">WHICH SONG CLOSES THE NIGHT?</div><div class="poll"><div><span>Road March</span><em><i id="pa" style="width:5%"></i></em></div><div><span>Groovy anthem</span><em><i id="pb" style="width:5%"></i></em></div><div><span>Throwback</span><em><i id="pc" style="width:5%"></i></em></div></div></div>`,
+shake:()=>`<div class="sc evbg"><div class="big" style="font-size:44px;color:#fff;animation:pulse .6s infinite">SHAKE!</div><div class="meter" style="margin-top:14px"><i id="shm"></i></div><div class="evs">THE WHOLE CROWD POWERS THE DROP</div></div>`,
+tko:(n,bg,fg)=>`<div class="tko" style="background:${bg};color:${fg}"><b>${n}</b><span>PROUD SPONSOR OF SUNSET SOCA FETE</span></div>`,
+};
+function bs(k,...a){$('bs').innerHTML=BS[k](...a)}
+function bsAdd(html){$('bs').insertAdjacentHTML('beforeend',html)}
+// ---------- devices ----------
+const GATE={
+scan:(n)=>`<div class="vf"></div><div style="position:absolute;left:0;right:0;top:8px;text-align:center;font-size:9px;font-weight:800;color:#ddd">GATE A · SCAN TICKET</div><div class="gcount"><span>Gate A</span><b>${n||0}</b></div>`,
+ok:(t,n)=>`<div class="res ok"><b>✓ IN</b><span>${t}</span></div><div class="gcount"><span>Gate A</span><b>${n}</b></div>`,
+amb:(t,s)=>`<div class="res amb"><b>✕ STOP</b><span>${t}</span><span style="opacity:.8">${s||''}</span></div>`,
+};
+const TILL={
+sell:(hit,pay,total)=>`<div class="thd"><span>BAR 2 · TILL 1</span><span>● online</span></div><div class="tgrid">${[['Beer','$8'],['Rum punch','$12'],['Water','$4'],['Soft drink','$5'],['Rum shot','$7'],['Juice','$6']].map((x,i)=>`<div class="${hit&&hit.includes(i)?'hit':''}">${x[0]}<small>${x[1]}</small></div>`).join('')}</div><div class="cart">${(hit||[]).map(i=>`<span>${['2 × Beer','Rum punch','Water','Soft drink','Rum shot','Juice'][i]}</span>`).join('')}<b>${total||'$0'}</b></div><div class="pays">${['Cash','Card','Ticket','Wristband','Tap ✓'].map(p=>`<div class="${pay===p?'on':''}">${p}</div>`).join('')}</div>`,
+};
+function gate(k,...a){$('dg').querySelector('.in').innerHTML=GATE[k](...a)}
+function till(html){$('dt').querySelector('.in').innerHTML=html}
+function phone(html,lbl){$('dp').querySelector('.in').innerHTML=html;if(lbl)$('dpl').textContent=lbl}
+const ticket=(type,col)=>`<div class="tk" style="${col?'background:'+col:''}"><b>SUNSET<br>SOCA FETE</b><div class="q sq">${qr(1)}</div><span class="sec">🔒 SECURED · CODE CHANGES <i></i></span><em>${type}</em><span>Sat · #SSF-20418</span></div>`;
+// secured codes refresh on the phone every few seconds
+let qseed=1;setInterval(()=>{qseed++;document.querySelectorAll('.sq').forEach(q=>{q.innerHTML=qr(qseed);q.animate([{opacity:.3},{opacity:1}],{duration:300})})},2500);
+const tgAlert=(title,body,gi)=>`<div class="tgm"><div class="tgh">🤖 Event Pal Watch</div><div class="m"><b>${title}</b>${body}${gi?'<div class="gi">👍 Got it</div>':''}</div></div>`;
+// ---------- tablet panels ----------
+function tb(html){$('tb').innerHTML=html}
+function tbAdd(html){$('tb').insertAdjacentHTML('beforeend',html)}
+// ---------- motion helpers ----------
+const st=$('st');
+function travel(pathId,cls,dur,rev){const p=$(pathId),L=p.getTotalLength(),d=document.createElement('i');d.className='dot '+cls;st.appendChild(d);const t0=performance.now();
+return new Promise(res=>{(function f(n){const k=Math.min(1,(n-t0)/dur),pt=p.getPointAtLength((rev?1-k:k)*L);d.style.left=pt.x+'px';d.style.top=pt.y+'px';if(k<1&&d.isConnected)requestAnimationFrame(f);else{d.remove();res()}})(t0)})}
+function count(id,to,ms,fmt){const e=$(id);if(!e)return;const from=parseInt((e.textContent||'0').replace(/\D/g,''))||0,t0=performance.now();(function f(n){const k=Math.min(1,(n-t0)/ms),v=Math.round(from+(to-from)*k);e.textContent=fmt?fmt(v):v.toLocaleString();if(k<1)requestAnimationFrame(f)})(t0)}
+function think(txt){const e=$('think');if(txt){e.textContent=txt;e.classList.add('show');$('ava').classList.add('hot')}else{e.classList.remove('show');$('ava').classList.remove('hot')}}
+async function tapEl(el,t){if(!el)return;const f=$('finger'),r=el.getBoundingClientRect(),s=st.getBoundingClientRect(),sc=s.width/1280;f.style.opacity=1;f.style.left=((r.left+r.width/2-s.left)/sc-23)+'px';f.style.top=((r.top+r.height/2-s.top)/sc-23)+'px';await sl(550,t);el.classList.add('on');await sl(250,t);f.style.opacity=0}
+function emojiUp(n){const E=['💛','🔥','🙌','🎉','💃','🎺','👏'];for(let i=0;i<n;i++)setTimeout(()=>{const b=document.createElement('span');b.className='bse';b.textContent=E[Math.floor(Math.random()*7)];b.style.left=(Math.random()<.5?6+Math.random()*80:480-16-34-Math.random()*80)+'px';$('bs').appendChild(b);setTimeout(()=>b.remove(),3500)},i*260)}
+function cap(n,tt,d){$('capN').textContent='STEP '+n;$('capT').textContent=tt;$('capD').textContent=d;$('mN').textContent='STEP '+n;$('mT').textContent=tt;$('mD').textContent=d}
+function reset(){introHide();document.querySelectorAll('.dot').forEach(d=>d.remove());think('');$('pill').className='pill';$('pill').textContent='● Live';$('ndi').style.opacity=0;$('finger').style.opacity=0;$('dpl').textContent='Guest phone'}
+// per-step base state: numbers so far, by step id
+const K={"brief": [0, 0, 0], "venue": [0, 0, 0], "tickets": [0, 0, 0], "passes": [0, 2118, 0], "gates": [0, 2118, 0], "access": [1840, 2118, 0], "screens": [2060, 2118, 1420], "templates": [2200, 2118, 2100], "pack": [2240, 2118, 2880], "crowd": [2310, 2118, 3400], "games": [2350, 2118, 4150], "sponsors": [2410, 2118, 4700], "announce": [2480, 2118, 5260], "bars": [2530, 2118, 6420], "inclusive": [2560, 2118, 7980], "outside": [2580, 2118, 8900], "stock": [2610, 2118, 9450], "staff": [2620, 2118, 10200], "watch": [2640, 2118, 11200], "ask": [2702, 2118, 13950], "offline": [2640, 2118, 14800], "report": [2702, 2118, 18640], "protocol": [2702, 2118, 18640]};
+const IDLE=["brief", "gates", "passes", "tickets", "venue"];
+function base(n){reset();const id=S[n].id,k=K[id]||[0,0,0];$('kIn').textContent=k[0].toLocaleString();$('kSold').textContent=k[1].toLocaleString();$('kBar').textContent=k[2].toLocaleString();
+ bs(IDLE.includes(id)?'idle':'live');gate('scan',k[0]);till(TILL.sell());phone(ticket('GENERAL'));tb('')}
+// ---------- the steps ----------
+const S=TIMING.steps;let narrOn=true;
+// shorter on-screen captions where the narration is long (the voice says it all)
+const SHORT={access:"Our own secured QR codes: digitally signed, so fakes and edits fail even offline, and changing on the phone, so screenshots don't work. A ticket works once, every scan tracked by gate, time and staff. Zones, capacity and re-entry.",
+brief:"One event brief, online or as a fillable PDF: tickets and access, food and drink, screens and technical needs, sponsors. AVA sets up the event and lists anything missing.",
+venue:"Every bar, food station and cashier is a station on your venue map, with its own tills and items. Mark each one yours or an outside provider's, and set how it takes payment.",
+passes:"Guest lists and comps by name. Passes for artists, vendors, media, security and staff that open only their areas. Every pass scans like a ticket.",
+screens:"Full NDI to the LED walls, the switcher and the livestream, up to 4K. Each output: the show, the show with reactions, a transparent overlay for cameras, or a green screen. Fits any wall, and keeps playing if the internet drops.",
+templates:"A template for every event: fete or concert, sports, awards, graduation, wedding, funeral service, conference. Line-ups, live scoreboards, winners' cards, tribute loops. Helpers run screens on their own PIN.",
+crowd:"One scan, no app. Photos in your event's frame with a countdown, shared to socials with your hashtag, or sent to the big screen once you approve them. People at home get their own place on the wall.",
+games:"Emoji reactions up the sides of the screen, live polls, shake-to-win games, and a light show on every phone. Big moments timed to the second, with a countdown cue for the fireworks crew.",
+sponsors:"An enforced rotation: overlays over a set, takeovers between acts. Paused, the count keeps going; missed slots come back for your approval. The MC can play one now. Proof of every play.",
+inclusive:"The ticket is the tab. A wristband at the gate; at the bar, scan and tap to serve. Every serving is counted against stock and the guest's limit, per night or per hour. A manager's PIN allows one more. Food stations call collection numbers.",
+watch:"AVA checks everything every two minutes. Till 1 at bar 2 drops off but till 2 beside it is fine, so it's that tablet, not the wifi. A note on the other till, a Telegram alert to you, and an update every hour.",
+ask:"Pal Monitor shows the whole event live. Or ask AVA: how many are in, which bar is busiest, play the next sponsor. She reads every instruction back, and each person can only ask for what their role allows.",
+report:"Next morning: tickets sold and scanned, crowd by the hour, takings by bar, inclusive servings, stock, engagement and sponsor proof of play. A spreadsheet and an accountant pack. Counts only."};
+const capText=i=>SHORT[S[i].id]||S[i].d;
+const pace=(t,i)=>{const D=(narrOn?S[i].ms:Math.max(9000,S[i].ms*.75))/SPEED,t0=performance.now();return async f=>{const w=f*D-(performance.now()-t0);if(w>0)await sl(w*SPEED,t)}};
+const SF={
+brief: async (t,at)=>{bs('idle');phone(`<div class="wb" style="inset:18px 8px 10px"><b style="font-size:16px">EVENT BRIEF</b><span>From the promoter</span></div>`,'Promoter');
+ const F=[['Event','Sunset Soca Fete'],['Tickets','5 types · 3 gates'],['Food & drink','4 bars · 2 food · inclusive'],['Screens','2 LED walls + stream'],['Sponsors','3 · 48 slots']];
+ tb('<div class="h">Event brief</div>');for(const [i,[a,b]] of F.entries()){tbAdd(`<div class="row new"><i>${a}</i><b>${b}</b></div>`);await at(.04+i*.045)}
+ await at(.3);travel('w_t','cmd',600);think('Reading the brief…');await at(.45);
+ tbAdd(`<div class="h">AVA set up</div><div class="row ok new"><b>Gates, bars, tills, screens</b><span class="ck">✓</span></div>`);bs('opener');travel('w_b','cmd',500);travel('w_g','cmd',600);travel('w_l','cmd',650);
+ await at(.7);tbAdd(`<div class="ava-msg"><b>AVA:</b> 2 things missing: the generator contact, and Wavelink's logo file.</div>`);think('2 gaps found');await at(.97);think('')},
+venue: async (t,at)=>{bs('idle');
+ const ST=[['Bar 1','bottle bar','Ours',18,30],['Bar 2','mixed drinks','Ours',48,24],['Bar 3','VIP · full bar','Ours',78,30],['Rum Shop','outside bar','Island Bar Co.',30,70],['Grill','food','Ours',62,72],['Cashier','tickets · top-ups','Ours',86,74]];
+ tb(`<div class="h">Venue plan · Sunset Soca Fete</div><div id="vmap" style="position:relative;height:118px;border-radius:10px;background:repeating-linear-gradient(0deg,#1a1a22 0 1px,transparent 1px 16px),repeating-linear-gradient(90deg,#1a1a22 0 1px,transparent 1px 16px),#121219;border:1px solid #2a2a33"><div style="position:absolute;left:38%;top:6%;width:24%;height:22%;border-radius:6px;background:#3a0d2a;font:800 8px Inter;color:#ffc2da;display:flex;align-items:center;justify-content:center">STAGE</div><div style="position:absolute;left:2%;bottom:4%;font:800 8px Inter;color:var(--mut)">GATE A</div><div style="position:absolute;right:2%;top:4%;font:800 8px Inter;color:var(--mut)">VIP</div></div><div id="vlist" style="display:flex;flex-direction:column;gap:4px"></div>`);
+ think('Laying out your venue…');travel('w_t','cmd',600);
+ for(const [i,s] of ST.entries()){await at(.06+i*.1);
+  $('vmap').insertAdjacentHTML('beforeend',`<div style="position:absolute;left:${s[3]}%;top:${s[4]}%;transform:translate(-50%,-50%);padding:3px 6px;border-radius:6px;font:800 8.5px Inter;white-space:nowrap;animation:pop .35s both;background:${s[2]==='Ours'?'var(--y)':'#ff9a3d'};color:#111">${s[0]}</div>`);
+  if(i<4)$('vlist').insertAdjacentHTML('beforeend',`<div class="row new" style="padding:4px 9px"><span><b>${s[0]}</b> <i>${s[1]}</i></span><i style="color:${s[2]==='Ours'?'var(--ok)':'#ff9a3d'}">${s[2]==='Ours'?'ours':'outside · '+s[2]}</i></div>`)}
+ think('');await at(.72);till(TILL.sell());$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice"><i>SETUP</i>This till is Bar 2 · mixed drinks · 6 items</div>');travel('w_l','cmd',600);
+ await at(.86);tbAdd(`<div class="row ok new" style="padding:4px 9px"><b>Payments at Bar 2</b><i>cash · card · tickets · wristbands</i></div>`);await at(.97)},
+tickets: async (t,at)=>{bs('idle');phone(ticket('EARLY BIRD'),'Guest phone');
+ const T=[['Early bird','$80','400/400','SOLD OUT'],['General','$120','1,236',''],['VIP','$250','182',''],['All-inclusive','$350','260',''],['Comps','free','40','']];
+ tb('<div class="h">Ticket types · Access Pal</div>');for(const r of T){tbAdd(`<div class="row new"><span><b>${r[0]}</b> <i>${r[1]}</i></span><b>${r[2]}${r[3]?' <i style="color:var(--amb)">'+r[3]+'</i>':''}</b></div>`);await at(.08)}
+ count('kSold',2118,3000);for(let i=0;i<6;i++){travel('w_p','y',700,true);await sl(300,t)}
+ await at(.55);phone(ticket('ALL-INCLUSIVE','linear-gradient(160deg,#7a3cff,#3fd0ff)'));await at(.75);tbAdd(`<div class="row"><i>Online by card</i><b>1,740</b></div><div class="row"><i>Box office cash</i><b>378</b></div>`);await at(.97)},
+passes: async (t,at)=>{bs('idle');
+ const L=[['Guest list','120 names','34 in'],['Artists','18','12 in'],['Vendors','24','24 in'],['Media','10','6 in'],['Security & staff','64','61 in']];
+ tb('<div class="h">Guest lists &amp; passes</div>');for(const [i,r] of L.entries()){tbAdd(`<div class="row new"><span><b>${r[0]}</b> <i>${r[1]}</i></span><b>${r[2]}</b></div>`);await at(.05+i*.06)}
+ phone(`<div class="tk" style="background:linear-gradient(160deg,#1c1c24,#3a3a46)"><b>ARTIST PASS</b><div class="q">${qr()}</div><em>BACKSTAGE · MAIN STAGE</em><span>DJ Coral B · crew of 3</span></div>`,'Artist pass');
+ await at(.42);gate('ok','Artist pass · backstage ✓',2210);travel('w_g','y',600,true);
+ await at(.6);gate('amb','NO BACKSTAGE ACCESS','Vendor pass · vendor gate only');travel('w_g','y',600,true);
+ await at(.78);gate('ok','Guest list · Shanice R. · comp',2211);tbAdd(`<div class="ava-msg"><b>On site now:</b> 137 passes and 34 of 120 guest-list names.</div>`);await at(.97)},
+gates: async (t,at)=>{bs('opener');tb(`<div class="h">Gates · live</div><div class="row"><b>Gate A</b><b id="gA">0</b></div><div class="row"><b>Gate B</b><b id="gB">0</b></div><div class="row"><b>VIP gate</b><b id="gV">0</b></div><div class="h">Capacity 3,000</div><div class="bar"><i id="cap" style="width:0%"></i></div>`);
+ let n=0;const types=['General','General','VIP · VIP area OK','All-inclusive · wristband','General'];
+ for(let i=0;i<5;i++){gate('scan',n);await sl(700,t);n+=1;gate('ok',types[i],n);travel('w_g','y',600,true);await sl(800,t)}
+ count('kIn',1840,4000);count('gA',980,4000);count('gB',702,4000);count('gV',158,4000);$('cap').style.width='61%';
+ await at(.8);gate('scan',980);await at(.97)},
+access: async (t,at)=>{bs('live');tb(`<div class="h">Turned away tonight</div>`);
+ gate('scan',980);await at(.06);gate('amb','FAKE CODE','Signature check failed · not our code');travel('w_g','y',600,true);tbAdd(`<div class="row amb new"><b>Fake / edited code</b><i>Gate A 9:48</i></div>`);
+ await at(.2);gate('amb','CODE EXPIRED','Screenshot · the live code has moved on');tbAdd(`<div class="row amb new"><b>Screenshot</b><i>Gate B 9:50</i></div>`);
+ await at(.33);gate('amb','ALREADY USED','Scanned at Gate B, 9:42pm · Kemar');tbAdd(`<div class="row amb new"><b>Pass-back</b><i>Gate A 9:51</i></div>`);
+ await at(.45);gate('amb','NOT VIP','General ticket · VIP area');tbAdd(`<div class="row amb new"><b>Wrong area</b><i>VIP gate 9:53</i></div>`);
+ await at(.56);gate('ok','Re-entry · wristband',981);tbAdd(`<div class="row ok new"><b>Re-entry</b><i>wristband ✓</i></div>`);
+ await at(.66);tbAdd(`<div class="h">Capacity 3,000</div><div class="bar"><i id="cap2" style="width:61%"></i></div>`);setTimeout(()=>{const c=$('cap2');if(c)c.style.width='92%'},100);count('kIn',2760,2500);
+ await at(.78);think('92% full, Gate A still busy');tbAdd(`<div class="ava-msg"><b>AVA:</b> 92% of capacity. Slow Gate A, or open the overflow area?</div>`);await at(.97);think('')},
+screens: async (t,at)=>{$('ndi').style.opacity=1;bs('live');tb(`<div class="h">Output A · main LED wall · 3840×1080</div><div class="btnr"><div id="o1">Show</div><div id="o2">+ Reactions</div></div><div class="btnr"><div id="o3">Overlay</div><div id="o4">Green screen</div></div><div class="h">Outputs</div><div class="row"><b>A · LED wall</b><i>4K · NDI</i></div><div class="row"><b>B · side screens</b><i>1080p · NDI</i></div><div class="row"><b>Livestream</b><i>to the switcher</i></div>`);
+ await at(.12);await tapEl($('o1'),t);
+ await at(.26);await tapEl($('o2'),t);travel('w_b','cmd',500);emojiUp(10);
+ await at(.42);await tapEl($('o3'),t);travel('w_b','cmd',500);$('bs').innerHTML=`<div class="sc" style="background:repeating-conic-gradient(#2a2a33 0 25%,#1a1a22 0 50%) 0 0/24px 24px"><div class="l3"><i></i><div><b>DJ CORAL B</b><span>TRANSPARENT · MIXED OVER THE CAMERAS</span></div></div><div class="spb">CORAL COLA</div></div>`;
+ await at(.58);await tapEl($('o4'),t);travel('w_b','cmd',500);$('bs').innerHTML=`<div class="sc" style="background:#00B140"><div style="position:absolute;top:10px;background:#0009;color:#fff;font:800 11px Inter;padding:4px 10px;border-radius:999px;letter-spacing:1px">GREEN SCREEN · KEYED FOR THE LIVESTREAM</div></div>`;emojiUp(8);
+ await at(.76);bs('live');$('bs').insertAdjacentHTML('beforeend','<div class="spb wl" style="left:3%;right:auto">⚠ internet down · playing from the box</div>');await at(.97)},
+templates: async (t,at)=>{const T=['Fete / concert','Sports','Awards','Graduation','Wedding','Funeral service','Conference'];
+ tb(`<div class="h">Event template</div>${T.map((x,i)=>`<div class="row" id="tp${i}" style="padding:4px 10px"><b>${x}</b></div>`).join('')}`);
+ const sel=i=>{T.forEach((_,j)=>$('tp'+j)&&$('tp'+j).classList.toggle('on',j===i));travel('w_t','cmd',500).then(()=>travel('w_b','cmd',500))};
+ sel(0);bs('live');await at(.16);
+ sel(1);$('bs').innerHTML=`<div class="sc" style="background:radial-gradient(ellipse at 50% 120%,#0d5a2c,#03140a 70%)"><div style="position:absolute;left:4%;bottom:10%;display:flex;font:800 13px Inter;animation:l3in .6s both"><div style="background:#111;color:#fff;padding:7px 10px">VINCY XI</div><div style="background:var(--y);color:#111;padding:7px 10px;font:400 18px Anton,Impact,sans-serif">142/3</div><div style="background:#1c1c24;color:#ddd;padding:7px 10px">16.2 ov · RR 8.7</div></div><div style="position:absolute;right:4%;top:8%;background:#111c;color:#fff;font:800 10px Inter;padding:5px 9px;border-radius:5px">T20 · LIVE SCORE</div></div>`;
+ await at(.36);sel(2);$('bs').innerHTML=`<div class="sc evbg"><div class="evs">AND THE WINNER IS</div><div class="evt" style="font-size:40px;margin-top:6px">BEST NEW ARTIST</div><div style="margin-top:8px;font:400 24px Anton,Impact,sans-serif;color:#fff">KAI MONROSE</div></div>`;
+ await at(.52);sel(5);$('bs').innerHTML=`<div class="sc" style="background:radial-gradient(ellipse,#2a2433,#0a0910 70%)"><div style="font:600 12px Inter;letter-spacing:4px;color:#d9d2e6">IN LOVING MEMORY</div><div style="font:400 34px Anton,Impact,sans-serif;color:#fff;margin-top:6px">A LIFE WELL LIVED</div><div style="font:600 11px Inter;color:#b9b2c6;margin-top:6px">1948 – 2026 · tribute photos</div></div>`;
+ await at(.68);sel(0);$('bs').innerHTML=`<div class="sc evbg"><div class="evs">LINE-UP</div><div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;font:400 22px Anton,Impact,sans-serif;color:#fff"><span>8:00 · DJ CORAL B</span><span>9:30 · STEEL SUNRISE</span><span style="color:#ffc2da">10:30 · HEADLINER</span></div></div>`;
+ await at(.84);tbAdd(`<div class="row ok new" style="padding:4px 10px"><b>Helper: Kerry</b><i>screens only · own PIN</i></div>`);await at(.97)},
+pack: async (t,at)=>{bs('idle');tb(`<div class="h">Your graphics pack · made by AVA</div><div class="row"><i>From</i><b>logo · colours · flyer</b></div><div style="display:flex;gap:6px">${['#ff3d8b','#ff9a3d','#3a0d2a','#ffd7e8'].map(c=>`<i style="flex:1;height:26px;border-radius:7px;background:${c}"></i>`).join('')}</div>`);
+ think('Building your pack…');travel('w_t','cmd',600);await at(.14);
+ const P=['Opener','Lower thirds','Transitions','Effects','Stings'];for(const p of P){tbAdd(`<div class="row ok new"><b>${p}</b><span class="ck">✓</span></div>`);await sl(350,t)}think('');
+ bs('opener');travel('w_b','cmd',500);await at(.45);bs('live');await at(.58);bsAdd('<div class="wipe"></div>');await sl(450,t);bs('wall',12);await at(.74);bsAdd('<div class="wipe"></div>');await sl(450,t);
+ $('bs').innerHTML=`<div class="sc evbg"><div class="evt" style="font-size:44px">NEXT UP</div><div class="evs">THE HEADLINER · 10:30PM</div></div>`;await at(.97)},
+crowd: async (t,at)=>{bs('qr');phone(frame(0),'Guest phone');tb(`<div class="h">Crowd photos · live</div><div class="row"><i>Phones joined</i><b id="cj">0</b></div><div class="row"><i>Photos taken</i><b id="cph">0</b></div><div class="row"><i>Shared to socials</i><b id="csh">0</b></div><div class="row"><i>Waiting for approval</i><b id="cq">0</b></div>`);
+ count('cj',1960,3000);for(let i=0;i<5;i++){travel('w_p','up',600);await sl(250,t)}
+ await at(.2);count('cph',1240,2500);phone(`<div style="position:absolute;left:6px;right:6px;top:22px">${frame(0)}</div><div style="position:absolute;left:8px;right:8px;top:184px;display:flex;gap:4px;font-size:8.5px;font-weight:800"><div style="flex:1;background:#25D366;border-radius:8px;padding:5px 0;text-align:center">Share</div><div style="flex:1;background:var(--y);color:#111;border-radius:8px;padding:5px 0;text-align:center">📺 Big screen</div></div><div style="position:absolute;left:8px;right:8px;top:210px;font-size:7.5px;color:#ddd;text-align:center">#SUNSETSOCAFETE</div>`);
+ await at(.4);count('csh',880,2500);for(let i=0;i<4;i++){travel('w_p','up',600);await sl(250,t)}$('cq').textContent='20';
+ await at(.58);tbAdd(`<div class="btnr"><div id="apr">Approve 6</div><div>Skip</div></div>`);await tapEl($('apr'),t);bs('wall',10);travel('w_b','cmd',500);$('cq').textContent='14';
+ await at(.78);$('bs').querySelector('.pwg')?.insertAdjacentHTML('beforeend',`<div>${frame(200,1)}<div style="font:700 7px Inter;color:#cfe3ff;text-align:center;margin-top:2px">🌍 Brooklyn</div></div><div>${frame(120,1)}<div style="font:700 7px Inter;color:#cfe3ff;text-align:center;margin-top:2px">🌍 Toronto</div></div>`);await at(.97)},
+games: async (t,at)=>{bs('live');phone(`<div style="position:absolute;left:6px;right:6px;top:24px">${frame(0)}</div><div class="rxrow">${['💛','🔥','🙌','🎉','💃','🎺','👏'].map(e=>`<span>${e}</span>`).join('')}</div>`,'Guest phone');
+ tb(`<div class="h">Crowd moments</div><div class="row"><i>Reactions</i><b id="crx">0</b></div><div class="row"><i>Poll votes</i><b id="cpv">0</b></div><div class="row"><i>Shakes</i><b id="csk">0</b></div>`);
+ emojiUp(14);count('crx',8400,4000);for(let i=0;i<8;i++){const f=document.createElement('span');f.className='fe';f.textContent=['💛','🔥','🙌','🎉'][i%4];f.style.left=(10+Math.random()*90)+'px';f.style.top='200px';$('dp').appendChild(f);setTimeout(()=>f.remove(),1300);travel('w_p','up',600);await sl(220,t)}
+ await at(.2);bs('poll');setTimeout(()=>{['pa','pb','pc'].forEach((id,i)=>{const e=$(id);if(e)e.style.width=[72,48,30][i]+'%'})},100);count('cpv',1530,2500);
+ await at(.4);bs('shake');setTimeout(()=>{const m=$('shm');if(m)m.style.width='100%'},100);count('csk',96000,4000);document.querySelectorAll('#dg,#dp').forEach(e=>e.animate([{transform:'rotate(-4deg)'},{transform:'rotate(4deg)'}],{duration:140,iterations:30}));
+ await at(.6);$('bs').innerHTML=`<div class="sc evbg"><div class="evt" style="font-size:70px">DROP!</div></div>`;emojiUp(10);
+ const ls=['#ff3d8b','#ff9a3d','#3fd0ff','#ffe000'];let li=0;const lt=setInterval(()=>{['dp','dg'].forEach(id=>{const e=$(id);if(e)e.querySelector('.in').style.background=ls[(li++)%4]})},300);
+ phone(`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:400 22px Anton,Impact,sans-serif;color:#fff;text-align:center">LIGHT<br>SHOW</div>`);gate('scan',2400);
+ await at(.74);tbAdd(`<div style="background:#3a1500;border:2px solid #ff8a1a;border-radius:10px;text-align:center;padding:6px"><div style="font:800 9px Inter;letter-spacing:2px;color:#ffb36b">FIREWORKS CUE</div><b id="fwn" style="font:400 30px Anton,Impact,sans-serif;color:#fff">3</b></div>`);
+ for(const n of ['2','1','FIRE!']){await sl(800,t);const e=$('fwn');if(e)e.textContent=n}
+ await at(.97);clearInterval(lt);['dp','dg'].forEach(id=>{const e=$(id);if(e)e.querySelector('.in').style.background=''})},
+sponsors: async (t,at)=>{bs('live');tb(`<div class="h">Sponsor rotation <span style="float:right;color:var(--ok)">● ON</span></div><div class="row"><b>Coral Cola</b><i id="sp1">15 / 16 played</i></div><div class="row"><b>Wavelink Mobile</b><i id="sp2">15 / 16</i></div><div class="row"><b>Harbour Rum</b><i id="sp3">14 / 16</i></div>`);
+ await at(.1);bsAdd('<div class="spb">CORAL COLA</div>');$('sp1').textContent='16 / 16 played ✓';travel('w_b','cmd',500);
+ await at(.32);bsAdd(BS.tko('WAVELINK','#0d47ff','#fff'));$('sp2').textContent='16 / 16 played ✓';travel('w_b','cmd',500);
+ await at(.48);bs('live');tbAdd(`<div class="row amb new"><b>Rotation paused</b><i>speeches</i></div>`);$('pill').className='pill warn';$('pill').textContent='● Paused';
+ await at(.62);tbAdd(`<div class="ava-msg"><b>AVA:</b> Harbour Rum missed 2 slots while paused. Catch up at 11:10 and 11:40?</div>`);think('2 slots to catch up');
+ await at(.76);tbAdd(`<div class="btnr"><div id="apv">Approve</div><div>Change</div></div>`);await tapEl($('apv'),t);$('pill').className='pill';$('pill').textContent='● Live';think('');bsAdd(BS.tko('HARBOUR RUM','#2a1405','#ffcf7a'));$('sp3').textContent='16 / 16 ✓ caught up';
+ await at(.9);tbAdd(`<div class="row ok new"><b>Proof of play</b><i>48 / 48 · logged</i></div>`);await at(.97)},
+announce: async (t,at)=>{bs('live');tb(`<div class="h">Announcement</div><div class="row on"><span id="an">Last orders at the bars in 15 minutes.</span></div><div class="btnr"><div id="ab1">Send</div><div id="ab2">Send urgent</div></div><div class="h">Saved</div><div class="row"><i>Lost child</i></div><div class="row"><i>Car blocking the gate</i></div><div class="row"><i>Last orders</i></div>`);
+ await at(.15);await tapEl($('ab1'),t);travel('w_t','cmd',500).then(()=>{travel('w_b','cmd',500);travel('w_p','cmd',600,true)});await sl(900,t);
+ bsAdd('<div class="bsa n"><i>NOTICE</i><span>Last orders at the bars in 15 minutes.</span></div>');phone(`<div style="position:absolute;left:6px;right:6px;top:24px">${frame(40)}</div><div class="offb" style="background:var(--y);color:#111;border-color:var(--y)"><b>NOTICE</b> Last orders in 15 minutes.</div>`,'Guest phone');
+ await at(.5);$('an').textContent='Driver of the white van P1234, please move it from the main gate.';await tapEl($('ab2'),t);travel('w_t','cmd',500).then(()=>travel('w_b','cmd',500));await sl(900,t);
+ $('bs').querySelector('.bsa')?.remove();bsAdd('<div class="bsa u"><i>URGENT</i><span>Driver of the white van P1234, please move it from the main gate.</span></div>');await at(.97)},
+bars: async (t,at)=>{bs('live');tb(`<div class="h">Bars &amp; food · takings</div><div class="row"><b>Bar 1 · bottles</b><b id="b1">2,410</b></div><div class="row"><b>Bar 2 · mixed</b><b id="b2">3,150</b></div><div class="row"><b>Bar 3 · VIP</b><b id="b3">1,980</b></div><div class="row"><b>Food 1 · grill</b><b id="b4">1,240</b></div><div class="row"><b>Cashier · tickets &amp; top-ups</b><b id="b5">3,860</b></div>`);
+ till(TILL.sell([0],null,'$16'));await at(.12);till(TILL.sell([0,1],null,'$28'));await at(.2);till(TILL.sell([0,1],'Cash','$28'));$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice" style="top:auto;bottom:40px;background:#0f5a2c;color:#d8ffe5">Change: $22 from $50</div>');travel('w_l','y',600,true);count('b2',3178,800);
+ await at(.42);till(TILL.sell([3],'Ticket','1 drink ticket'));travel('w_l','y',600,true);
+ await at(.62);till(TILL.sell([2],'Wristband','$4 · balance $36'));travel('w_l','y',600,true);count('kBar',6420,1200);
+ await at(.82);till(TILL.sell([4],'Card','$7'));count('kBar',7980,1200);count('b1',2980,1000);count('b4',1610,1000);await at(.97)},
+inclusive: async (t,at)=>{bs('live');tb(`<div class="h">All-inclusive · tonight</div><div class="row"><i>Limit per wristband</i><b>6 a night · 2 an hour</b></div><div class="row"><i>Served</i><b id="iS">1,186</b></div><div class="row"><i>Per head so far</i><b>4.6</b></div><div class="row"><i>Food collected</i><b id="iF">212</b></div>`);
+ phone(`<div class="wb" style="inset:18px 8px 10px;background:linear-gradient(160deg,#7a3cff,#3fd0ff)"><b style="color:#fff">INCLUSIVE</b><span style="color:#fff">Wristband A-214<br>linked to ticket #SSF-20418</span></div>`,'Wristband');
+ gate('ok','All-inclusive · wristband A-214 on',2531);await at(.18);gate('scan',2531);
+ const wb=(n,lim)=>`<div class="thd"><span>BAR 2 · TILL 1</span><span>● online</span></div><div class="wb"><span>Wristband A-214 · Inclusive</span><b>${lim?'6 OF 6 TONIGHT':n+' of 6 tonight'}</b><div class="lim">${Array.from({length:6},(_,i)=>`<i class="${i<n?'u':''}"></i>`).join('')}</div>${lim?'<span style="color:var(--amb)">Limit reached · manager PIN allows one more</span>':'<div class="go">Tap to serve ✓</div>'}</div>`;
+ await at(.26);till(wb(3));travel('w_l','y',600,true);await at(.38);till(wb(4));count('iS',1187,300);$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice" style="top:auto;bottom:8px;background:#0f5a2c;color:#d8ffe5">Served · rum punch · counted against stock</div>');
+ await at(.55);till(wb(6,1));await at(.66);$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice" style="top:auto;bottom:8px">🔒 Manager PIN ✓ · one more allowed · logged</div>');
+ await at(.76);till(`<div class="thd"><span>FOOD 1 · GRILL</span><span>kitchen screen</span></div><div class="wb"><span>Collection number</span><b style="font-size:40px">#47</b><span>Jerk chicken · inclusive</span><div class="go">Ready · call #47</div></div>`);count('iF',213,300);
+ await at(.97)},
+outside: async (t,at)=>{bs('live');till(TILL.sell([0],'Cash','$16').replace('BAR 2 · TILL 1','RUM SHOP · OUTSIDE BAR'));
+ tb(`<div class="h">Rum Shop · run by Island Bar Co.</div><div class="row"><i>Takings tonight</i><b id="ob">0</b></div><div class="row"><i>Stock issued · sold</i><b>240 · 214</b></div><div class="row"><i>Tills</i><b>2 · on Event Pal</b></div>`);count('ob',4620,2500);travel('w_l','y',600,true);
+ await at(.42);tbAdd(`<div class="h">Their report · you choose</div><div class="row ok new" style="padding:4px 10px"><b>Takings by hour</b><span class="ck">✓</span></div><div class="row ok new" style="padding:4px 10px"><b>Stock used</b><span class="ck">✓</span></div><div class="row new" style="padding:4px 10px;opacity:.55"><b>Crowd numbers</b><i>left out</i></div>`);
+ await at(.72);tbAdd(`<div class="btnr"><div id="osend">Approve &amp; send</div></div>`);await tapEl($('osend'),t);travel('w_t','cmd',600);await at(.97)},
+stock: async (t,at)=>{bs('live');tb(`<div class="h">Stock · Bar 2 · beer</div><div class="row"><i>Issued by the store</i><b>480</b></div><div class="row"><i>Top-ups</i><b id="stT">0</b></div>`);
+ till(TILL.sell());$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice"><i>STOCK</i>20 cases beer from the store<em>Confirm</em></div>');await at(.15);
+ $('dt').querySelector('.notice').innerHTML='<i>STOCK</i>Received 480 ✓ confirmed on this till';await at(.3);
+ $('dt').querySelector('.notice').innerHTML='<i>STOCK</i>Beer: 36 left<em>Ask for top-up</em>';await at(.4);$('dt').querySelector('.notice').innerHTML='<i>STOCK</i>Top-up asked · 5 cases on the way';travel('w_l','y',600,true);$('stT').textContent='120';
+ await at(.56);till(`<div class="thd"><span>BAR 2 · CLOSE</span><span>blind count</span></div><div class="wb"><span>Count what's left. You won't see what's expected.</span><b>Beer: 41</b><div class="go">Submit count</div></div>`);
+ await at(.72);tbAdd(`<div class="row"><i>Sold (from the till)</i><b>551</b></div><div class="row"><i>Counted at close</i><b>41</b></div><div class="row amb new"><b>Missing</b><b style="color:var(--amb)">8 · EC$64</b></div>`);await at(.97)},
+staff: async (t,at)=>{bs('live');
+ const R=[['Kemar','Gate staff','Gate A'],['Shanice','Bar staff','Bar 2'],['Andre','Cashier','Cashier'],['Lisa','Manager','All bars'],['Kerry','Screen operator','Screens']];
+ tb('<div class="h">Staff on tonight · 46</div>');for(const [i,r] of R.entries()){tbAdd(`<div class="row new" style="padding:5px 10px"><span><b>${r[0]}</b> <i>${r[1]}</i></span><i>${r[2]}</i></div>`);await at(.04+i*.05)}
+ till(`<div class="thd"><span>BAR 2 · TILL 1</span><span>locked</span></div><div class="wb"><span>Sign in with your PIN</span><b style="letter-spacing:6px">● ● ● ○</b><span>Shanice · Bar staff</span></div>`);
+ await at(.36);till(TILL.sell([1],null,'$12'));gate('scan',2412);$('dg').querySelector('.in').insertAdjacentHTML('beforeend','<div class="offb" style="background:#1c1c24;border-color:#444">Kemar · Gate A</div>');
+ await at(.55);till(`<div class="thd"><span>BAR 2 · TILL 1</span><span>Shanice</span></div><div class="wb"><span>Void Rum punch $12?</span><b style="font-size:16px">MANAGER PIN</b><span>Lisa approves</span></div>`);
+ await at(.7);$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice" style="top:auto;bottom:8px">🔒 Void approved by Lisa · 10:14pm · logged</div>');tbAdd(`<div class="ava-msg"><b>Log:</b> Void $12 · Bar 2 · Shanice, approved by Lisa, 10:14pm</div>`);await at(.97)},
+watch: async (t,at)=>{bs('live');tb(`<div class="h">AVA's watch</div><div class="row ok"><b>Gates · 3</b><span class="ck">✓</span></div><div class="row ok"><b>Screens · Box</b><span class="ck">✓</span></div><div class="row" id="wb2"><b>Bar 2 tills</b><span class="ck">✓</span></div>`);
+ till(TILL.sell());await at(.12);$('dt').querySelector('.in').innerHTML='<div style="position:absolute;inset:0;background:#050507;display:flex;align-items:center;justify-content:center;color:#555;font-size:12px;text-align:center">Bar 2 · till 1<br>📶✕ quiet</div>';
+ $('wb2').className='row amb';$('wb2').innerHTML='<b>Bar 2 · till 1 quiet 6 min</b><span style="color:var(--amb)">!</span>';
+ await at(.22);think('Till 1 quiet… till 2 beside it is fine');await at(.38);think('So it\'s that tablet, not the wifi');
+ await at(.5);travel('w_p','cmd',600);phone(tgAlert('⚠️ Bar 2: till 1 quiet for 6 min','Till 2 beside it is fine, so it\'s that tablet, not the wifi. Sales are saved on it.<br><b style="display:inline">Fix:</b> check it\'s on and on wifi. Confidence: high.',1),'Your phone');
+ tbAdd(`<div class="ava-msg"><b>AVA:</b> Note sent to Bar 2's other till: "Till 1 has gone quiet. Check its wifi."</div>`);
+ await at(.75);const g=$('dp').querySelector('.gi');g&&(g.style.background='var(--ok)',g.style.color='#06270f');await sl(400,t);$('dp').querySelector('.tgm').insertAdjacentHTML('beforeend','<div class="m">👍 You have it. I\'ll stop repeating.</div>');
+ await at(.88);till(TILL.sell());$('wb2').className='row ok';$('wb2').innerHTML='<b>Bar 2 tills · back</b><span class="ck">✓</span>';think('');$('dp').querySelector('.tgm').insertAdjacentHTML('beforeend','<div class="m">✅ Back to normal after 9 min.</div>');await at(.92);$('dp').querySelector('.tgm').insertAdjacentHTML('beforeend','<div class="m">🟢 Hourly update: 2,640 in · bars EC$11.2k · all 9 tills on · nothing needs you.</div>');await at(.97)},
+ask: async (t,at)=>{bs('live');tb(`<div class="h">Pal Monitor</div><div class="kp" style="grid-template-columns:1fr 1fr"><div><b>2,640</b><span>in the venue</span></div><div><b>EC$11.2k</b><span>bars tonight</span></div><div><b>3 / 3</b><span>gates live</span></div><div><b>0</b><span>open issues</span></div></div>`);
+ phone(`<div class="tgm" id="chat"><div class="tgh">🤖 Event Pal · AVA</div></div>`,'Your phone');const C=$('chat');
+ await at(.18);C.insertAdjacentHTML('beforeend','<div class="m me">How many are in?</div>');travel('w_p','up',600,true);think('Counting the gates…');
+ await at(.3);C.insertAdjacentHTML('beforeend','<div class="m">2,640 in. Gate A is busiest. You\'re at 88% of capacity.</div>');
+ await at(.46);C.insertAdjacentHTML('beforeend','<div class="m me">Which bar is busiest?</div>');await at(.56);C.insertAdjacentHTML('beforeend','<div class="m">Bar 2: EC$3,900, 41 sales in the last 10 min.</div>');
+ await at(.7);C.innerHTML='<div class="tgh">🤖 Event Pal · AVA</div><div class="m me">Play Coral Cola now</div>';await sl(800,t);C.insertAdjacentHTML('beforeend','<div class="m">Play the Coral Cola takeover on all screens now? <div class="gi">YES</div></div>');
+ await at(.82);think('Your role allows it · read back · logged');travel('w_b','cmd',500);bsAdd(BS.tko('CORAL COLA','#ff6f61','#fff'));await at(.97);think('')},
+offline: async (t,at)=>{bs('live');$('pill').className='pill warn';$('pill').textContent='● Venue internet down';
+ tb(`<div class="h">Saved on the devices</div><div class="row"><i>Gate scans</i><b id="of1">0</b></div><div class="row"><i>Till sales</i><b id="of2">0</b></div><div class="row"><i>Screens</i><b>playing from the box</b></div>`);
+ gate('scan',2480);$('dg').querySelector('.in').insertAdjacentHTML('beforeend','<div class="offb"><b>Offline.</b> Still scanning</div>');till(TILL.sell([0],'Cash','$16'));$('dt').querySelector('.in').insertAdjacentHTML('beforeend','<div class="notice" style="background:#2a1f05">📶✕ Offline · sales saved on this till</div>');
+ $('bs').insertAdjacentHTML('beforeend','<div class="spb wl" style="left:3%;right:auto">internet down · show keeps playing</div>');count('of1',38,4000);count('of2',27,4000);
+ await at(.62);$('pill').className='pill';$('pill').textContent='● Back online';$('dg').querySelector('.offb')?.remove();$('dt').querySelector('.notice')?.remove();$('bs').querySelector('.spb')?.remove();
+ for(let i=0;i<8;i++){travel(i%2?'w_g':'w_l','y',500,true);await sl(150,t)}tbAdd(`<div class="row ok new"><b>All caught up</b><span class="ck">38 scans · 27 sales ✓</span></div>`);count('kIn',2702,1000);await at(.97)},
+report: async (t,at)=>{bs('idle');tb(`<div class="h">Morning-after report</div><div class="kp"><div><b id="r1">0</b><span>tickets sold</span></div><div><b id="r2">0</b><span>scanned in</span></div><div><b id="r3">0</b><span>bar takings EC$</span></div><div><b id="r4">0</b><span>inclusive servings</span></div><div><b id="r5">0</b><span>sponsor plays</span></div><div><b id="r6">0</b><span>stock missing EC$</span></div></div><div class="h">Crowd by the hour</div><div style="display:flex;align-items:flex-end;gap:3px;height:54px" id="rh"></div>`);
+ count('r1',2118,1500);count('r2',2702,1500);count('r3',18640,1500);count('r4',1214,1500);count('r5',48,1500);count('r6',212,1500);
+ const H=[12,30,58,80,96,100,88,70,40,18];for(const [i,h] of H.entries()){$('rh').insertAdjacentHTML('beforeend',`<i style="flex:1;height:${h}%;background:var(--y);border-radius:2px 2px 0 0;animation:pop .3s both"></i>`);await sl(140,t)}
+ await at(.6);tbAdd(`<div class="btnr"><div class="on">⬇ Spreadsheet</div><div>Accountant pack</div></div><div class="row" style="padding:4px 10px"><i>Counts only · no guest names or photos</i></div>`);await at(.97)},
+protocol: async (t,at)=>{bs('opener');const P=[['Brief','the form'],['Build','set up + check'],['Rehearse','full run'],['Doors','AVA walk-around'],['Show','live watch'],['Close','blind counts'],['Report','next morning']];
+ tb(`<div class="h">The event protocol</div><div class="proto">${P.map((p,i)=>`<div id="pr${i}"><b>${i+1}</b><span>${p[0]}</span><i>${p[1]}</i></div>`).join('')}</div>`);
+ for(let i=0;i<P.length;i++){await at(.05+i*.13);$('pr'+i).classList.add('lit');if(i===3)think('Walk-around: all clear');if(i===5)think('')}await at(.97)}
+};
+const STEPS=S.map(s=>SF[s.id]);
+// ---------- narration ----------
+const NA=new Audio();NA.preload='auto';let narrEnd=null;
+function narrStop(){try{NA.pause()}catch(_){}if(narrEnd){narrEnd();narrEnd=null}}
+function narr(n){narrStop();if(!narrOn)return Promise.resolve();return new Promise(res=>{narrEnd=res;NA.src='audio/step'+n+'.mp3';NA.onended=()=>{narrEnd=null;res()};NA.onerror=()=>{narrEnd=null;res()};const p=NA.play();if(p&&p.catch)p.catch(()=>{narrEnd=null;res()})})}
+$('nb').onclick=()=>{narrOn=!narrOn;$('nb').textContent=narrOn?'🔊 Voice on':'🔇 Voice off';$('nb').setAttribute('aria-pressed',narrOn);if(!narrOn)narrStop()};
+// ---------- animated intro ----------
+function introShow(){const o=$('intro');o.className='on'}
+function introHide(){$('intro').className='';IC.run=false;$('ia').innerHTML=''}
+const IC={ph:[],pt:[],em:[],mode:'off',t0:0,dim:0,run:false};const icv=$('icv'),ig=icv.getContext('2d');
+function icInit(){IC.ph=[];for(let r=0;r<7;r++){const s=.5+r*.13,y=455+r*40,gap=30*s;for(let x=-10+Math.random()*gap;x<1300;x+=gap*(1+Math.random()*.6))IC.ph.push({x,y:y+Math.random()*8,s,l:0,ph:Math.random()*6.3,d:Math.random()})}IC.pt=[];IC.em=[]}
+function icMode(m){IC.mode=m;IC.t0=performance.now()}
+function icBurst(x,y,n){const C=['#FFE000','#ffffff','#3FD0FF','#ff3d8b','#ff9a3d'];const c=C[Math.floor(Math.random()*C.length)];for(let i=0;i<(n||80);i++){const a=Math.random()*6.283,v=60+Math.random()*220;IC.pt.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,t:0,L:1.2+Math.random()*.8,c})}}
+function icEmoji(n){const E=['💛','🔥','🙌','🎉','💃','🎺','👏'];for(let i=0;i<n;i++){const side=Math.random()<.5;IC.em.push({x:side?40+Math.random()*260:980+Math.random()*260,y:740+Math.random()*120,v:90+Math.random()*80,e:E[Math.floor(Math.random()*7)],s:26+Math.random()*16,ph:Math.random()*6})}}
+function icRun(){if(IC.run)return;IC.run=true;let last=performance.now();const f=now=>{if(!IC.run){ig.clearRect(0,0,1280,720);return}const dt=Math.min(.05,(now-last)/1000);last=now;const T=(now-IC.t0)/1000;ig.clearRect(0,0,1280,720);
+ for(const p of IC.ph){let tl=.05;if(IC.mode==='sparkle')tl=(Math.sin(now/300+p.ph*7)>.85)?.5:.06;else if(IC.mode==='on')tl=T*1.2>p.d?.45:.06;else if(IC.mode==='wave')tl=Math.max(.2,Math.sin(T*4-p.x/90)*.5+.5);else if(IC.mode==='all')tl=.75+.25*Math.sin(now/90+p.ph);
+  p.l+=(tl-p.l)*Math.min(1,dt*6);const w=15*p.s,h=26*p.s,x=p.x,y=p.y-h-12*p.s,a=1-IC.dim;
+  ig.globalAlpha=a;ig.fillStyle='#0d0f1c';ig.beginPath();ig.arc(p.x,p.y+14*p.s,13*p.s,0,6.283);ig.fill();
+  if(p.l>.35){ig.globalAlpha=a*(p.l-.35)*.9;ig.fillStyle=p.ph>3?'#FFE000':'#3FD0FF';ig.beginPath();ig.arc(x+w/2,y+h/2,h*.9,0,6.283);ig.fill()}
+  ig.globalAlpha=a;ig.fillStyle='#2a2e44';ig.fillRect(x-1.5*p.s,y-1.5*p.s,w+3*p.s,h+3*p.s);const l=p.l;ig.fillStyle=p.ph>3?`rgb(${Math.round(25+l*230)},${Math.round(30+l*194)},${Math.round(60-l*60)})`:`rgb(${Math.round(25+l*38)},${Math.round(30+l*178)},${Math.round(60+l*195)})`;ig.fillRect(x,y,w,h)}
+ ig.globalAlpha=1;for(let i=IC.pt.length-1;i>=0;i--){const q=IC.pt[i];q.t+=dt;if(q.t>q.L){IC.pt.splice(i,1);continue}q.vy+=90*dt;q.vx*=.985;q.vy*=.985;q.x+=q.vx*dt;q.y+=q.vy*dt;ig.globalAlpha=Math.max(0,1-q.t/q.L);ig.fillStyle=q.c;ig.fillRect(q.x-1.6,q.y-1.6,3.2,3.2)}
+ ig.globalAlpha=1;ig.textAlign='center';ig.textBaseline='middle';for(let i=IC.em.length-1;i>=0;i--){const e=IC.em[i];e.y-=e.v*dt;if(e.y<-40){IC.em.splice(i,1);continue}ig.font=e.s+'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';ig.fillText(e.e,e.x+Math.sin(now/400+e.ph)*14,e.y)}
+ requestAnimationFrame(f)};requestAnimationFrame(f)}
+function iel(id,html,css){let e=document.getElementById(id);if(!e){e=document.createElement('div');e.id=id;e.className='ie';$('ia').appendChild(e)}if(html!=null)e.innerHTML=html;if(css!=null)e.style.cssText=css;return e}
+const ion=e=>{void e.offsetWidth;e.classList.add('on')};const ioff=id=>{const e=document.getElementById(id);if(e)e.classList.remove('on')};
+function ichip(name,desc){const c=iel('iChip',`<b>${name}</b><span>${desc}</span>`);c.classList.remove('on');void c.offsetWidth;c.classList.add('on')}
+function icount(el,to,ms,fmt){if(!el)return;const t0=performance.now();const f=()=>{const k=Math.min(1,(performance.now()-t0)/ms),v=Math.round(to*(1-Math.pow(1-k,3)));el.textContent=fmt?fmt(v):v.toLocaleString();if(k<1&&IC.run)requestAnimationFrame(f)};f()}
+const iscreen=inner=>`<div class="iscr"><div class="iscri">${inner}</div></div><div class="istand"></div>`;
+async function intro(t){mark(-1);introShow();$('intro').classList.add('anim');$('ia').innerHTML='';icInit();icMode('off');IC.dim=0;icRun();
+ const np=narr('intro');const t0=performance.now(),k=narrOn?1:0.55,C=TIMING.intro.c;
+ const at=async ms=>{const w=ms*k-(performance.now()-t0);if(w>0)await sl(w,t);if(t!==tok)throw 'x'};
+ try{
+ const T=iel('iTitle',`<h2>EVENT PAL</h2><p>Your whole event · one system</p>`);ion(T);icMode('sparkle');
+ // access
+ await at(C.access);T.classList.add('top');icMode('on');IC.dim=.5;
+ const P=iel('iPh',`<div class="in">${ticket('GENERAL')}</div>`);ion(P);ichip('🎟️ Access Pal','Every ticket type, online and at the box office');
+ const N=iel('iCnt',`<small>IN THE VENUE</small><b id="iIn">0</b>`);ion(N);icount($('iIn'),2702,6000);
+ await at(C.access+3200);const B=iel('iBig',`<b style="color:var(--ok)">✓ IN</b><span style="color:#d8ffe5">GATE A · SCANNED IN A SECOND</span>`);ion(B);
+ await at(C.control);B.innerHTML=`<b style="color:var(--amb)">✕ FAKE CODE</b><span style="color:#ffe2b0">SIGNATURE CHECK FAILED</span>`;ichip('🔒 Our own secured QR codes','Signed and always changing: no fakes, edits or screenshots');setTimeout(()=>{if(B.isConnected)B.innerHTML=`<b style="color:var(--amb)">✕ STOP</b><span style="color:#ffe2b0">ALREADY USED · GATE B 9:42PM</span>`},6500*k);
+ // screens
+ await at(C.screens);['iPh','iBig','iCnt'].forEach(ioff);IC.dim=.4;
+ const SCR=iel('iScr',iscreen(BS.live()));ion(SCR);ichip('🖥️ Any LED wall, any event','Full NDI to the walls and livestream, a template for every event');
+ const tpl=[`<div class="sc" style="background:radial-gradient(ellipse at 50% 120%,#0d5a2c,#03140a 70%)"><div style="position:absolute;left:4%;bottom:10%;display:flex;font:800 15px Inter"><div style="background:#111;color:#fff;padding:8px 12px">VINCY XI</div><div style="background:var(--y);color:#111;padding:8px 12px;font:400 22px Anton,Impact,sans-serif">142/3</div><div style="background:#1c1c24;color:#ddd;padding:8px 12px">16.2 ov</div></div></div>`,`<div class="sc evbg"><div class="evs">AND THE WINNER IS</div><div class="evt" style="font-size:48px">BEST NEW ARTIST</div></div>`,BS.opener()];let ti=0;const tpi=setInterval(()=>{if(!IC.run||!SCR.isConnected)return clearInterval(tpi);SCR.querySelector('.iscri').innerHTML=tpl[(ti++)%3]},2600*k);setTimeout(()=>clearInterval(tpi),(C.crowd-C.screens)*k-200);
+ const PH2=iel('iPh',`<div class="in">${BS.idle()}</div>`);
+ // crowd
+ await at(C.crowd);IC.dim=.2;icMode('wave');SCR.querySelector('.iscri').innerHTML=BS.wall(12);icEmoji(24);const em=setInterval(()=>{if(IC.run)icEmoji(4)},700);
+ PH2.innerHTML=`<div class="in"><div style="position:absolute;left:10px;right:10px;top:30px">${frame(0)}</div><div class="rxrow" style="bottom:14px">${['💛','🔥','🙌','🎉','💃','🎺','👏'].map(e=>`<span>${e}</span>`).join('')}</div></div>`;ion(PH2);ichip('📸 Your crowd in the show','Photos, reactions, polls, shake games and a phone light show');setTimeout(()=>{if(IC.run)icMode('all')},9000*k);
+ // pack
+ await at(C.pack);clearInterval(em);ioff('iPh');icMode('on');IC.dim=.5;SCR.querySelector('.iscri').innerHTML=BS.opener();ichip('✨ Your own graphics pack','Custom effects and transitions, made from your branding');
+ const wp=setInterval(()=>{if(!IC.run)return;const s=SCR.querySelector('.iscri');s.insertAdjacentHTML('beforeend','<div class="wipe"></div>');setTimeout(()=>{if(s.isConnected)s.innerHTML=[BS.live(),BS.opener(),BS.wall(12)][Math.floor(Math.random()*3)]},450)},1700);
+ // sponsors
+ await at(C.sponsors);clearInterval(wp);SCR.querySelector('.iscri').innerHTML=BS.live()+'<div class="spb" style="font-size:18px">CORAL COLA</div>';ichip('🎯 Sponsors, enforced','Every slot counted, with proof of every play');
+ await at(C.sponsors+2600);SCR.querySelector('.iscri').innerHTML=BS.tko('WAVELINK','#0d47ff','#fff');
+ // food & drink
+ await at(C.fnb);ioff('iScr');IC.dim=.85;
+ const CD=iel('iCards',`<div><i>🍹</i><b>CASH · CARD</b><span>Every bar and food station on one till system. Change worked out for you.</span></div><div><i>🎟️</i><b>DRINK TICKETS · WRISTBANDS</b><span>Per drink or by value. Prepaid wristbands, topped up at the cashier.</span></div><div><i>💜</i><b>ALL-INCLUSIVE</b><span>Scan the wristband, tap to serve. Every serving counted, against limits you set.</span></div>`);CD.classList.add('on');
+ const cs=CD.children;for(let i=0;i<3;i++){setTimeout(()=>cs[i]&&cs[i].classList.add('on'),i*2300)}ichip('🍹 Food & drink, one system','Cash, card, tickets, wristbands and all-inclusive');
+ // stock
+ await at(C.stock);ioff('iCards');const SK=iel('iStock',`<div class="sh">BAR 2 · BEER · CLOSE</div><div class="sr"><div><b id="is1">0</b><small>ISSUED + TOP-UPS</small></div><div><b id="is2">0</b><small>SOLD</small></div><div><b id="is3">0</b><small>COUNTED</small></div><div class="m"><b id="is4">0</b><small>MISSING EC$</small></div></div>`);ion(SK);
+ icount($('is1'),600,1800);icount($('is2'),551,2200);icount($('is3'),41,2600);setTimeout(()=>icount($('is4'),64,1200),2600);ichip('📦 Stock control','Issued, topped up and counted blind, bar by bar');
+ // staff
+ await at(C.staff);ioff('iStock');const SF2=iel('iCards',`<div><i>🚪</i><b>GATE STAFF</b><span>Their gate, their scanner. Every scan under their name.</span></div><div><i>🍹</i><b>BAR STAFF · CASHIERS</b><span>Their till, their station. A PIN to sign in.</span></div><div><i>🔑</i><b>MANAGERS · OPERATORS</b><span>Approve voids and overrides with a PIN. Run the screens.</span></div>`);SF2.classList.add('on');[...SF2.children].forEach((c,i)=>{c.classList.remove('on');setTimeout(()=>c.classList.add('on'),300+i*1300*k)});ichip('🔑 Every person, their own PIN','Roles for gates, bars, managers and the control desk, all logged');
+ // offline
+ await at(C.offline);ioff('iCards');const OF=iel('iBig',`<b style="color:var(--amb)">📶✕</b><span style="color:#ffe2b0">SIGNAL DOWN · NOTHING STOPS</span>`);ion(OF);setTimeout(()=>{if(OF.isConnected)OF.innerHTML=`<b style="color:var(--ok)">✓ SYNCED</b><span style="color:#d8ffe5">EVERY SCAN AND SALE CAUGHT UP</span>`},5200*k);ichip('🛡️ Built for a bad signal','Gates scan, tills sell, screens play, offline');
+ // monitor
+ await at(C.monitor);ioff('iBig');const MO=iel('iMon',`<div><small>IN</small><b id="im1">0</b><span>3 gates live</span></div><div><small>BARS EC$</small><b id="im2">0</b><span>6 tills online</span></div><div><small>SCREENS</small><b>2 + ●</b><span>walls + stream</span></div><div><small>ISSUES</small><b>0</b><span>AVA watching</span></div>`);ion(MO);icount($('im1'),2640,2000);icount($('im2'),11200,2000);ichip('📊 Pal Monitor','The whole event, live, on your phone');
+ // AVA
+ await at(C.ava);ioff('iMon');IC.dim=.7;const OR=iel('iOrb',`<b>AVA</b><span>on watch</span>`);ion(OR);ichip('🧠 AVA on watch','Finds it, works out why, tells the right person');
+ await at(C.ava+4300);const b1=iel('iB1','Bar 2 · till 1 quiet. Till 2 is fine, so it\'s that tablet, not the wifi.');b1.className='ie ibub al';b1.style.cssText='left:120px;top:420px';ion(b1);
+ await at(C.ava+7500);const b2=iel('iB2','👍 Got it');b2.className='ie ibub q';b2.style.cssText='left:880px;top:440px';ion(b2);
+ // ask
+ await at(C.ask);['iB1','iB2'].forEach(ioff);const q1=iel('iQ1','How many are in?');q1.className='ie ibub q';q1.style.cssText='left:820px;top:130px';ion(q1);
+ await at(C.ask+1500);const a1=iel('iA1','2,640 in. Gate A is busiest.');a1.className='ie ibub a';a1.style.cssText='left:100px;top:200px';ion(a1);
+ await at(C.ask+3000);const q2=iel('iQ2','Play the next sponsor now.');q2.className='ie ibub q';q2.style.cssText='left:840px;top:420px';ion(q2);
+ await at(C.ask+4600);const a2=iel('iA2','Play Coral Cola on all screens now? Reply YES.');a2.className='ie ibub a';a2.style.cssText='left:100px;top:470px';ion(a2);ichip('💬 Ask AVA','She answers, and with your say-so, she acts');
+ // protocol
+ await at(C.protocol);['iQ1','iA1','iQ2','iA2','iOrb'].forEach(ioff);IC.dim=.6;const PR=iel('iProto',['Brief','Build','Rehearse','Doors','Show','Close','Report'].map((s,i)=>`<div><b>${i+1}</b><span>${s}</span></div>`).join(''));ion(PR);
+ for(let i=0;i<7;i++)setTimeout(()=>{const d=PR.children[i];d&&d.classList.add('lit')},400+i*720*k);ichip('🗂️ One protocol, every event','Brief · Build · Rehearse · Doors · Show · Close · Report');
+ // finale
+ await at(C.finale);ioff('iProto');ioff('iChip');ioff('iTitle');IC.dim=0;icMode('all');const F=iel('iFin',`<b>ONE EVENT.</b><b class="y">ONE SYSTEM.</b><b class="c">POWERED BY AVA</b>`);ion(F);
+ const fw=setInterval(()=>{if(IC.run)icBurst(150+Math.random()*980,90+Math.random()*200,100)},380);
+ await np;clearInterval(fw);if(!narrOn)await sl(2500,t);if(t!==tok)throw 'x';
+ }finally{if(t!==tok)IC.run=false}
+ $('intro').classList.remove('anim');introHide();await sl(400,t)}
+// ---------- controls ----------
+const sb=$('stepBtns');{const b=document.createElement('button');b.textContent='Intro';b.onclick=async()=>{const t=++tok;playing=false;$('pp').textContent='▶ Play all';try{await intro(t)}catch(e){}introShow()};sb.appendChild(b)}
+S.forEach((s,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' '+s.t.replace(/^The /,'');b.onclick=()=>run(i,false);sb.appendChild(b)});
+function mark(i){[...sb.children].forEach((b,k)=>b.classList.toggle('on',k===i+1));const a=sb.children[i+1];if(a&&sb.scrollWidth>sb.clientWidth)sb.scrollTo({left:a.offsetLeft-sb.offsetLeft-8,behavior:'smooth'})}
+let playing=false;
+async function run(i,all){const t=++tok;playing=all;$('pp').textContent=all?'❚❚ Pause':'▶ Play all';
+ try{if(all&&i===0)await intro(t);else introHide();
+  for(let k=i;k<STEPS.length;k++){base(k);mark(k);cap(k+1,S[k].t,capText(k));const np=narr(k+1);await STEPS[k](t,pace(t,k));await np;if(t!==tok)throw 'x';if(!all)break;await sl(700,t)}}
+ catch(e){if(e!=='x')console.error(e)}if(t===tok){playing=false;$('pp').textContent='▶ Play again'}}
+$('pp').onclick=()=>{if(playing){tok++;playing=false;narrStop();$('pp').textContent='▶ Play'}else run(0,true)};
+base(0);mark(0);cap(1,S[0].t,'Press Play to watch a whole event, or pick a step.');introShow();
+</script>
+</body>
+</html>
