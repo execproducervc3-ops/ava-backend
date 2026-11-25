@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Pal Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0b0f;--card:#15151b;--deep:#101015;--line:#2a2a33;--ink:#f4f4f6;--mute:#a3a3ad;--acc:#f7d117;--ok:#5fe07a;--warn:#f7a531;--down:#ff8a3d}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,sans-serif}
+a{color:var(--acc)}
+h1,h2,.cond{font-family:'Barlow Condensed',Inter,sans-serif;text-transform:uppercase;letter-spacing:.4px}
+.k{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
+.n{font:700 30px/1.05 'Barlow Condensed',Inter,sans-serif}
+.dot{display:inline-block;width:9px;height:9px;border-radius:5px;flex:none;background:#5a5a66}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.down{background:var(--down)}
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #23232b;font-size:14px}
+.row:first-child{border-top:0}
+.row .r{color:var(--mute);font-size:13px;text-align:right}
+.pill{border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap}
+.p-ok{background:#16271a;color:var(--ok)}.p-warn{background:#2a2214;color:#f7c948}.p-off{background:#1f1f27;color:#8b8b96}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.tile{background:var(--deep);border-radius:10px;padding:10px;min-width:0}
+.btn{background:#1d1d24;color:var(--ink);border:1px solid #33333d;border-radius:9px;padding:0 12px;min-height:36px;font:600 13px Inter,system-ui,sans-serif;cursor:pointer}
+.btn:hover{background:#26262f}
+.acc{background:var(--acc);color:#111;border-color:var(--acc)}.acc:hover{background:#ffe55c}
+.chip{min-height:32px;border-radius:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.top{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.top>div{background:var(--deep);padding:14px 22px}
+main{max-width:1440px;margin:0 auto;padding:22px 24px 40px;display:flex;flex-direction:column;gap:18px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:18px;align-items:start}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.seg{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{background:transparent;color:var(--mute);border:0;border-radius:8px;padding:6px 12px;font:600 13px Inter,sans-serif;cursor:pointer}
+.seg button[aria-pressed=true]{background:#25231a;color:var(--ink)}
+#login{max-width:380px;margin:12vh auto;padding:24px}
+input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);border-radius:10px;padding:10px 12px;font:15px Inter,sans-serif;min-height:46px}
+.screens{display:flex;flex-wrap:wrap;gap:6px}
+.muted{color:var(--mute)}
+.ans{white-space:pre-wrap;color:#dcdce2;font-size:14px}
+@media (max-width:620px){header{padding:12px 14px}main{padding:14px}.top>div{padding:12px 14px}.cols{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+
+<div id="login" class="card" hidden>
+<h1 style="margin:0;font-size:34px">Pal <span style="color:var(--acc)">Monitor</span></h1>
+<p class="muted" style="margin:0">Use the AVA admin password.</p>
+<form id="lf" style="display:flex;flex-direction:column;gap:10px">
+<input id="pw" class="t" type="password" autocomplete="current-password" aria-label="Admin password" placeholder="Admin password">
+<button class="btn acc" style="min-height:46px">Open monitor</button>
+<div id="lerr" style="color:#f7c948;min-height:1.2em"></div>
+</form>
+</div>
+
+<div id="app" hidden>
+<header>
+<div class="cond" style="font-weight:800;font-size:26px">Pal <span style="color:var(--acc)">Monitor</span></div>
+<div class="muted" id="when">…</div>
+<div style="flex:1"></div>
+<div class="seg" role="group" aria-label="Show">
+<button data-f="all" aria-pressed="true">All</button><button data-f="ep" aria-pressed="false">Event Pal</button><button data-f="rp" aria-pressed="false">Restaurant Pal</button><button data-f="tp" aria-pressed="false">Travel Pal</button>
+</div>
+<span class="muted" style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><span class="dot" id="livedot"></span><span id="livetxt">Connecting</span></span>
+<button class="btn" id="out">Sign out</button>
+</header>
+
+<div class="top">
+<div style="display:flex;align-items:center;gap:12px"><span id="ovIcon" style="width:42px;height:42px;border-radius:21px;background:#1f1f27;display:flex;align-items:center;justify-content:center;font-size:19px">…</span><div><div class="k">Overall</div><div class="n" id="ov">…</div></div></div>
+<div><div class="k">Needs a look</div><div class="n" id="wc">…</div></div>
+<div><div class="k">Products answering</div><div class="n" id="fc">…</div></div>
+<div><div class="k">Sites online</div><div class="n" id="sc">…</div></div>
+<div><div class="k">AVA questions today</div><div class="n" id="aq">…</div></div>
+</div>
+
+<main>
+<section class="card" aria-label="AVA" style="background:#121218">
+<div style="display:flex;gap:12px;align-items:flex-start">
+<span class="cond" style="width:40px;height:40px;border-radius:20px;background:var(--acc);color:#111;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:none">AVA</span>
+<div style="flex:1;min-width:0"><div class="ans" id="brief">Reading everything…</div></div>
+<button class="btn" id="rebrief" title="Ask AVA for a fresh briefing">↻</button>
+</div>
+<form id="askf" style="display:flex;gap:8px;flex-wrap:wrap">
+<label style="flex:1;min-width:240px;display:flex;align-items:center;gap:8px;background:#0f0f14;border:1px solid #33333d;border-radius:12px;padding:0 12px;min-height:46px">
+<span aria-hidden="true" style="color:var(--acc)">✦</span>
+<input id="q" aria-label="Ask AVA" maxlength="500" placeholder="Ask AVA about anything on this screen…" style="flex:1;background:transparent;border:0;color:var(--ink);font:15px Inter,sans-serif;outline:none;min-width:0">
+</label>
+<button class="btn acc" style="min-height:46px;padding:0 18px">Ask</button>
+</form>
+<div style="display:flex;gap:6px;flex-wrap:wrap" id="chips">
+<button class="btn chip">What needs me right now?</button>
+<button class="btn chip">Is everything ready for Friday's rally?</button>
+<button class="btn chip">Any ferries at sea?</button>
+<button class="btn chip">How is Sky Lounge doing?</button>
+</div>
+<div id="answer" class="ans" hidden style="border-top:1px solid var(--line);padding-top:12px"></div>
+</section>
+
+<section id="warnbox" aria-label="Needs a look" style="background:#1c170c;border:1px solid #4a3a12;border-radius:16px;padding:14px 18px" hidden>
+<div style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:4px"><span class="dot warn"></span>Needs a look</div>
+<div id="warns"></div>
+</section>
+
+<div class="cols">
+<section class="card" data-p="ep" id="ep"></section>
+<section class="card" data-p="rp" id="rp"></section>
+<section class="card" data-p="tp" id="tp"></section>
+</div>
+<section class="card" id="shared"></section>
+<p class="muted" style="margin:0;font-size:13px">Look only. Counts and health, no customer names or money. Updates every 10 seconds.</p>
+</main>
+</div>
+
+<script>
+const API = '/.netlify/functions/admin-monitor';
+const BOX = 'http://localhost:8765/api/status';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let secret = sessionStorage.getItem('ava_admin_secret') || '';
+let S = null, box = null, filter = 'all', timer = null, lastOk = 0;
+const PN = { ep: 'Event Pal', rp: 'Restaurant Pal', tp: 'Travel Pal', ava: 'AVA' };
+
+function ago(iso) {
+  if (!iso) return 'never';
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return 'just now'; if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago'; return Math.round(s / 86400) + ' days ago';
+}
+const secs = iso => iso ? (Date.now() - Date.parse(iso)) / 1000 : Infinity;
+const row = (dot, left, right) => `<div class="row"><span class="dot ${dot}"></span><span style="flex:1;min-width:0">${left}</span><span class="r">${right ?? ''}</span></div>`;
+const tile = (k, n, sub) => `<div class="tile"><div class="k">${k}</div><div class="n">${n}</div>${sub ? `<div class="muted" style="font-size:12px">${sub}</div>` : ''}</div>`;
+const head = (name, pill) => `<div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-weight:800;font-size:30px;line-height:1;flex:1">${name}</h2>${pill}</div>`;
+const feedErr = f => `<div class="tile" style="color:#f7c948">Can't read this right now: ${esc(f.error)}</div>`;
+
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, { ...opts, headers: { 'X-Admin-Secret': secret, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  if (r.status === 401) { signOut(); throw new Error('Signed out'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Error ' + r.status);
+  return j;
+}
+
+async function readBox() {
+  try {
+    const ctl = new AbortController(); setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(BOX, { signal: ctl.signal, cache: 'no-store' });
+    box = r.ok ? await r.json() : null;
+  } catch { box = null; }
+}
+
+function pillFor(id) {
+  const n = (S.warnings || []).filter(w => w.product === id).length + (id === 'ep' && box ? (box.sources || []).filter(x => x.sendingFps < x.fps * 0.95).length : 0);
+  if (S[id] && S[id].ok === false) return `<span class="pill p-warn">Can't read</span>`;
+  return n ? `<span class="pill p-warn">${n} warning${n > 1 ? 's' : ''}</span>` : `<span class="pill p-ok">Up</span>`;
+}
+function sitesFor(p) { return S.sites.filter(x => x.product === p).map(x => row(x.ok === true ? 'ok' : x.ok === false ? 'down' : '', esc(x.name), x.ok === true ? 'online · ' + x.ms + ' ms' : x.ok === false ? esc(x.note || 'error ' + x.status) : esc(x.note || ''))).join(''); }
+
+function drawEP() {
+  const f = S.ep; let h = head('Event Pal', pillFor('ep'));
+  if (!f.ok) { $('ep').innerHTML = h + feedErr(f); return; }
+  const d = f.data, live = (d.screens || []).filter(x => secs(x.last_seen) < 60);
+  const ph = d.photos || {};
+  h += `<div><div class="k" style="margin-bottom:6px">Live · NDP Rally</div><div class="g3">
+    ${tile('Phones now', d.phones_now, d.phones_total + ' joined in total')}
+    ${tile('Photos waiting', (ph.pending || 0), (ph.approved || 0) + ' approved')}
+    ${tile('Joining', d.rally && d.rally.joining_open ? 'Open' : 'Closed', d.rally ? 'scene: ' + esc(d.rally.scene) : '')}</div>
+    <div class="screens" style="margin-top:10px">${'ABCDEFGH'.split('').map(o => { const s = (d.screens || []).find(x => x.out === o); const on = s && secs(s.last_seen) < 60;
+      return `<span class="pill ${on ? 'p-ok' : 'p-off'}" title="${s ? esc(s.name) + ' · seen ' + ago(s.last_seen) : 'not set up'}">${o} ${on ? '●' : '○'}</span>`; }).join('')}
+    <span class="muted" style="font-size:12px;align-self:center">${live.length} big screen${live.length === 1 ? '' : 's'} open</span></div></div>`;
+  h += `<div><div class="k" style="margin-bottom:4px">Sports · last 6 hours</div>${(d.matches || []).length ? d.matches.map(m =>
+      row(secs(m.updated_at) < 900 ? 'ok' : '', `<b>${esc(m.code)}</b> · ${esc(m.sport)} · ${esc(m.home)} ${m.h ?? 0}–${m.a ?? 0} ${esc(m.away)}`, 'updated ' + ago(m.updated_at))).join('')
+    : row('', '<span class="muted">No live matches</span>')}</div>`;
+  h += `<div><div class="k" style="margin-bottom:4px">Boxes (NDI)</div>${box ? (() => {
+      const slow = (box.sources || []).filter(s => s.sendingFps < s.fps * 0.95).length;
+      const watching = (box.sources || []).reduce((a, s) => a + (s.receivers || 0), 0);
+      return row(box.ndi && !slow ? 'ok' : 'warn', `<b>${esc(box.box)}</b> · ${(box.sources || []).length} source(s) · ${watching} watching`, slow ? `<span style="color:#f7c948">${slow} slow</span>` : 'all at speed')
+        + (box.sources || []).map(s => row(s.sendingFps >= s.fps * 0.95 ? 'ok' : 'warn', esc(s.name) + ` <span class="muted">· ${esc(s.size)}</span>`, `${s.sendingFps} of ${s.fps} fps`)).join('');
+    })() : row('', '<span class="muted">No box on this computer</span>', '<span title="Boxes report from the computer they run on. Reporting from anywhere comes with cloud pairing.">ⓘ</span>')}</div>`;
+  h += `<div><div class="k" style="margin-bottom:4px">Behind the scenes</div>${sitesFor('ep')}${row('ok', 'Live server', 'answered in ' + f.ms + ' ms')}</div>`;
+  $('ep').innerHTML = h;
+}
+
+function drawRP() {
+  const f = S.rp; let h = head('Restaurant Pal', pillFor('rp'));
+  if (!f.ok) { $('rp').innerHTML = h + feedErr(f); return; }
+  const list = (f.data.businesses || []);
+  h += list.map(b => {
+    const tillOk = b.tills > 0 && secs(b.till_seen) < 300;
+    return `<div class="tile" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px"><b class="cond" style="font-size:22px;flex:1">${esc(b.name)}</b><span class="muted" style="font-size:13px">${b.service_open ? 'phone ordering on' : 'phone ordering off'}</span></div>
+      <div class="g3"><div><div class="k">Open bills</div><div class="n">${b.open_tabs}</div></div><div><div class="k">Orders today</div><div class="n">${b.orders_today}</div></div><div><div class="k">Staff on</div><div class="n">${b.staff_on}</div></div></div>
+      ${row(b.tills ? (tillOk ? 'ok' : 'warn') : '', 'Till' + (b.tills > 1 ? 's (' + b.tills + ')' : ''), b.tills ? 'last seen ' + ago(b.till_seen) : 'none registered')}
+      ${row(secs(b.app_seen) < 300 ? 'ok' : '', 'Restaurant Pal open', 'last seen ' + ago(b.app_seen))}
+      ${row(b.guest_waiting ? 'warn' : 'ok', 'Guest orders waiting', b.guest_waiting)}
+      ${row(b.late_lines ? 'warn' : 'ok', 'Kitchen items late (25 min+)', b.late_lines)}
+      ${row(b.ready_waiting ? 'warn' : 'ok', 'Ready, not yet served', b.ready_waiting)}
+    </div>`; }).join('') || '<div class="muted">No restaurants yet</div>';
+  h += `<div><div class="k" style="margin-bottom:4px">Behind the scenes</div>${sitesFor('rp')}${row('ok', 'Server', 'answered in ' + f.ms + ' ms')}</div>`;
+  $('rp').innerHTML = h;
+}
+
+function drawTP() {
+  const f = S.tp; let h = head('Travel Pal', pillFor('tp'));
+  if (!f.ok) { $('tp').innerHTML = h + feedErr(f); return; }
+  const d = f.data, sl = d.sailings || {}, total = Object.values(sl).reduce((a, n) => a + n, 0);
+  const done = (sl.closed || 0), act = d.active || [];
+  h += `<div class="g3">${tile('At sea now', act.filter(v => v.status === 'underway').length, act.filter(v => v.status === 'boarding').length + ' boarding')}
+    ${tile('Sailings today', done + ' of ' + total, (sl.cancelled ? sl.cancelled + ' cancelled' : 'done of planned'))}${tile('Pursers on', d.pursers_on)}</div>`;
+  h += act.length ? act.map(v => {
+      const at = (v.stops || [])[v.stop_idx] || (v.stops || [])[0], next = (v.stops || [])[(v.stop_idx || 0) + 1];
+      return `<div class="tile">${row(v.status === 'underway' ? 'ok' : 'warn', `<b>${esc(v.vessel)}</b> · ${esc(v.company || '')} · ${esc(v.time)}`, esc(v.status))}
+        <div class="muted" style="font-size:13px">${v.status === 'underway' ? 'Heading to ' + esc(next || 'last stop') : 'At ' + esc(at)} · ${v.aboard} aboard · ${v.pos ? 'position ' + ago(v.pos.at) + ` (<a target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=${v.pos.lat}&mlon=${v.pos.lon}#map=12/${v.pos.lat}/${v.pos.lon}">map</a>)` : 'no position yet'}</div></div>`; }).join('')
+    : `<div class="tile muted" style="font-size:14px">No ferries boarding or at sea right now.</div>`;
+  const rp = d.reports_today || {};
+  h += `<div><div class="k" style="margin-bottom:4px">Today</div>${row(rp.stuck ? 'warn' : 'ok', 'Reports sent (Coast Guard, companies)', `${rp.sent || 0} sent${rp.waiting ? ' · ' + rp.waiting + ' sending' : ''}${rp.stuck ? ' · <span style="color:#f7c948">' + rp.stuck + ' stuck</span>' : ''}`)}
+    ${row('ok', 'Ferry companies', d.companies)}</div>`;
+  h += `<div><div class="k" style="margin-bottom:4px">Behind the scenes</div>${sitesFor('tp')}${row('ok', 'Server', 'answered in ' + f.ms + ' ms')}</div>`;
+  $('tp').innerHTML = h;
+}
+
+function drawShared() {
+  const a = S.ava; let h = head('AVA', a.ok ? `<span class="pill p-ok">Up</span>` : `<span class="pill p-warn">Can't read</span>`);
+  if (a.ok) h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+    ${tile('Questions today', a.questions_today)}${tile('People today', a.visitors_today)}
+    ${tile("Couldn't answer", `<span style="color:${a.unanswered_today ? '#f7c948' : 'inherit'}">${a.unanswered_today}</span>`, '<a href="/admin/">open AVA admin</a>')}
+    ${tile('Questions this week', a.questions_week)}</div>
+    ${(a.tools_top || []).length ? `<div class="muted" style="font-size:13px">Most used: ${a.tools_top.map(t => esc(t.tool.replace(/^query_/, '').replace(/_/g, ' ')) + ' (' + t.uses + ')').join(' · ')}</div>` : ''}`;
+  else h += feedErr(a);
+  $('shared').innerHTML = h;
+}
+
+function draw() {
+  // the box is read from this computer, so its warning is added here
+  const W = (S.warnings || []).slice();
+  if (box) for (const x of box.sources || []) if (x.sendingFps < x.fps * 0.95) W.push({ product: 'ep', level: 'warn', text: `${x.name} on Event Pal Box (${box.box}) is sending ${x.sendingFps} of ${x.fps} fps` });
+  const feeds = ['ep', 'rp', 'tp'].filter(id => S[id].ok).length;
+  const down = W.some(w => w.level === 'down') || feeds < 3;
+  $('ov').textContent = down ? 'Problem' : W.length ? 'Up, with warnings' : 'All up';
+  $('ovIcon').textContent = down ? '!' : '✓';
+  $('ovIcon').style.background = down ? '#2e1a0e' : W.length ? '#2a2214' : '#16271a';
+  $('ovIcon').style.color = down ? 'var(--down)' : W.length ? '#f7c948' : 'var(--ok)';
+  $('wc').textContent = W.length ? W.length + ' warning' + (W.length > 1 ? 's' : '') : 'Nothing';
+  $('wc').style.color = W.length ? 'var(--warn)' : '';
+  $('fc').textContent = feeds + ' of 3';
+  const set = S.sites.filter(x => x.ok !== null);
+  $('sc').textContent = set.filter(x => x.ok).length + ' of ' + set.length;
+  $('aq').textContent = S.ava.ok ? S.ava.questions_today : '–';
+  $('warnbox').hidden = !W.length;
+  $('warns').innerHTML = W.map(w => `<div class="row" style="border-color:#3a2f12"><span class="pill p-warn">${PN[w.product] || ''}</span><span style="flex:1">${esc(w.text)}</span></div>`).join('');
+  drawEP(); drawRP(); drawTP(); drawShared();
+  document.querySelectorAll('[data-p]').forEach(el => el.hidden = filter !== 'all' && el.dataset.p !== filter);
+  $('when').textContent = new Date(S.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+async function refresh() {
+  try {
+    const [s] = await Promise.all([api('?action=snapshot'), readBox()]);
+    S = s; lastOk = Date.now(); draw();
+    $('livedot').className = 'dot ok'; $('livetxt').textContent = 'Live · every 10 s';
+  } catch (e) {
+    if (!secret) return;
+    $('livedot').className = 'dot warn'; $('livetxt').textContent = 'Reconnecting · ' + (lastOk ? 'last ' + ago(new Date(lastOk).toISOString()) : e.message);
+  }
+}
+
+async function askAva(question, target) {
+  target.hidden = false; target.textContent = 'Thinking…';
+  try { const j = await api('?action=ask', { method: 'POST', body: JSON.stringify({ question, box }) }); target.textContent = j.answer; }
+  catch (e) { target.textContent = "Couldn't ask AVA: " + e.message; }
+}
+
+function start() {
+  $('login').hidden = true; $('app').hidden = false;
+  refresh().then(() => askAva('', $('brief')));
+  clearInterval(timer); timer = setInterval(refresh, 10000);
+  setInterval(() => !document.hidden && askAva('', $('brief')), 15 * 60 * 1000);
+}
+function signOut() {
+  secret = ''; sessionStorage.removeItem('ava_admin_secret'); clearInterval(timer);
+  $('app').hidden = true; $('login').hidden = false;
+}
+
+$('lf').onsubmit = async e => {
+  e.preventDefault(); $('lerr').textContent = '';
+  secret = $('pw').value;
+  try { await api('?action=snapshot'); sessionStorage.setItem('ava_admin_secret', secret); $('pw').value = ''; start(); }
+  catch (err) { $('lerr').textContent = err.message === 'Signed out' ? 'Wrong password.' : err.message; }
+};
+$('out').onclick = signOut;
+$('askf').onsubmit = e => { e.preventDefault(); const q = $('q').value.trim(); if (q) askAva(q, $('answer')); };
+$('chips').onclick = e => { if (e.target.tagName === 'BUTTON') { $('q').value = e.target.textContent; askAva(e.target.textContent, $('answer')); } };
+$('rebrief').onclick = () => askAva('', $('brief'));
+document.querySelector('.seg').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return; filter = b.dataset.f;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  if (S) draw();
+};
+
+if (secret) start(); else $('login').hidden = false;
+</script>
+</body>
+</html>
