@@ -268,9 +268,16 @@ async function refresh() {
   }
 }
 
+// AVA writes simple markdown: bold and bullet lines. Escaped first, so nothing else gets through.
+function md(t) {
+  return esc(t).split('\n').map(l => {
+    l = l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    return /^\s*[-•]\s+/.test(l) ? '<div style="padding-left:14px;text-indent:-10px">• ' + l.replace(/^\s*[-•]\s+/, '') + '</div>' : (l.trim() ? '<div>' + l + '</div>' : '<div style="height:6px"></div>');
+  }).join('');
+}
 async function askAva(question, target) {
   target.hidden = false; target.textContent = 'Thinking…';
-  try { const j = await api('?action=ask', { method: 'POST', body: JSON.stringify({ question, box }) }); target.textContent = j.answer; }
+  try { const j = await api('?action=ask', { method: 'POST', body: JSON.stringify({ question, box }) }); target.innerHTML = md(j.answer); }
   catch (e) { target.textContent = "Couldn't ask AVA: " + e.message; }
 }
 
