@@ -24,7 +24,7 @@ exports.handler = async (event) => {
     const people = [...new Set(chats.map(c => c.by && c.by.id).filter(Boolean))];
     for (const p of people) await tg.send(p, `🚨 <b>Nobody has picked this up in 10 min</b>\n${core.esc(inc.title)}\n${core.esc(inc.text || '')}`, { ackId: inc.id });
   };
-  const r = await core.runWatch({ store, snap, claude: pal.claude, tg, escalate });
+  const r = await core.runWatch({ store, snap, claude: pal.claude, tg, escalate, till: pal.till });
   console.log(`watch: ${r.findings.length} finding(s), ${Object.keys(r.open).length} open, ${r.sent.length} message(s), ${Date.now() - t0} ms`);
   return { statusCode: 200 };
 };

@@ -69,7 +69,7 @@ function detect(snap, boxes, prev, now = Date.now()) {
             A(b.app_seen) < 300 ? 'But a Restaurant Pal screen was open there in the last 5 min' : 'No Restaurant Pal screen open there either'],
           cause: A(b.app_seen) < 300 ? 'The tills are probably signed out or stuck on a screen (something is still open)' : 'Venue internet or power is down, or the tablets were closed',
           confidence: 'medium',
-          fix: 'Check the venue wifi/router first. Tills keep selling offline; their sales sync when they reconnect' });
+          fix: 'Check the venue wifi/router first. Tills keep selling offline; their sales sync when they reconnect' });   // no till notice: no till would get it
       } else for (const d of silent) {
         const mates = d.station ? devs.filter(x => x !== d && x.station === d.station) : [];
         const matesFresh = mates.filter(x => A(x.last_seen) < 120);
@@ -81,19 +81,22 @@ function detect(snap, boxes, prev, now = Date.now()) {
             d.open_tabs ? `${plural(d.open_tabs, 'open bill')} at ${d.station}` : null, d.main ? 'This is the main till' : null].filter(Boolean),
           cause: (mates.length ? matesFresh.length : fresh.length) ? 'Just this tablet: its wifi dropped, the battery died, or the app was closed or locked' : 'This tablet and its neighbours are quiet: likely the wifi in that area',
           confidence: (mates.length ? matesFresh.length : fresh.length) ? 'high' : 'medium',
-          fix: 'Check the tablet is on, unlocked and on wifi. If it is still selling, its sales are saved on it and sync when it reconnects' });
+          fix: 'Check the tablet is on, unlocked and on wifi. If it is still selling, its sales are saved on it and sync when it reconnects',
+          notice: b.id ? { business: b.id, target: d.station ? 'station' : 'main', station: d.station || null, skip: d.id, text: `${d.name} has gone quiet. Check it's on, unlocked and on wifi.` } : null });
       }
     }
     if (b.guest_waiting > 0) add({ key: `rp:${b.name}:guests`, cls: 'rp-guests', product: 'rp', sev: 'warn', need: 2,
       title: `${b.name}: ${plural(b.guest_waiting, 'guest order')} waiting to be accepted`,
       evidence: [`Waiting for at least 2 min`, A(b.app_seen) < 300 ? 'A Restaurant Pal screen is open there' : 'No Restaurant Pal screen is open there'],
       cause: A(b.app_seen) < 300 ? 'Staff haven\'t accepted them (busy, or the alert sound is off)' : 'Nobody has Restaurant Pal open, so nobody can see the orders',
-      confidence: 'high', fix: 'Accept or reject them on the till' });
+      confidence: 'high', fix: 'Accept or reject them on the till',
+      notice: b.id ? { business: b.id, target: 'main', text: `${plural(b.guest_waiting, 'phone order')} waiting to be accepted.` } : null });
     if (b.late_lines > 0) add({ key: `rp:${b.name}:late`, cls: 'rp-late', product: 'rp', sev: b.late_lines >= 5 ? 'urgent' : 'warn',
       title: `${b.name}: ${plural(b.late_lines, 'kitchen item')} over 25 min`,
       evidence: [`${b.late_lines} late`, b.ready_waiting ? `${b.ready_waiting} ready and waiting to be collected` : null].filter(Boolean),
       cause: b.ready_waiting > 3 ? 'Food is ready but not being run out, and the kitchen is backing up' : 'The kitchen is behind',
-      confidence: 'medium', fix: b.ready_waiting > 3 ? 'Get someone running food' : 'Check the kitchen screen and tell the tables' });
+      confidence: 'medium', fix: b.ready_waiting > 3 ? 'Get someone running food' : 'Check the kitchen screen and tell the tables',
+      notice: b.id ? { business: b.id, target: 'kitchen', text: `${plural(b.late_lines, 'item')} over 25 min.${b.ready_waiting > 3 ? ` ${b.ready_waiting} plates ready, need running.` : ''}` } : null });
   }
 
   // --- Event Pal screens, phones, photos
@@ -303,7 +306,7 @@ const ESCALATE_AFTER = 2;      // ...and after 2 repeats (~10 min) escalate to e
 const MAX_REPEATS = 4;
 const SUMMARY_MS = 60 * 60000; // running update while something is live
 
-async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate }) {
+async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate, till }) {
   const iso = new Date(now).toISOString();
   const state = (await store.get('state')) || { streak: {}, clear: {} };
   const open = (await store.get('open')) || {};
@@ -333,6 +336,18 @@ async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate })
     inc.lastNotify = iso;
   };
 
+  // notices staff have taken on a till (from the Restaurant Pal feed): ref = incident id
+  const tillAcks = {};
+  const rpData = snap.rp && snap.rp.ok ? snap.rp.data : null;
+  if (rpData) for (const b of rpData.businesses || []) for (const n of b.notices || []) if (n.ack_at) tillAcks[n.ref] = n.ack_where || 'a till';
+  const postNotice = async (inc, f) => {
+    if (!till || !f.notice || inc.sev === 'info') return;
+    const level = inc.sev === 'urgent' ? 'urgent' : 'warn';
+    if (inc.notice && inc.notice.text === f.notice.text && inc.notice.level === level) return;
+    const r = await till.post({ ...f.notice, ref: inc.id, level }).catch(e => ({ ok: false, error: e.message }));
+    if (r && r.ok) inc.notice = { business: f.notice.business, text: f.notice.text, level };
+  };
+
   for (const f of findings) {
     seen.add(f.key);
     state.streak[f.key] = (state.streak[f.key] || 0) + 1;
@@ -345,6 +360,7 @@ async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate })
         inc.text = await wordAlert(f, await notesFor(store, f.cls), claude);
         await notify(inc, inc.text, { ack: true });
       } else inc.text = plainAlert(f);
+      await postNotice(inc, f);
       open[f.key] = inc.id;
       await logEvent(store, { at: iso, inc: inc.id, product: f.product, kind: 'opened', sev: f.sev, text: f.title });
     } else {
@@ -355,9 +371,15 @@ async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate })
         await notify(inc, plainAlert(f), { thread: true, ack: !inc.ackBy, title: 'Worse: ' + f.title });
         await logEvent(store, { at: iso, inc: inc.id, product: f.product, kind: 'worse', sev: f.sev, text: f.title });
       }
+      await postNotice(inc, f);
       if (!inc.ackBy) {
         const ack = await store.get('ack/' + inc.id);
         if (ack) { inc.ackBy = ack.by; inc.ackAt = ack.at; await logEvent(store, { at: iso, inc: inc.id, product: inc.product, kind: 'ack', text: `${ack.by} has it` }); }
+        else if (tillAcks[inc.id]) {
+          inc.ackBy = `${tillAcks[inc.id]} (on the till)`; inc.ackAt = iso;
+          await logEvent(store, { at: iso, inc: inc.id, product: inc.product, kind: 'ack', text: `${tillAcks[inc.id]} tapped OK on the till` });
+          await notify(inc, `${tillAcks[inc.id]} tapped OK on the till, so someone there has it.`, { thread: true, icon: 'ok', title: inc.title, force: true });
+        }
       }
       if (inc.sev === 'urgent' && !inc.ackBy && inc.lastNotify && now - Date.parse(inc.lastNotify) >= REPEAT_MS && inc.repeats < MAX_REPEATS) {
         inc.repeats++;
@@ -382,6 +404,7 @@ async function runWatch({ store, snap, now = Date.now(), claude, tg, escalate })
     delete open[key]; delete state.clear[key];
     if (!inc) continue;
     inc.resolved = iso; inc.updated = iso;
+    if (till && inc.notice) await till.clear({ business: inc.notice.business, ref: inc.id }).catch(() => null);
     if ((inc.msgs || []).length) await notify(inc, `Back to normal after ${min((now - Date.parse(inc.opened)) / 1000)} min.`, { thread: true, icon: 'ok', title: inc.title, force: true });
     await store.set('inc/' + inc.id, inc);
     await logEvent(store, { at: iso, inc: inc.id, product: inc.product, kind: 'resolved', text: inc.title });

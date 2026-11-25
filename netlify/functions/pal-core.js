@@ -11,6 +11,17 @@ const FEEDS = {
   rp: { name: 'Restaurant Pal', url: 'https://qpctzuwveswsstzhjrfn.supabase.co/functions/v1/monitor-feed' },
   tp: { name: 'Travel Pal', url: 'https://gtxmvazfuetokwyevxim.supabase.co/functions/v1/monitor-feed' },
 };
+// AVA's notices on Restaurant Pal tills (same MONITOR_KEY)
+const NOTICE_URL = 'https://qpctzuwveswsstzhjrfn.supabase.co/functions/v1/watch-notice';
+async function tillNotice(action, body) {
+  const key = process.env.MONITOR_KEY;
+  if (!key) return { ok: false, error: 'MONITOR_KEY not set' };
+  const { r } = await timed(NOTICE_URL, { method: 'POST', headers: { 'x-monitor-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) }, 6000);
+  const j = await r.json().catch(() => ({}));
+  return r.ok ? { ok: true, ...j } : { ok: false, error: j.error || 'answered ' + r.status };
+}
+const till = { post: b => tillNotice('post', b), clear: b => tillNotice('clear', b) };
+
 // Sites checked from here. Restaurant Pal's address can be set with RP_SITE_URL in Netlify.
 const SITES = [
   { key: 'rally', product: 'ep', name: 'Rally and Sports site (GitHub Pages)', url: 'https://execproducervc3-ops.github.io/ndp-rally/' },
@@ -119,4 +130,4 @@ const MONITOR_NOTES = [
   'Event Pal Boxes report in every 30 s; a box that has gone quiet for over 90 s is treated as down.',
 ].join('\n');
 
-module.exports = { supabase, MODEL, FEEDS, SITES, checkAuth, timed, feed, site, avaUsage, ago, warnings, snapshot, claude, MONITOR_NOTES };
+module.exports = { till, supabase, MODEL, FEEDS, SITES, checkAuth, timed, feed, site, avaUsage, ago, warnings, snapshot, claude, MONITOR_NOTES };
