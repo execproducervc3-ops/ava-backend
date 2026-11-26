@@ -12,7 +12,7 @@ collection). Set PIPER_MODEL to its path.
 THE RULES (each one was learned the hard way, keep them):
   1. Pronunciation: AVA is "AY-vuh" like the name Ava. "live" (a live show, livestream) rhymes with
      "five" (the plain "live" of real time, not stretched), never "liv". "shake-to-win" is read as three
-     words. "fete" is "fet" (rhymes with bet), never "faith". "PIN" is the word "pin", not spelled out. VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words.
+     words. "fete" is "fet" (rhymes with bet), never "faith". "PIN" is the word "pin", not spelled out. VIP / NDI / QR / LED / EC$ are spelled out. "Event Pal" is two clear words, said as one name with no gap between them.
   2. Record each passage as ONE take. Never split a sentence at commas: comma-ended pieces lift in
      pitch at the end, which sounds unnatural. Never pitch-shift words for expression.
   3. Steadier delivery: noise_scale 0.45, noise_w 0.5 (fewer rising phrase endings).
@@ -37,7 +37,7 @@ PRON = [(r'\b[Ll]ivestream\b', '[[ lˈaɪvstɹiːm ]]'), (r'\b[Ll]ive\b', '[[ l�
         (r'\b([Ss]hake)-to-win\b', r'\1 to win'), (r'\b[Ff]etes\b', '[[ fˈɛts ]]'), (r'\b[Ff]ete\b', '[[ fˈɛt ]]'), (r'\bPINs\b', 'pins'), (r'\bPIN\b', 'pin'),
         (r"\bAVA's\b", '[[ ˈeɪvəz ]]'), (r'\bAVA\b', '[[ ˈeɪvə ]]'),
         (r'\bVIP\b', 'V I P'), (r'\bN\.D\.I\.', 'N D I'), (r'\bNDI\b', 'N D I'),
-        (r'\bQR\b', 'Q R'), (r'\bLED\b', 'L E D'), (r'\bEC\$', 'E C dollars ')]
+        (r'\bQR\b', 'Q R'), (r'\bPDFs\b', 'P D Fs'), (r'\bPDF\b', 'P D F'), (r'\bLED\b', 'L E D'), (r'\bEC\$', 'E C dollars ')]
 
 TREATMENT = ('aresample=44100,highpass=f=80,afftdn=nr=10:nf=-42,'
              'equalizer=f=250:t=q:w=1:g=-3,equalizer=f=3000:t=q:w=1.4:g=2.5,treble=g=2:f=8000,'
@@ -98,7 +98,8 @@ def pace(a, sr, snappy_opener=False, opener_gap=0.3):
         j = i
         while j < len(on) and on[j] == on[i]: j += 1
         chunk = body[i * fr:j * fr]
-        if not on[i] and j < len(on) and (j - i) >= 3:
+        # only lengthen real pauses (>=120 ms); short gaps inside words (e.g. the t-p in "Event Pal") stay natural
+        if not on[i] and j < len(on) and (j - i) >= 12:
             extra = int(sr * min(0.22, 0.04 + (j - i) * 10 / 1000 * 0.6))
             chunk = np.concatenate([chunk, np.zeros(extra, np.float32)])
         out.append(chunk); i = j
