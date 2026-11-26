@@ -76,7 +76,7 @@ export function contactAdmin({ app, screen, send, prefill = "" }) {
 </style><div class="ca-box">
 <h3>Contact admin</h3><p>${esc(app)} · this goes straight to the administrator on Telegram.</p>
 <textarea class="ca-text" placeholder="Type a message (optional if you send a voice note)" maxlength="1000">${esc(prefill)}</textarea>
-<div class="ca-row"><button class="ca-btn ca-mic" type="button">🎙 Hold to record</button><span class="ca-note"></span></div>
+<div class="ca-row"><button class="ca-btn ca-mic" type="button">Hold to record</button><span class="ca-note"></span></div>
 <div class="ca-row" style="justify-content:flex-end"><button class="ca-btn ca-x" type="button">Cancel</button><button class="ca-btn go ca-send" type="button">Send</button></div>
 <p class="ca-msg" role="status"></p></div>`;
   document.body.appendChild(wrap);
@@ -94,13 +94,13 @@ export function contactAdmin({ app, screen, send, prefill = "" }) {
     rec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
     rec.onstop = async () => {
       stream.getTracks().forEach(t => t.stop()); clearInterval(timer);
-      const secs = Math.round((Date.now() - t0) / 1000); if (secs < 1) { note.textContent = "Too short. Hold the button while you talk."; mic.classList.remove("rec"); mic.textContent = "🎙 Hold to record"; return; }
+      const secs = Math.round((Date.now() - t0) / 1000); if (secs < 1) { note.textContent = "Too short. Hold the button while you talk."; mic.classList.remove("rec"); mic.textContent = "Hold to record"; return; }
       let blob = new Blob(chunks, { type: rec.mimeType || type }); let mime = blob.type.split(";")[0];
       if (mime === "audio/webm") { try { const ogg = webmToOgg(await blob.arrayBuffer()); if (ogg) { blob = ogg; mime = "audio/ogg"; } } catch { } }
       voice = { blob, mime, seconds: secs };
       note.innerHTML = `Voice note · ${secs}s <audio controls src="${URL.createObjectURL(blob)}"></audio> <button class="ca-btn ca-del" type="button" style="padding:6px 10px">✕</button>`;
       $(".ca-del").onclick = () => { voice = null; note.textContent = ""; };
-      mic.classList.remove("rec"); mic.textContent = "🎙 Record again";
+      mic.classList.remove("rec"); mic.textContent = "Record again";
     };
     rec.start(); t0 = Date.now(); mic.classList.add("rec"); mic.textContent = "● Recording… let go to stop";
     timer = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); note.textContent = `${s}s`; if (s >= MAX_SECONDS) stop(); }, 250);
