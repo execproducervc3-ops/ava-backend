@@ -6,16 +6,16 @@
 <meta name="robots" content="noindex">
 <title>Pal Monitor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0b0b0f;--card:#15151b;--deep:#101015;--line:#2a2a33;--ink:#f4f4f6;--mute:#a3a3ad;--acc:#f7d117;--ok:#5fe07a;--warn:#f7a531;--down:#ff8a3d}
+:root{--bg:#26282D;--card:#1C1D21;--deep:#2B2E34;--line:#3A3D44;--ink:#F4F7FA;--mute:#A3A7AE;--acc:#F5B82E;--ok:#1FB46A;--warn:#F5B82E;--down:#F28C28}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,sans-serif}
 a{color:var(--acc)}
-h1,h2,.cond{font-family:'Barlow Condensed',Inter,sans-serif;text-transform:uppercase;letter-spacing:.4px}
+h1,h2,.cond{font-family:"Bricolage Grotesque",Inter,sans-serif;text-transform:uppercase;letter-spacing:.4px}
 .k{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
-.n{font:700 30px/1.05 'Barlow Condensed',Inter,sans-serif}
+.n{font:700 30px/1.05 "Bricolage Grotesque",Inter,sans-serif}
 .dot{display:inline-block;width:9px;height:9px;border-radius:5px;flex:none;background:#5a5a66}
 .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.down{background:var(--down)}
 .row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #23232b;font-size:14px}
@@ -47,8 +47,25 @@ input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);
 .inc.urgent{border-left-color:var(--down)}.inc.warn{border-left-color:var(--warn)}.inc.done{opacity:.6;border-left-color:var(--ok)}
 .inc details summary{cursor:pointer;color:var(--mute);font-size:13px}
 .inc ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:#c9c9d1}
-.code{font:700 28px/1 'Barlow Condensed',Inter,sans-serif;letter-spacing:3px;color:var(--acc)}
+.code{font:700 28px/1 "Bricolage Grotesque",Inter,sans-serif;letter-spacing:3px;color:var(--acc)}
 @media (max-width:620px){header{padding:12px 14px}main{padding:14px}.top>div{padding:12px 14px}.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ===== Event Pal equipment skin (Event Pal design system) ===== */
+body{background:#26282D}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.28;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='.55'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%2523g%29'/%3E%3C/svg%3E")}
+body>*{position:relative;z-index:1}
+h1,h2,.cond{text-transform:none;letter-spacing:-.3px;font-weight:800}
+header h1{display:flex;align-items:center;gap:10px}header h1::before{content:"";width:6px;height:.9em;border-radius:3px;background:var(--acc)}
+.card{border-color:#3A3D44;box-shadow:inset 0 2px 7px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06);border-radius:18px}
+.top{background:#3A3D44}.top>div{background:#33363C;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.row{border-top-color:#3A3D44}
+.btn{background:#1C1D21;border-color:#3A3D44;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);border-radius:12px}.btn:hover{background:#2B2E34}
+.acc{background:var(--acc);color:#1A1B1F;border-color:var(--acc);box-shadow:0 3px 0 #8F6510,inset 0 1px 0 rgba(255,255,255,.45)}.acc:hover{background:#FFC94F}
+.seg button[aria-pressed=true]{background:var(--acc);color:#1A1B1F}
+.p-ok{background:#123b27}.p-warn{background:#3d2f12;color:#F5B82E}.p-off{background:#2B2E34;color:#A3A7AE}
+input.t{background:#1C1D21;border-color:#3A3D44;box-shadow:inset 0 2px 5px rgba(0,0,0,.5)}
+.ans{color:#C7CACF}.inc ul{color:#C7CACF}
+/* ===== end skin ===== */
 </style>
 </head>
 <body>
@@ -96,7 +113,7 @@ input.t{width:100%;background:#0f0f14;border:1px solid #33333d;color:var(--ink);
 <input id="q" aria-label="Ask AVA" maxlength="500" placeholder="Ask AVA about anything on this screen…" style="flex:1;background:transparent;border:0;color:var(--ink);font:15px Inter,sans-serif;outline:none;min-width:0">
 </label>
 <button class="btn acc" style="min-height:46px;padding:0 18px">Ask</button>
-<button class="btn" type="button" id="cadm" style="min-height:46px" title="Send the administrator a message or voice note">📞 Contact admin</button>
+<button class="btn" type="button" id="cadm" style="min-height:46px" title="Send the administrator a message or voice note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:4px"><path d="M4 5h16v10H10l-4 4v-4H4z"/></svg>Contact admin</button>
 </form>
 <div style="display:flex;gap:6px;flex-wrap:wrap" id="chips">
 <button class="btn chip">What needs me right now?</button>
@@ -211,13 +228,13 @@ function drawWatch() {
   const ran = w.lastRun ? secs(w.lastRun.at) : Infinity;
   const pill = ran > 600 ? `<span class="pill p-warn">Not running</span>` : open.length ? `<span class="pill p-warn">${open.length} open</span>` : `<span class="pill p-ok">All clear</span>`;
   let h = head('AVA watch', pill);
-  h += `<div class="muted" style="font-size:13px;margin-top:-6px">Checks everything every 2 min, investigates anything off, and alerts on Telegram. ${w.lastRun ? 'Last check ' + ago(w.lastRun.at) + '.' : 'No check has run yet.'}${w.mute ? ` · 🔕 quiet until ${new Date(w.mute.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${esc(w.mute.by)})` : ''}</div>`;
+  h += `<div class="muted" style="font-size:13px;margin-top:-6px">Checks everything every 2 min, investigates anything off, and alerts on Telegram. ${w.lastRun ? 'Last check ' + ago(w.lastRun.at) + '.' : 'No check has run yet.'}${w.mute ? ` · quiet until ${new Date(w.mute.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${esc(w.mute.by)})` : ''}</div>`;
   const card = i => `<div class="inc ${i.resolved ? 'done' : i.sev}">
       <div style="display:flex;gap:10px;align-items:flex-start"><span class="pill ${i.sev === 'urgent' ? 'p-warn' : 'p-off'}" style="${i.sev === 'urgent' ? 'color:var(--down)' : ''}">${i.resolved ? 'fixed' : i.sev}</span>
         <b style="flex:1">${esc(i.title)}</b><span class="muted" style="font-size:12px;white-space:nowrap">${i.resolved ? 'fixed ' + ago(i.resolved) : 'since ' + ago(i.opened)}</span></div>
       ${i.resolved ? '' : `<div class="ans">${md(i.text || '')}</div>`}
       ${i.finding ? `<details><summary>How AVA worked it out</summary><ul>${(i.finding.evidence || []).map(e => `<li>${esc(e)}</li>`).join('')}<li><b>Likely:</b> ${esc(i.finding.cause)} (${esc(i.finding.confidence)} confidence)</li><li><b>Fix:</b> ${esc(i.finding.fix)}</li></ul></details>` : ''}
-      ${i.resolved ? '' : `<div style="display:flex;gap:8px;align-items:center">${i.ackBy ? `<span class="muted" style="font-size:13px">👍 ${esc(i.ackBy)} has it</span>` : `<button class="btn" data-ack="${esc(i.id)}">Got it</button>`}${i.escalated ? '<span class="muted" style="font-size:12px">escalated ' + ago(i.escalated) + '</span>' : ''}</div>`}
+      ${i.resolved ? '' : `<div style="display:flex;gap:8px;align-items:center">${i.ackBy ? `<span class="muted" style="font-size:13px">✓ ${esc(i.ackBy)} has it</span>` : `<button class="btn" data-ack="${esc(i.id)}">Got it</button>`}${i.escalated ? '<span class="muted" style="font-size:12px">escalated ' + ago(i.escalated) + '</span>' : ''}</div>`}
     </div>`;
   h += open.length ? open.map(card).join('') : `<div class="tile muted" style="font-size:14px">Nothing needs you. AVA is watching.</div>`;
   if (done.length) h += `<details><summary class="muted" style="cursor:pointer;font-size:13px">Fixed in the last 24 h (${done.length})</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${done.map(card).join('')}</div></details>`;
@@ -234,7 +251,7 @@ function drawWatch() {
 }
 $('watch').onclick = async e => {
   const a = e.target.closest('[data-ack]');
-  if (a) { a.disabled = true; try { await api('?action=ack', { method: 'POST', body: JSON.stringify({ id: a.dataset.ack }) }); a.outerHTML = '<span class="muted" style="font-size:13px">👍 Got it. The next check (within 2 min) stops the repeats</span>'; } catch (err) { a.disabled = false; alert(err.message); } return; }
+  if (a) { a.disabled = true; try { await api('?action=ack', { method: 'POST', body: JSON.stringify({ id: a.dataset.ack }) }); a.outerHTML = '<span class="muted" style="font-size:13px">✓ Got it. The next check (within 2 min) stops the repeats</span>'; } catch (err) { a.disabled = false; alert(err.message); } return; }
   if (e.target.id === 'tgset') { $('tgmsg').textContent = 'Connecting…'; try { const j = await api('?action=tg_setup', { method: 'POST', body: '{}' }); $('tgmsg').textContent = 'Connected: @' + j.bot; } catch (err) { $('tgmsg').textContent = err.message; } }
   if (e.target.id === 'tglink') { try { wcode = await api('?action=link_code', { method: 'POST', body: '{}' }); drawWatch(); setTimeout(() => { wcode = null; WV && drawWatch(); }, 10 * 60000); } catch (err) { $('tgmsg').textContent = err.message; } }
 };
